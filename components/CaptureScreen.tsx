@@ -30,7 +30,7 @@ export default function CaptureScreen() {
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_URL!, {
+      const res = await fetch('${API_URL}/api/process-idea', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -50,7 +50,7 @@ export default function CaptureScreen() {
   
   const fetchIdeas = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/ideas');
+      const res = await fetch('${API_URL}/api/ideas');
       const data = await res.json();
       setSavedIdeas(data);
     } catch (err) {
