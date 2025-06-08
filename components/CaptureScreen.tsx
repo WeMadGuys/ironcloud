@@ -80,7 +80,8 @@ const fetchIdeas = async () => {
     setSavedIdeas(data);
     setApiError(null);
   } catch (err) {
-    console.error("Failed to fetch saved ideas:", err);
+    // Only log the error, don't show it to user for initial fetch
+    console.warn("Backend API not available - this is expected if the API server isn't running");
     // Don't show error for initial fetch failure - just keep empty state
   }
 };
