@@ -43,6 +43,10 @@ const handleSubmit = async () => {
     // read the `output` key we return now
     setResult(data.output);
     await fetchIdeas();
+    
+    // Clear the text boxes after successful submission
+    setInput('');
+    setTags('');
   } catch (err) {
     console.error("Error talking to backend:", err);
   } finally {
