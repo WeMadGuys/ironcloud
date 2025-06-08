@@ -10,6 +10,7 @@ export default function CaptureScreen() {
   const [result, setResult] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   type Idea = {
     input_text: string;
@@ -22,15 +23,19 @@ export default function CaptureScreen() {
   ? savedIdeas.filter(idea => idea.tags?.includes(activeTag))
   : savedIdeas;
 
-
-
-  const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
+  const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 const handleSubmit = async () => {
+  if (!API_URL) {
+    setApiError('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL in your environment variables.');
+    return;
+  }
+
   setLoading(true);
+  setApiError(null);
+  
   try {
     const res = await fetch(
-      // use backticks here!
       `${API_URL}/api/process-idea`,
       {
         method: "POST",
@@ -39,8 +44,11 @@ const handleSubmit = async () => {
       }
     );
 
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+
     const data = await res.json();
-    // read the `output` key we return now
     setResult(data.output);
     await fetchIdeas();
     
@@ -49,21 +57,31 @@ const handleSubmit = async () => {
     setTags('');
   } catch (err) {
     console.error("Error talking to backend:", err);
+    setApiError('Failed to process idea. Please check if the API server is running.');
   } finally {
     setLoading(false);
   }
 };
 
 const fetchIdeas = async () => {
+  if (!API_URL) {
+    // Silently fail if API URL is not configured
+    return;
+  }
+
   try {
-    const res = await fetch(
-      // again, backticks
-      `${API_URL}/api/ideas`
-    );
+    const res = await fetch(`${API_URL}/api/ideas`);
+    
+    if (!res.ok) {
+      throw new Error(`HTTP error! status: ${res.status}`);
+    }
+    
     const data = await res.json();
     setSavedIdeas(data);
+    setApiError(null);
   } catch (err) {
     console.error("Failed to fetch saved ideas:", err);
+    // Don't show error for initial fetch failure - just keep empty state
   }
 };
 
@@ -83,6 +101,16 @@ const fetchIdeas = async () => {
           Transform your ideas into structured insights
         </p>
       </div>
+
+      {/* API Error Alert */}
+      {apiError && (
+        <div className="w-full max-w-2xl mb-4 bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="flex items-center">
+            <div className="w-4 h-4 rounded-full bg-red-500 mr-3"></div>
+            <p className="text-red-700 text-sm">{apiError}</p>
+          </div>
+        </div>
+      )}
 
       {/* Main capture interface */}
       <div className="w-full max-w-2xl bg-white rounded-3xl p-8 transition-all duration-300">
@@ -187,47 +215,53 @@ Press ⌘+Enter to Skrible!"
         )}
       </div>
       
-      <div className="mt-6">
-        <h2 className="text-xl font-semibold mb-2">Saved Ideas</h2>
-        {activeTag && (
-          <button
-            onClick={() => setActiveTag(null)}
-            className="text-sm text-blue-600 underline mb-2"
-          >
-            Clear tag filter
-          </button>
-        )}
-        <ul className="space-y-2">
-          {filteredIdeas.map((idea, index) => (
-            <li key={index} className="bg-gray-100 p-3 rounded-md shadow">
-              <p className="text-sm text-gray-700"><strong>Input:</strong> {idea.input_text}</p>
-              <p className="text-sm text-gray-600"><strong>Output:</strong></p>
-              <ul className="list-disc pl-5 text-sm text-gray-800">
-                {idea.output.map((line: string, i: number) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
-              {idea.tags && idea.tags.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-sm text-gray-600"><strong>Tags:</strong></p>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {idea.tags?.map((tag, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setActiveTag(tag)}
-                        className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full hover:bg-primary/20 transition"
-                      >
-                        #{tag}
-                      </button>
-                    ))}
+      {/* Only show saved ideas section if we have ideas or API is configured */}
+      {(savedIdeas.length > 0 || API_URL) && (
+        <div className="mt-6 w-full max-w-2xl">
+          <h2 className="text-xl font-semibold mb-2 text-text">Saved Ideas</h2>
+          {activeTag && (
+            <button
+              onClick={() => setActiveTag(null)}
+              className="text-sm text-blue-600 underline mb-2"
+            >
+              Clear tag filter
+            </button>
+          )}
+          {savedIdeas.length === 0 && API_URL && (
+            <p className="text-text-muted text-sm">No saved ideas yet. Start by submitting your first idea!</p>
+          )}
+          <ul className="space-y-2">
+            {filteredIdeas.map((idea, index) => (
+              <li key={index} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+                <p className="text-sm text-gray-700 mb-2"><strong>Input:</strong> {idea.input_text}</p>
+                <p className="text-sm text-gray-600 mb-2"><strong>Output:</strong></p>
+                <ul className="list-disc pl-5 text-sm text-gray-800 mb-3">
+                  {idea.output.map((line: string, i: number) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+                {idea.tags && idea.tags.length > 0 && (
+                  <div className="mt-2">
+                    <p className="text-sm text-gray-600 mb-2"><strong>Tags:</strong></p>
+                    <div className="flex flex-wrap gap-2">
+                      {idea.tags?.map((tag, i) => (
+                        <button
+                          key={i}
+                          onClick={() => setActiveTag(tag)}
+                          className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full hover:bg-primary/20 transition"
+                        >
+                          #{tag}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      </div>
       {/* Footer */}
       <div className="mt-12 text-center text-text-muted text-sm">
         <p>Powered by AI • Made for creators, thinkers, and dreamers</p>
