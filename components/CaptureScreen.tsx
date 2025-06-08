@@ -1,33 +1,65 @@
 'use client';
 
-import { useState } from 'react';
 import MicIcon from './MicIcon';
 import ImageIcon from './ImageIcon';
+import { useEffect, useState } from 'react';
+
 
 export default function CaptureScreen() {
   const [input, setInput] = useState('');
   const [result, setResult] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeTag, setActiveTag] = useState<string | null>(null);
+
+  type Idea = {
+    input_text: string;
+    output: string[];
+    tags: string[];
+  };
+  const [savedIdeas, setSavedIdeas] = useState<Idea[]>([]);
+  const [tags, setTags] = useState("");
+  const filteredIdeas = activeTag
+  ? savedIdeas.filter(idea => idea.tags?.includes(activeTag))
+  : savedIdeas;
+
+
+
+  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   const handleSubmit = async () => {
-    if (!input.trim()) return;
-    
     setLoading(true);
-    // TODO: replace with real API call
-    await new Promise(r => setTimeout(r, 1200));
-    setResult([
-      'Problem: Users forget trip essentials',
-      'Target: Digital nomads and frequent travelers',
-      'Feature: Destination-based smart checklist generator'
-    ]);
-    setLoading(false);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && e.metaKey) {
-      handleSubmit();
+    try {
+      const res = await fetch(API_URL!, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ idea: input, tags: tags }),
+      });
+  
+      const data = await res.json();
+      setResult(data.structured);
+      await fetchIdeas();
+    } catch (err) {
+      console.error("Error talking to backend:", err);
+    } finally {
+      setLoading(false);
     }
   };
+  
+  const fetchIdeas = async () => {
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/ideas');
+      const data = await res.json();
+      setSavedIdeas(data);
+    } catch (err) {
+      console.error("Failed to fetch saved ideas:", err);
+    }
+  }; 
+  
+  useEffect(() => {
+    fetchIdeas();
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background-alt to-background flex flex-col items-center p-4">
@@ -56,7 +88,7 @@ export default function CaptureScreen() {
 Press ⌘+Enter to Skrible!"
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyPress}
+            // onKeyDown={handleKeyPress}
           />
 
           {/* Voice & Image icons */}
@@ -74,6 +106,13 @@ Press ⌘+Enter to Skrible!"
             {input.length} characters
           </div>
         </div>
+        <input
+          type="text"
+          className="w-full mt-4 p-3 rounded-xl border border-gray-300 text-sm"
+          placeholder="Add tags (comma separated)..."
+          value={tags}
+          onChange={(e) => setTags(e.target.value)}
+        />
 
         <button
           onClick={handleSubmit}
@@ -136,7 +175,48 @@ Press ⌘+Enter to Skrible!"
           </div>
         )}
       </div>
+      
+      <div className="mt-6">
+        <h2 className="text-xl font-semibold mb-2">Saved Ideas</h2>
+        {activeTag && (
+          <button
+            onClick={() => setActiveTag(null)}
+            className="text-sm text-blue-600 underline mb-2"
+          >
+            Clear tag filter
+          </button>
+        )}
+        <ul className="space-y-2">
+          {filteredIdeas.map((idea, index) => (
+            <li key={index} className="bg-gray-100 p-3 rounded-md shadow">
+              <p className="text-sm text-gray-700"><strong>Input:</strong> {idea.input_text}</p>
+              <p className="text-sm text-gray-600"><strong>Output:</strong></p>
+              <ul className="list-disc pl-5 text-sm text-gray-800">
+                {idea.output.map((line: string, i: number) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+              {idea.tags && idea.tags.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm text-gray-600"><strong>Tags:</strong></p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {idea.tags?.map((tag, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setActiveTag(tag)}
+                        className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full hover:bg-primary/20 transition"
+                      >
+                        #{tag}
+                      </button>
+                    ))}
+                  </div>
 
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      </div>
       {/* Footer */}
       <div className="mt-12 text-center text-text-muted text-sm">
         <p>Powered by AI • Made for creators, thinkers, and dreamers</p>
