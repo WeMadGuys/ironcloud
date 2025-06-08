@@ -25,38 +25,44 @@ export default function CaptureScreen() {
 
 
   const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
- 
 
-  const handleSubmit = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('${API_URL}/api/process-idea', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ idea: input, tags: tags }),
-      });
-  
-      const data = await res.json();
-      setResult(data.structured);
-      await fetchIdeas();
-    } catch (err) {
-      console.error("Error talking to backend:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  const fetchIdeas = async () => {
-    try {
-      const res = await fetch('${API_URL}/api/ideas');
-      const data = await res.json();
-      setSavedIdeas(data);
-    } catch (err) {
-      console.error("Failed to fetch saved ideas:", err);
-    }
-  }; 
+const handleSubmit = async () => {
+  setLoading(true);
+  try {
+    const res = await fetch(
+      // use backticks here!
+      `${API_URL}/api/process-idea`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea: input, tags }),
+      }
+    );
+
+    const data = await res.json();
+    // read the `output` key we return now
+    setResult(data.output);
+    await fetchIdeas();
+  } catch (err) {
+    console.error("Error talking to backend:", err);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const fetchIdeas = async () => {
+  try {
+    const res = await fetch(
+      // again, backticks
+      `${API_URL}/api/ideas`
+    );
+    const data = await res.json();
+    setSavedIdeas(data);
+  } catch (err) {
+    console.error("Failed to fetch saved ideas:", err);
+  }
+};
+
   
   useEffect(() => {
     fetchIdeas();
