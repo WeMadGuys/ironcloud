@@ -2,6 +2,8 @@
 
 import MicIcon from './MicIcon';
 import ImageIcon from './ImageIcon';
+import PaperclipIcon from './PaperclipIcon';
+import PenToolIcon from './PenToolIcon';
 import { useEffect, useState } from 'react';
 
 
@@ -11,6 +13,7 @@ export default function CaptureScreen() {
   const [loading, setLoading] = useState(false);
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [activeMode, setActiveMode] = useState<'text' | 'voice' | 'attachment' | 'canvas'>('text');
 
   type Idea = {
     input_text: string;
@@ -86,6 +89,26 @@ const fetchIdeas = async () => {
   }
 };
 
+  const handleModeChange = (mode: 'text' | 'voice' | 'attachment' | 'canvas') => {
+    setActiveMode(mode);
+    // Add mode-specific logic here
+    switch (mode) {
+      case 'voice':
+        // TODO: Implement voice recording
+        console.log('Voice mode activated');
+        break;
+      case 'attachment':
+        // TODO: Implement file attachment
+        console.log('Attachment mode activated');
+        break;
+      case 'canvas':
+        // TODO: Implement drawing canvas
+        console.log('Canvas mode activated');
+        break;
+      default:
+        console.log('Text mode activated');
+    }
+  };
   
   useEffect(() => {
     fetchIdeas();
@@ -131,21 +154,76 @@ Press ⌘+Enter to Skrible!"
             // onKeyDown={handleKeyPress}
           />
 
-          {/* Voice & Image icons */}
-          <div className="absolute bottom-4 left-4 flex space-x-2">
-            <button className="icon-button p-3 rounded-full hover:bg-secondary-light transition-all duration-200">
-              <MicIcon className="w-6 h-6 text-secondary" />
-            </button>
-            <button className="icon-button p-3 rounded-full hover:bg-secondary-light transition-all duration-200">
-              <ImageIcon className="w-6 h-6 text-secondary" />
-            </button>
-          </div>
-
           {/* Character count */}
           <div className="absolute bottom-4 right-4 text-sm text-text-muted">
             {input.length} characters
           </div>
         </div>
+
+        {/* Four Skrible Input Options */}
+        <div className="flex items-center justify-between mt-4 p-4 bg-gray-50/50 rounded-2xl">
+          <div className="flex space-x-3">
+            {/* Text Mode - Always active when typing */}
+            <button 
+              onClick={() => handleModeChange('text')}
+              className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                activeMode === 'text' 
+                  ? 'bg-primary text-white shadow-lg' 
+                  : 'hover:bg-secondary-light'
+              }`}
+              title="Text Mode"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+              </svg>
+            </button>
+
+            {/* Voice Mode */}
+            <button 
+              onClick={() => handleModeChange('voice')}
+              className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                activeMode === 'voice' 
+                  ? 'bg-primary text-white shadow-lg' 
+                  : 'hover:bg-secondary-light'
+              }`}
+              title="Voice Mode"
+            >
+              <MicIcon className="w-6 h-6" />
+            </button>
+
+            {/* Attachment Mode */}
+            <button 
+              onClick={() => handleModeChange('attachment')}
+              className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                activeMode === 'attachment' 
+                  ? 'bg-primary text-white shadow-lg' 
+                  : 'hover:bg-secondary-light'
+              }`}
+              title="Attachment Mode"
+            >
+              <PaperclipIcon className="w-6 h-6" />
+            </button>
+
+            {/* Canvas Mode */}
+            <button 
+              onClick={() => handleModeChange('canvas')}
+              className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                activeMode === 'canvas' 
+                  ? 'bg-primary text-white shadow-lg' 
+                  : 'hover:bg-secondary-light'
+              }`}
+              title="Canvas Mode"
+            >
+              <PenToolIcon className="w-6 h-6" />
+            </button>
+          </div>
+
+          {/* Mode indicator */}
+          <div className="text-sm text-text-muted capitalize">
+            {activeMode} mode
+          </div>
+        </div>
+
         <input
           type="text"
           className="w-full mt-4 p-3 rounded-xl border border-gray-300 text-sm"
