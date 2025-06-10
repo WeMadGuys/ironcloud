@@ -4,8 +4,9 @@ import MicIcon from './MicIcon';
 import ImageIcon from './ImageIcon';
 import PaperclipIcon from './PaperclipIcon';
 import PenToolIcon from './PenToolIcon';
+import LeftNavigation from './LeftNavigation';
+import RightPanel from './RightPanel';
 import { useEffect, useState } from 'react';
-
 
 export default function CaptureScreen() {
   const [input, setInput] = useState('');
@@ -14,6 +15,7 @@ export default function CaptureScreen() {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [activeMode, setActiveMode] = useState<'text' | 'voice' | 'attachment' | 'canvas'>('text');
+  const [activeSection, setActiveSection] = useState('capture');
 
   type Idea = {
     input_text: string;
@@ -114,237 +116,312 @@ const fetchIdeas = async () => {
     fetchIdeas();
   }, []);
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background-alt to-background flex flex-col items-center p-4">
-      {/* Header */}
-      <div className="text-center mt-12 mb-8">
-        <h1 className="text-4xl font-bold text-text mb-2 tracking-tight">
-          Skrible
-        </h1>
-        <p className="text-text-muted text-lg">
-          Transform your ideas into structured insights
-        </p>
-      </div>
-
-      {/* API Error Alert */}
-      {apiError && (
-        <div className="w-full max-w-2xl mb-4 bg-red-50 border border-red-200 rounded-xl p-4">
-          <div className="flex items-center">
-            <div className="w-4 h-4 rounded-full bg-red-500 mr-3"></div>
-            <p className="text-red-700 text-sm">{apiError}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Main capture interface */}
-      <div className="w-full max-w-2xl bg-white rounded-3xl p-8 transition-all duration-300">
-        <div className="relative">
-          <textarea
-            className="
-              w-full h-40 p-6 rounded-2xl
-              focus:ring-4 focus:ring-primary/10
-              transition-all duration-200 ease-in-out resize-none
-              text-text placeholder-text-muted text-lg leading-relaxed
-              outline-none bg-gray-50/50
-            "
-            placeholder="Type your idea, speak your thoughts, or sketch your vision... 
-Press ⌘+Enter to Skrible!"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            // onKeyDown={handleKeyPress}
-          />
-
-          {/* Character count */}
-          <div className="absolute bottom-4 right-4 text-sm text-text-muted">
-            {input.length} characters
-          </div>
-        </div>
-
-        {/* Four Skrible Input Options */}
-        <div className="flex items-center justify-between mt-4 p-4 bg-gray-50/50 rounded-2xl">
-          <div className="flex space-x-3">
-            {/* Text Mode - Always active when typing */}
-            <button 
-              onClick={() => handleModeChange('text')}
-              className={`icon-button p-3 rounded-full transition-all duration-200 ${
-                activeMode === 'text' 
-                  ? 'bg-primary text-white shadow-lg' 
-                  : 'hover:bg-secondary-light'
-              }`}
-              title="Text Mode"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
-              </svg>
-            </button>
-
-            {/* Voice Mode */}
-            <button 
-              onClick={() => handleModeChange('voice')}
-              className={`icon-button p-3 rounded-full transition-all duration-200 ${
-                activeMode === 'voice' 
-                  ? 'bg-primary text-white shadow-lg' 
-                  : 'hover:bg-secondary-light'
-              }`}
-              title="Voice Mode"
-            >
-              <MicIcon className="w-6 h-6" />
-            </button>
-
-            {/* Attachment Mode */}
-            <button 
-              onClick={() => handleModeChange('attachment')}
-              className={`icon-button p-3 rounded-full transition-all duration-200 ${
-                activeMode === 'attachment' 
-                  ? 'bg-primary text-white shadow-lg' 
-                  : 'hover:bg-secondary-light'
-              }`}
-              title="Attachment Mode"
-            >
-              <PaperclipIcon className="w-6 h-6" />
-            </button>
-
-            {/* Canvas Mode */}
-            <button 
-              onClick={() => handleModeChange('canvas')}
-              className={`icon-button p-3 rounded-full transition-all duration-200 ${
-                activeMode === 'canvas' 
-                  ? 'bg-primary text-white shadow-lg' 
-                  : 'hover:bg-secondary-light'
-              }`}
-              title="Canvas Mode"
-            >
-              <PenToolIcon className="w-6 h-6" />
-            </button>
-          </div>
-
-          {/* Mode indicator */}
-          <div className="text-sm text-text-muted capitalize">
-            {activeMode} mode
-          </div>
-        </div>
-
-        <input
-          type="text"
-          className="w-full mt-4 p-3 rounded-xl border border-gray-300 text-sm"
-          placeholder="Add tags (comma separated)..."
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-        />
-
-        <button
-          onClick={handleSubmit}
-          disabled={loading || !input.trim()}
-          className={`
-            capture-button mt-8 w-full py-4 font-semibold text-white rounded-2xl
-            transition-all duration-300 ease-in-out text-lg
-            ${loading || !input.trim()
-              ? 'opacity-50 cursor-not-allowed transform-none'
-              : 'hover:scale-[1.02] active:scale-[0.98]'
-            }
-          `}
-        >
-          {loading ? (
-            <div className="flex items-center justify-center space-x-2">
-              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-              <span>Skribling your idea...</span>
-            </div>
-          ) : (
-            'Skrible It! 🚀'
-          )}
-        </button>
-
-        {/* Result panel */}
-        {result && (
-          <div className="mt-8 bg-gradient-to-r from-secondary-light to-purple-50 rounded-2xl p-6 animate-fade-in">
-            <h3 className="text-lg font-semibold text-text mb-4 flex items-center">
-              <span className="w-2 h-2 rounded-full bg-primary mr-3"></span>
-              Your Skribbled Insights
-            </h3>
-            <div className="space-y-3">
-              {result.map((line, i) => (
-                <div key={i} className="flex items-start space-x-3 group">
-                  <span 
-                    className={`
-                      inline-block w-3 h-3 rounded-full mt-1 transition-all duration-200
-                      ${i === 0 ? 'bg-orange-500' : i === 1 ? 'bg-blue-500' : 'bg-green-500'}
-                      group-hover:scale-110
-                    `}
-                  />
-                  <span className="text-text leading-relaxed flex-1 group-hover:text-text-dark transition-colors">
-                    {line}
-                  </span>
+  const renderMainContent = () => {
+    switch (activeSection) {
+      case 'home':
+        return (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <h1 className="text-4xl font-bold text-gray-900 mb-4">Welcome to Skrible</h1>
+              <p className="text-xl text-gray-600 mb-8">Get started by Script a task and Chat can do the rest. Not sure where to start?</p>
+              
+              <div className="grid grid-cols-2 gap-4 max-w-2xl mx-auto">
+                <div className="bg-orange-100 p-6 rounded-2xl hover:bg-orange-200 transition-colors cursor-pointer">
+                  <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mb-4 mx-auto">
+                    <span className="text-white text-xl">✏️</span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Write copy</h3>
+                  <button className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                    <span className="text-gray-600">+</span>
+                  </button>
                 </div>
-              ))}
+                
+                <div className="bg-blue-100 p-6 rounded-2xl hover:bg-blue-200 transition-colors cursor-pointer">
+                  <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mb-4 mx-auto">
+                    <span className="text-white text-xl">🖼️</span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Image generation</h3>
+                  <button className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                    <span className="text-gray-600">+</span>
+                  </button>
+                </div>
+                
+                <div className="bg-green-100 p-6 rounded-2xl hover:bg-green-200 transition-colors cursor-pointer">
+                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mb-4 mx-auto">
+                    <span className="text-white text-xl">👤</span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Create avatar</h3>
+                  <button className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                    <span className="text-gray-600">+</span>
+                  </button>
+                </div>
+                
+                <div className="bg-pink-100 p-6 rounded-2xl hover:bg-pink-200 transition-colors cursor-pointer">
+                  <div className="w-12 h-12 bg-pink-500 rounded-full flex items-center justify-center mb-4 mx-auto">
+                    <span className="text-white text-xl">💻</span>
+                  </div>
+                  <h3 className="font-semibold text-gray-900 mb-2">Write code</h3>
+                  <button className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                    <span className="text-gray-600">+</span>
+                  </button>
+                </div>
+              </div>
             </div>
-            
-            {/* Action buttons */}
-            <div className="flex space-x-3 mt-6 pt-4">
+          </div>
+        );
+      
+      case 'capture':
+        return (
+          <div className="flex-1 flex flex-col items-center justify-center p-8">
+            {/* API Error Alert */}
+            {apiError && (
+              <div className="w-full max-w-2xl mb-4 bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center">
+                  <div className="w-4 h-4 rounded-full bg-red-500 mr-3"></div>
+                  <p className="text-red-700 text-sm">{apiError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Main capture interface */}
+            <div className="w-full max-w-2xl bg-white rounded-3xl border border-gray-200 p-8 transition-all duration-300">
+              <div className="relative">
+                <textarea
+                  className="
+                    w-full h-40 p-6 rounded-2xl
+                    focus:ring-4 focus:ring-primary/10
+                    transition-all duration-200 ease-in-out resize-none
+                    text-text placeholder-text-muted text-lg leading-relaxed
+                    outline-none bg-gray-50/50 border border-gray-200
+                  "
+                  placeholder="Type your idea, speak your thoughts, or sketch your vision... 
+Press ⌘+Enter to Skrible!"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                />
+
+                {/* Character count */}
+                <div className="absolute bottom-4 right-4 text-sm text-text-muted">
+                  {input.length} characters
+                </div>
+              </div>
+
+              {/* Four Skrible Input Options */}
+              <div className="flex items-center justify-between mt-4 p-4 bg-gray-50/50 rounded-2xl border border-gray-200">
+                <div className="flex space-x-3">
+                  {/* Text Mode */}
+                  <button 
+                    onClick={() => handleModeChange('text')}
+                    className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                      activeMode === 'text' 
+                        ? 'bg-primary text-white shadow-lg' 
+                        : 'hover:bg-secondary-light'
+                    }`}
+                    title="Text Mode"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
+                    </svg>
+                  </button>
+
+                  {/* Voice Mode */}
+                  <button 
+                    onClick={() => handleModeChange('voice')}
+                    className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                      activeMode === 'voice' 
+                        ? 'bg-primary text-white shadow-lg' 
+                        : 'hover:bg-secondary-light'
+                    }`}
+                    title="Voice Mode"
+                  >
+                    <MicIcon className="w-6 h-6" />
+                  </button>
+
+                  {/* Attachment Mode */}
+                  <button 
+                    onClick={() => handleModeChange('attachment')}
+                    className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                      activeMode === 'attachment' 
+                        ? 'bg-primary text-white shadow-lg' 
+                        : 'hover:bg-secondary-light'
+                    }`}
+                    title="Attachment Mode"
+                  >
+                    <PaperclipIcon className="w-6 h-6" />
+                  </button>
+
+                  {/* Canvas Mode */}
+                  <button 
+                    onClick={() => handleModeChange('canvas')}
+                    className={`icon-button p-3 rounded-full transition-all duration-200 ${
+                      activeMode === 'canvas' 
+                        ? 'bg-primary text-white shadow-lg' 
+                        : 'hover:bg-secondary-light'
+                    }`}
+                    title="Canvas Mode"
+                  >
+                    <PenToolIcon className="w-6 h-6" />
+                  </button>
+                </div>
+
+                {/* Mode indicator */}
+                <div className="text-sm text-text-muted capitalize">
+                  {activeMode} mode
+                </div>
+              </div>
+
+              <input
+                type="text"
+                className="w-full mt-4 p-3 rounded-xl border border-gray-300 text-sm"
+                placeholder="Add tags (comma separated)..."
+                value={tags}
+                onChange={(e) => setTags(e.target.value)}
+              />
+
+              <button
+                onClick={handleSubmit}
+                disabled={loading || !input.trim()}
+                className={`
+                  capture-button mt-8 w-full py-4 font-semibold text-white rounded-2xl
+                  transition-all duration-300 ease-in-out text-lg
+                  ${loading || !input.trim()
+                    ? 'opacity-50 cursor-not-allowed transform-none'
+                    : 'hover:scale-[1.02] active:scale-[0.98]'
+                  }
+                `}
+              >
+                {loading ? (
+                  <div className="flex items-center justify-center space-x-2">
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>Skribling your idea...</span>
+                  </div>
+                ) : (
+                  'Skrible It! 🚀'
+                )}
+              </button>
+
+              {/* Result panel */}
+              {result && (
+                <div className="mt-8 bg-gradient-to-r from-secondary-light to-purple-50 rounded-2xl p-6 animate-fade-in border border-gray-200">
+                  <h3 className="text-lg font-semibold text-text mb-4 flex items-center">
+                    <span className="w-2 h-2 rounded-full bg-primary mr-3"></span>
+                    Your Skribbled Insights
+                  </h3>
+                  <div className="space-y-3">
+                    {result.map((line, i) => (
+                      <div key={i} className="flex items-start space-x-3 group">
+                        <span 
+                          className={`
+                            inline-block w-3 h-3 rounded-full mt-1 transition-all duration-200
+                            ${i === 0 ? 'bg-orange-500' : i === 1 ? 'bg-blue-500' : 'bg-green-500'}
+                            group-hover:scale-110
+                          `}
+                        />
+                        <span className="text-text leading-relaxed flex-1 group-hover:text-text-dark transition-colors">
+                          {line}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Action buttons */}
+                  <div className="flex space-x-3 mt-6 pt-4">
+                    <button className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                      Refine
+                    </button>
+                    <button className="px-4 py-2 bg-gray-100 text-text rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+                      Export
+                    </button>
+                    <button className="px-4 py-2 bg-gray-100 text-text rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
+                      Share
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      
+      default:
+        return (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4 capitalize">{activeSection}</h2>
+              <p className="text-gray-600">This section is coming soon!</p>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Left Navigation */}
+      <LeftNavigation 
+        activeSection={activeSection} 
+        onSectionChange={setActiveSection} 
+      />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Top Bar */}
+        <div className="bg-white border-b border-gray-200 px-8 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <h1 className="text-2xl font-bold text-gray-900 capitalize">{activeSection}</h1>
+            </div>
+            <div className="flex items-center space-x-4">
               <button className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
-                Refine
+                ⚡ Upgrade
               </button>
-              <button className="px-4 py-2 bg-gray-100 text-text rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
-                Export
-              </button>
-              <button className="px-4 py-2 bg-gray-100 text-text rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium">
-                Share
-              </button>
+              <div className="w-8 h-8 bg-gradient-to-br from-primary to-secondary rounded-full"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Content Area */}
+        {renderMainContent()}
+
+        {/* Bottom Chat Input (only for capture mode) */}
+        {activeSection === 'capture' && (
+          <div className="bg-white border-t border-gray-200 p-6">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center space-x-4 bg-gray-50 rounded-2xl p-4 border border-gray-200">
+                <input
+                  type="text"
+                  placeholder="Summarize the latest"
+                  className="flex-1 bg-transparent outline-none text-gray-700 placeholder-gray-500"
+                />
+                <div className="flex items-center space-x-2">
+                  <button className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                    <PaperclipIcon className="w-5 h-5 text-gray-500" />
+                  </button>
+                  <button className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                    <MicIcon className="w-5 h-5 text-gray-500" />
+                  </button>
+                  <button className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
+                    <span className="text-gray-500 text-sm">Browse Prompts</span>
+                  </button>
+                  <button className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="text-sm text-gray-500">20 / 3,000</div>
+              </div>
             </div>
           </div>
         )}
       </div>
-      
-      {/* Only show saved ideas section if we have ideas or API is configured */}
-      {(savedIdeas.length > 0 || API_URL) && (
-        <div className="mt-6 w-full max-w-2xl">
-          <h2 className="text-xl font-semibold mb-2 text-text">Saved Ideas</h2>
-          {activeTag && (
-            <button
-              onClick={() => setActiveTag(null)}
-              className="text-sm text-blue-600 underline mb-2"
-            >
-              Clear tag filter
-            </button>
-          )}
-          {savedIdeas.length === 0 && API_URL && (
-            <p className="text-text-muted text-sm">No saved ideas yet. Start by submitting your first idea!</p>
-          )}
-          <ul className="space-y-2">
-            {filteredIdeas.map((idea, index) => (
-              <li key={index} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-                <p className="text-sm text-gray-700 mb-2"><strong>Input:</strong> {idea.input_text}</p>
-                <p className="text-sm text-gray-600 mb-2"><strong>Output:</strong></p>
-                <ul className="list-disc pl-5 text-sm text-gray-800 mb-3">
-                  {idea.output.map((line: string, i: number) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-                {idea.tags && idea.tags.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-sm text-gray-600 mb-2"><strong>Tags:</strong></p>
-                    <div className="flex flex-wrap gap-2">
-                      {idea.tags?.map((tag, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setActiveTag(tag)}
-                          className="bg-primary/10 text-primary text-xs px-2 py-1 rounded-full hover:bg-primary/20 transition"
-                        >
-                          #{tag}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
-      {/* Footer */}
-      <div className="mt-12 text-center text-text-muted text-sm">
-        <p>Powered by AI • Made for creators, thinkers, and dreamers</p>
-      </div>
+      {/* Right Panel */}
+      <RightPanel 
+        savedIdeas={savedIdeas}
+        activeTag={activeTag}
+        onTagClick={setActiveTag}
+        onClearTagFilter={() => setActiveTag(null)}
+      />
     </div>
   );
 }
