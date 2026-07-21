@@ -1,0 +1,18 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@ironcloud/api": ["../../packages/api/src/index.ts"],
+      "@ironcloud/api/*": ["../../packages/api/src/*"],
+      "@ironcloud/db": ["../../packages/db/src/index.ts"],
+      "@ironcloud/db/*": ["../../packages/db/src/*"],
+      "@ironcloud/ui": ["../../packages/ui/src/tokens/index.ts"],
+      "@ironcloud/ui/*": ["../../packages/ui/src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

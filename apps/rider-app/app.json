@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "IronCloud Rider",
+    "slug": "ironcloud-rider",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "ironcloud-rider",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.ironcloud.rider",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.ironcloud.rider",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

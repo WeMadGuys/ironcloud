@@ -1,0 +1,11 @@
+{
+  "name": "@ironcloud/ui",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/tokens/index.ts",
+  "types": "./src/tokens/index.ts",
+  "exports": {
+    ".": "./src/tokens/index.ts",
+    "./tokens": "./src/tokens/index.ts"
+  }
+}

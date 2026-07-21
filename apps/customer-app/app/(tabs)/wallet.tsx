@@ -1,0 +1,778 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  colors,
+  radius,
+  shadows,
+  spacing,
+  typographyScale,
+} from '@ironcloud/ui';
+
+import {
+  formatTransactionDate,
+  getWallet,
+  getWalletTransactions,
+  type WalletTransaction,
+} from '../../src/features/wallet/services/wallet.service';
+
+const QUICK_AMOUNTS = [100, 200, 500, 1000];
+
+export default function WalletScreen() {
+  const router = useRouter();
+  const [balance, setBalance] = useState(0);
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showAddMoney, setShowAddMoney] = useState(false);
+  const [addAmount, setAddAmount] = useState('');
+
+  useEffect(() => {
+    loadWalletData();
+  }, []);
+
+  async function loadWalletData() {
+    try {
+      setIsLoading(true);
+      const [walletInfo, txns] = await Promise.all([
+        getWallet(),
+        getWalletTransactions(20),
+      ]);
+      
+      if (walletInfo) {
+        setBalance(walletInfo.balance);
+      }
+      setTransactions(txns);
+    } catch (error) {
+      console.error('Error loading wallet data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const getTransactionIcon = (type: WalletTransaction['type']) => {
+    switch (type) {
+      case 'recharge':
+        return 'plus-circle';
+      case 'debit':
+        return 'minus-circle';
+      case 'refund':
+        return 'arrow-u-left-top';
+      case 'cashback':
+        return 'gift';
+      default:
+        return 'cash';
+    }
+  };
+
+  const getTransactionColor = (type: WalletTransaction['type']) => {
+    switch (type) {
+      case 'recharge':
+      case 'refund':
+      case 'cashback':
+        return colors.status.success.foreground;
+      case 'debit':
+        return colors.status.error.foreground;
+      default:
+        return colors.text.primary;
+    }
+  };
+
+  const formatAmount = (type: WalletTransaction['type'], amount: number) => {
+    const prefix = type === 'debit' ? '-' : '+';
+    return `${prefix}₹${amount}`;
+  };
+
+  const getDefaultDescription = (type: WalletTransaction['type']) => {
+    switch (type) {
+      case 'recharge':
+        return 'Wallet Recharge';
+      case 'debit':
+        return 'Order Payment';
+      case 'refund':
+        return 'Refund';
+      case 'cashback':
+        return 'Cashback';
+      case 'expiry':
+        return 'Points Expired';
+      default:
+        return 'Transaction';
+    }
+  };
+
+  const handleAddMoney = () => {
+    const amount = parseInt(addAmount, 10);
+    if (amount > 0) {
+      setShowAddMoney(false);
+      setAddAmount('');
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <MaterialCommunityIcons
+            name="arrow-left"
+            size={24}
+            color={colors.icon.primary}
+          />
+        </Pressable>
+        <Text style={styles.headerTitle}>Wallet</Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Balance Card */}
+        <View style={styles.balanceCard}>
+          <View style={styles.balanceHeader}>
+            <View style={styles.walletIconWrap}>
+              <MaterialCommunityIcons
+                name="wallet"
+                size={28}
+                color={colors.brand.onPrimary}
+              />
+            </View>
+            <View>
+              <Text style={styles.balanceLabel}>Available Balance</Text>
+              <Text style={styles.balanceAmount}>₹{balance}</Text>
+            </View>
+          </View>
+          <Pressable
+            style={styles.addMoneyButton}
+            onPress={() => setShowAddMoney(true)}
+          >
+            <MaterialCommunityIcons
+              name="plus"
+              size={20}
+              color={colors.brand.onPrimary}
+            />
+            <Text style={styles.addMoneyText}>Add Money</Text>
+          </Pressable>
+        </View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <Pressable style={styles.quickAction}>
+            <View style={[styles.quickActionIcon, styles.quickActionSend]}>
+              <MaterialCommunityIcons
+                name="send"
+                size={22}
+                color={colors.brand.accent}
+              />
+            </View>
+            <Text style={styles.quickActionLabel}>Send</Text>
+          </Pressable>
+          <Pressable style={styles.quickAction}>
+            <View style={[styles.quickActionIcon, styles.quickActionHistory]}>
+              <MaterialCommunityIcons
+                name="history"
+                size={22}
+                color={colors.status.info.foreground}
+              />
+            </View>
+            <Text style={styles.quickActionLabel}>History</Text>
+          </Pressable>
+          <Pressable style={styles.quickAction}>
+            <View style={[styles.quickActionIcon, styles.quickActionOffers]}>
+              <MaterialCommunityIcons
+                name="tag-outline"
+                size={22}
+                color={colors.status.warning.foreground}
+              />
+            </View>
+            <Text style={styles.quickActionLabel}>Offers</Text>
+          </Pressable>
+          <Pressable style={styles.quickAction}>
+            <View style={[styles.quickActionIcon, styles.quickActionHelp]}>
+              <MaterialCommunityIcons
+                name="help-circle-outline"
+                size={22}
+                color={colors.status.success.foreground}
+              />
+            </View>
+            <Text style={styles.quickActionLabel}>Help</Text>
+          </Pressable>
+        </View>
+
+        {/* Transactions */}
+        <View style={styles.transactionsSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent Transactions</Text>
+            <Pressable>
+              <Text style={styles.seeAllText}>See All</Text>
+            </Pressable>
+          </View>
+          <View style={styles.transactionsList}>
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={colors.brand.primary} />
+                <Text style={styles.loadingText}>Loading transactions...</Text>
+              </View>
+            ) : transactions.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <MaterialCommunityIcons
+                  name="wallet-outline"
+                  size={48}
+                  color={colors.text.muted}
+                />
+                <Text style={styles.emptyText}>No transactions yet</Text>
+                <Text style={styles.emptySubtext}>Add money to get started</Text>
+              </View>
+            ) : (
+              transactions.map((transaction, index) => (
+                <View
+                  key={transaction.id}
+                  style={[
+                    styles.transactionItem,
+                    index === transactions.length - 1 && styles.transactionItemLast,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.transactionIconWrap,
+                      { backgroundColor: `${getTransactionColor(transaction.type)}15` },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={getTransactionIcon(transaction.type)}
+                      size={22}
+                      color={getTransactionColor(transaction.type)}
+                    />
+                  </View>
+                  <View style={styles.transactionContent}>
+                    <Text style={styles.transactionDescription}>
+                      {transaction.description || getDefaultDescription(transaction.type)}
+                    </Text>
+                    <Text style={styles.transactionDate}>
+                      {formatTransactionDate(transaction.createdAt)}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.transactionAmount,
+                      { color: getTransactionColor(transaction.type) },
+                    ]}
+                  >
+                    {formatAmount(transaction.type, transaction.amount)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+        </View>
+      </ScrollView>
+
+      {/* Add Money Modal */}
+      <Modal
+        visible={showAddMoney}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowAddMoney(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Add Money</Text>
+            <Pressable
+              onPress={() => setShowAddMoney(false)}
+              style={styles.modalCloseButton}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={colors.icon.primary}
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.modalContent}>
+            {/* Amount Input */}
+            <View style={styles.amountInputContainer}>
+              <Text style={styles.currencySymbol}>₹</Text>
+              <TextInput
+                style={styles.amountInput}
+                placeholder="0"
+                placeholderTextColor={colors.text.muted}
+                keyboardType="number-pad"
+                value={addAmount}
+                onChangeText={setAddAmount}
+                maxLength={5}
+              />
+            </View>
+
+            {/* Quick Amount Buttons */}
+            <View style={styles.quickAmounts}>
+              {QUICK_AMOUNTS.map((amount) => (
+                <Pressable
+                  key={amount}
+                  style={[
+                    styles.quickAmountButton,
+                    addAmount === amount.toString() && styles.quickAmountButtonActive,
+                  ]}
+                  onPress={() => setAddAmount(amount.toString())}
+                >
+                  <Text
+                    style={[
+                      styles.quickAmountText,
+                      addAmount === amount.toString() && styles.quickAmountTextActive,
+                    ]}
+                  >
+                    ₹{amount}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Payment Methods */}
+            <View style={styles.paymentMethods}>
+              <Text style={styles.paymentMethodsTitle}>Payment Methods</Text>
+              <Pressable style={styles.paymentMethod}>
+                <View style={styles.paymentMethodIcon}>
+                  <MaterialCommunityIcons
+                    name="cellphone"
+                    size={24}
+                    color={colors.brand.accent}
+                  />
+                </View>
+                <View style={styles.paymentMethodContent}>
+                  <Text style={styles.paymentMethodLabel}>UPI</Text>
+                  <Text style={styles.paymentMethodSubtitle}>Pay via any UPI app</Text>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={22}
+                  color={colors.icon.muted}
+                />
+              </Pressable>
+              <Pressable style={styles.paymentMethod}>
+                <View style={styles.paymentMethodIcon}>
+                  <MaterialCommunityIcons
+                    name="credit-card-outline"
+                    size={24}
+                    color={colors.status.info.foreground}
+                  />
+                </View>
+                <View style={styles.paymentMethodContent}>
+                  <Text style={styles.paymentMethodLabel}>Card</Text>
+                  <Text style={styles.paymentMethodSubtitle}>Credit or Debit card</Text>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={22}
+                  color={colors.icon.muted}
+                />
+              </Pressable>
+              <Pressable style={styles.paymentMethod}>
+                <View style={styles.paymentMethodIcon}>
+                  <MaterialCommunityIcons
+                    name="bank"
+                    size={24}
+                    color={colors.status.success.foreground}
+                  />
+                </View>
+                <View style={styles.paymentMethodContent}>
+                  <Text style={styles.paymentMethodLabel}>Net Banking</Text>
+                  <Text style={styles.paymentMethodSubtitle}>All major banks supported</Text>
+                </View>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={22}
+                  color={colors.icon.muted}
+                />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Add Money CTA */}
+          <View style={styles.modalFooter}>
+            <Pressable
+              style={[
+                styles.addMoneyCtaButton,
+                !addAmount && styles.addMoneyCtaButtonDisabled,
+              ]}
+              onPress={handleAddMoney}
+              disabled={!addAmount}
+            >
+              <Text style={styles.addMoneyCtaText}>
+                {addAmount ? `Add ₹${addAmount}` : 'Enter Amount'}
+              </Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const { fontFamily } = typographyScale;
+const fonts = fontFamily.native;
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.surface.background,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface.elevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 18,
+    color: colors.text.heading,
+  },
+  headerRight: {
+    width: 40,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: spacing['2xl'],
+  },
+  balanceCard: {
+    margin: spacing.lg,
+    backgroundColor: colors.brand.primary,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadows.lg.native,
+  },
+  balanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  walletIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.lg,
+  },
+  balanceLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginBottom: 4,
+  },
+  balanceAmount: {
+    fontFamily: fonts.poppins.bold,
+    fontSize: 32,
+    color: colors.brand.onPrimary,
+  },
+  addMoneyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  addMoneyText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 15,
+    color: colors.brand.onPrimary,
+    marginLeft: spacing.xs,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+  quickAction: {
+    alignItems: 'center',
+  },
+  quickActionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  quickActionSend: {
+    backgroundColor: colors.brand.accentMuted,
+  },
+  quickActionHistory: {
+    backgroundColor: colors.status.info.background,
+  },
+  quickActionOffers: {
+    backgroundColor: colors.status.warning.background,
+  },
+  quickActionHelp: {
+    backgroundColor: colors.status.success.background,
+  },
+  quickActionLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 12,
+    color: colors.text.primary,
+  },
+  transactionsSection: {
+    paddingHorizontal: spacing.lg,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
+  seeAllText: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: colors.brand.accent,
+  },
+  transactionsList: {
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    overflow: 'hidden',
+  },
+  transactionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  transactionItemLast: {
+    borderBottomWidth: 0,
+  },
+  transactionIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  transactionContent: {
+    flex: 1,
+  },
+  transactionDescription: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: colors.text.primary,
+    marginBottom: 2,
+  },
+  transactionDate: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.muted,
+  },
+  transactionAmount: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 15,
+  },
+  loadingContainer: {
+    padding: spacing['2xl'],
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: colors.text.muted,
+    marginTop: spacing.md,
+  },
+  emptyContainer: {
+    padding: spacing['2xl'],
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 16,
+    color: colors.text.primary,
+    marginTop: spacing.md,
+  },
+  emptySubtext: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.text.muted,
+    marginTop: spacing.xs,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.surface.background,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  modalTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 18,
+    color: colors.text.heading,
+  },
+  modalCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface.elevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalContent: {
+    flex: 1,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing['2xl'],
+  },
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xl,
+  },
+  currencySymbol: {
+    fontFamily: fonts.poppins.bold,
+    fontSize: 40,
+    color: colors.text.heading,
+    marginRight: spacing.xs,
+  },
+  amountInput: {
+    fontFamily: fonts.poppins.bold,
+    fontSize: 48,
+    color: colors.text.heading,
+    minWidth: 100,
+    textAlign: 'center',
+  },
+  quickAmounts: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing['2xl'],
+  },
+  quickAmountButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    marginHorizontal: spacing.xs,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border.default,
+    backgroundColor: colors.surface.elevated,
+    alignItems: 'center',
+  },
+  quickAmountButtonActive: {
+    borderColor: colors.brand.primary,
+    backgroundColor: colors.brand.accentMuted,
+  },
+  quickAmountText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.primary,
+  },
+  quickAmountTextActive: {
+    color: colors.brand.primary,
+  },
+  paymentMethods: {
+    marginTop: spacing.lg,
+  },
+  paymentMethodsTitle: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.secondary,
+    marginBottom: spacing.md,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  paymentMethod: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  paymentMethodIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  paymentMethodContent: {
+    flex: 1,
+  },
+  paymentMethodLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 15,
+    color: colors.text.primary,
+  },
+  paymentMethodSubtitle: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.text.muted,
+    marginTop: 2,
+  },
+  modalFooter: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.divider,
+  },
+  addMoneyCtaButton: {
+    backgroundColor: colors.brand.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    ...shadows.button.native,
+  },
+  addMoneyCtaButtonDisabled: {
+    backgroundColor: colors.text.muted,
+  },
+  addMoneyCtaText: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.brand.onPrimary,
+  },
+});
