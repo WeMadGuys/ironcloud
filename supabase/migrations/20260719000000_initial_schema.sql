@@ -2,6 +2,10 @@
 -- Iron Cloud — Database Schema (Supabase / Postgres)
 -- Companion to iron-cloud-technical-architecture.md
 -- Run in Supabase SQL Editor, top to bottom.
+--
+-- Safe to re-run: skips objects that already exist (42710 / 42P07).
+-- If you see "type user_role already exists", the base schema is
+-- already applied — you can skip this file and run 003 + seed only.
 -- ============================================================
 
 create extension if not exists pgcrypto;
@@ -10,31 +14,50 @@ create extension if not exists pgcrypto;
 -- ENUMS
 -- ============================================================
 
-create type user_role as enum (
-  'customer','rider','warehouse_staff','support_agent',
-  'community_admin','ops_admin','super_admin'
-);
+DO $$ BEGIN
+  CREATE TYPE user_role AS ENUM (
+    'customer','rider','warehouse_staff','support_agent',
+    'community_admin','ops_admin','super_admin'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-create type order_status as enum (
-  'draft','booked','pickup_assigned','pickup_in_progress','picked_up',
-  'warehouse_received','sorting','ironing','quality_check','packed',
-  'ready_for_delivery','delivery_assigned','out_for_delivery','delivered',
-  'completed','rated','cancelled','refund_initiated','refund_completed'
-);
+DO $$ BEGIN
+  CREATE TYPE order_status AS ENUM (
+    'draft','booked','pickup_assigned','pickup_in_progress','picked_up',
+    'warehouse_received','sorting','ironing','quality_check','packed',
+    'ready_for_delivery','delivery_assigned','out_for_delivery','delivered',
+    'completed','rated','cancelled','refund_initiated','refund_completed'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-create type job_type as enum ('pickup','delivery');
-create type job_status as enum ('assigned','in_progress','completed','failed','reassigned');
-create type wallet_txn_type as enum ('recharge','debit','refund','cashback','expiry');
-create type notification_channel as enum ('push','sms','whatsapp','email','in_app');
-create type ticket_status as enum ('open','in_progress','escalated','resolved','closed');
-create type slot_type as enum ('pickup','delivery');
-create type payment_method as enum ('wallet','razorpay_direct');
+DO $$ BEGIN CREATE TYPE job_type AS ENUM ('pickup','delivery');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE job_status AS ENUM ('assigned','in_progress','completed','failed','reassigned');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE wallet_txn_type AS ENUM ('recharge','debit','refund','cashback','expiry');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE notification_channel AS ENUM ('push','sms','whatsapp','email','in_app');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE ticket_status AS ENUM ('open','in_progress','escalated','resolved','closed');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE slot_type AS ENUM ('pickup','delivery');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN CREATE TYPE payment_method AS ENUM ('wallet','razorpay_direct');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- ============================================================
 -- IDENTITY & ACCESS
 -- ============================================================
 
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   role user_role not null default 'customer',
   full_name text,
@@ -48,7 +71,7 @@ create table public.profiles (
 -- WAREHOUSES (define before orders/communities reference them)
 -- ============================================================
 
-create table public.warehouses (
+create table if not exists public.warehouses (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   city text,
@@ -60,7 +83,7 @@ create table public.warehouses (
 -- COMMUNITY & SERVICE AREA
 -- ============================================================
 
-create table public.communities (
+create table if not exists public.communities (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   city text not null,
@@ -70,7 +93,7 @@ create table public.communities (
   created_at timestamptz default now()
 );
 
-create table public.addresses (
+create table if not exists public.addresses (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid references public.profiles(id) not null,
   community_id uuid references public.communities(id) not null,
@@ -80,7 +103,7 @@ create table public.addresses (
   created_at timestamptz default now()
 );
 
-create table public.service_slots (
+create table if not exists public.service_slots (
   id uuid primary key default gen_random_uuid(),
   community_id uuid references public.communities(id) not null,
   slot_type slot_type not null,
@@ -96,7 +119,7 @@ create table public.service_slots (
 -- RIDERS
 -- ============================================================
 
-create table public.riders (
+create table if not exists public.riders (
   id uuid primary key references public.profiles(id),
   vehicle_number text,
   kyc_status text default 'pending',
@@ -107,7 +130,7 @@ create table public.riders (
 );
 
 -- Proper many-to-many instead of an unenforced array
-create table public.rider_communities (
+create table if not exists public.rider_communities (
   rider_id uuid references public.riders(id) on delete cascade,
   community_id uuid references public.communities(id) on delete cascade,
   primary key (rider_id, community_id)
@@ -117,7 +140,7 @@ create table public.rider_communities (
 -- CATALOG & PRICING (Phase 2+ ready — new service lines are rows, not migrations)
 -- ============================================================
 
-create table public.services (
+create table if not exists public.services (
   id uuid primary key default gen_random_uuid(),
   category text not null default 'ironing', -- ironing/laundry/dry_cleaning/shoe_cleaning/repair
   name text not null,
@@ -126,7 +149,7 @@ create table public.services (
   created_at timestamptz default now()
 );
 
-create table public.pricing_rules (
+create table if not exists public.pricing_rules (
   id uuid primary key default gen_random_uuid(),
   service_id uuid references public.services(id) not null,
   community_id uuid references public.communities(id), -- null = platform default
@@ -136,7 +159,7 @@ create table public.pricing_rules (
   effective_to timestamptz
 );
 
-create table public.coupons (
+create table if not exists public.coupons (
   id uuid primary key default gen_random_uuid(),
   code text unique not null,
   discount_type text not null, -- flat / percentage
@@ -154,7 +177,7 @@ create table public.coupons (
 -- ORDERS (core)
 -- ============================================================
 
-create table public.orders (
+create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_number text unique not null,        -- e.g. IC-20260719-0001, generated by API layer
   customer_id uuid references public.profiles(id) not null,
@@ -176,7 +199,7 @@ create table public.orders (
   updated_at timestamptz default now()
 );
 
-create table public.order_items (
+create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) on delete cascade not null,
   service_id uuid references public.services(id) not null,
@@ -189,7 +212,7 @@ create table public.order_items (
   created_at timestamptz default now()
 );
 
-create table public.order_events (
+create table if not exists public.order_events (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) on delete cascade not null,
   status order_status not null,
@@ -198,9 +221,9 @@ create table public.order_events (
   note text,
   created_at timestamptz default now()
 );
-create index idx_order_events_order on public.order_events (order_id, created_at);
+create index if not exists idx_order_events_order on public.order_events (order_id, created_at);
 
-create table public.rider_jobs (
+create table if not exists public.rider_jobs (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) not null,
   rider_id uuid references public.riders(id),
@@ -215,20 +238,20 @@ create table public.rider_jobs (
   created_at timestamptz default now(),
   completed_at timestamptz
 );
-create index idx_rider_jobs_rider on public.rider_jobs (rider_id, status);
+create index if not exists idx_rider_jobs_rider on public.rider_jobs (rider_id, status);
 
 -- ============================================================
 -- WALLET (ledger pattern — balance is derived, never edited directly)
 -- ============================================================
 
-create table public.wallets (
+create table if not exists public.wallets (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid references public.profiles(id) unique not null,
   balance numeric(10,2) default 0 not null,
   updated_at timestamptz default now()
 );
 
-create table public.wallet_transactions (
+create table if not exists public.wallet_transactions (
   id uuid primary key default gen_random_uuid(),
   wallet_id uuid references public.wallets(id) not null,
   type wallet_txn_type not null,
@@ -239,13 +262,13 @@ create table public.wallet_transactions (
   description text,
   created_at timestamptz default now()
 );
-create index idx_wallet_txn_wallet on public.wallet_transactions (wallet_id, created_at);
+create index if not exists idx_wallet_txn_wallet on public.wallet_transactions (wallet_id, created_at);
 
 -- ============================================================
 -- NOTIFICATIONS
 -- ============================================================
 
-create table public.notifications (
+create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   recipient_id uuid references public.profiles(id) not null,
   channel notification_channel not null,
@@ -262,7 +285,7 @@ create table public.notifications (
 -- SUPPORT
 -- ============================================================
 
-create table public.support_tickets (
+create table if not exists public.support_tickets (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid references public.profiles(id) not null,
   order_id uuid references public.orders(id),
@@ -275,7 +298,7 @@ create table public.support_tickets (
   resolved_at timestamptz
 );
 
-create table public.ticket_messages (
+create table if not exists public.ticket_messages (
   id uuid primary key default gen_random_uuid(),
   ticket_id uuid references public.support_tickets(id) on delete cascade not null,
   sender_id uuid references public.profiles(id),
@@ -288,7 +311,7 @@ create table public.ticket_messages (
 -- RATINGS & AUDIT
 -- ============================================================
 
-create table public.ratings (
+create table if not exists public.ratings (
   id uuid primary key default gen_random_uuid(),
   order_id uuid references public.orders(id) unique not null,
   customer_id uuid references public.profiles(id) not null,
@@ -298,7 +321,7 @@ create table public.ratings (
   created_at timestamptz default now()
 );
 
-create table public.audit_logs (
+create table if not exists public.audit_logs (
   id uuid primary key default gen_random_uuid(),
   actor_id uuid references public.profiles(id),
   action text not null,
@@ -323,6 +346,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
+drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
@@ -339,6 +363,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
+drop trigger if exists on_profile_created_wallet on public.profiles;
 create trigger on_profile_created_wallet
   after insert on public.profiles
   for each row execute function public.handle_new_customer_wallet();
@@ -352,10 +377,12 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists set_orders_updated_at on public.orders;
 create trigger set_orders_updated_at
   before update on public.orders
   for each row execute function public.set_updated_at();
 
+drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
   before update on public.profiles
   for each row execute function public.set_updated_at();
@@ -388,48 +415,62 @@ returns user_role as $$
 $$ language sql stable security definer;
 
 -- Profiles: read/update own row only
+drop policy if exists "own profile read" on public.profiles;
 create policy "own profile read" on public.profiles
   for select using (id = auth.uid());
+drop policy if exists "own profile update" on public.profiles;
 create policy "own profile update" on public.profiles
   for update using (id = auth.uid());
 
 -- Orders: customer sees own, rider sees assigned, staff/admin see all
+drop policy if exists "customer reads own orders" on public.orders;
 create policy "customer reads own orders" on public.orders
   for select using (customer_id = auth.uid());
+drop policy if exists "rider reads assigned orders" on public.orders;
 create policy "rider reads assigned orders" on public.orders
   for select using (id in (select order_id from public.rider_jobs where rider_id = auth.uid()));
+drop policy if exists "staff and admin read all orders" on public.orders;
 create policy "staff and admin read all orders" on public.orders
   for select using (public.current_role() in ('warehouse_staff','support_agent','ops_admin','super_admin'));
 
+drop policy if exists "customer reads own order items" on public.order_items;
 create policy "customer reads own order items" on public.order_items
   for select using (order_id in (select id from public.orders where customer_id = auth.uid()));
 
+drop policy if exists "customer reads own order events" on public.order_events;
 create policy "customer reads own order events" on public.order_events
   for select using (order_id in (select id from public.orders where customer_id = auth.uid()));
 
 -- Wallets: owner reads only; all writes via API + service role
+drop policy if exists "own wallet read" on public.wallets;
 create policy "own wallet read" on public.wallets
   for select using (customer_id = auth.uid());
+drop policy if exists "own wallet transactions read" on public.wallet_transactions;
 create policy "own wallet transactions read" on public.wallet_transactions
   for select using (wallet_id in (select id from public.wallets where customer_id = auth.uid()));
 
 -- Rider jobs: rider sees only their own assignments (updates go through the API,
 -- since completing a job triggers an order status transition + notification)
+drop policy if exists "rider reads own jobs" on public.rider_jobs;
 create policy "rider reads own jobs" on public.rider_jobs
   for select using (rider_id = auth.uid());
 
 -- Support: customer + assigned agent only
+drop policy if exists "customer reads own tickets" on public.support_tickets;
 create policy "customer reads own tickets" on public.support_tickets
   for select using (customer_id = auth.uid());
+drop policy if exists "agent reads assigned tickets" on public.support_tickets;
 create policy "agent reads assigned tickets" on public.support_tickets
   for select using (assigned_agent_id = auth.uid() or public.current_role() in ('ops_admin','super_admin'));
 
 -- Ticket messages: safe for direct client insert (no side effects beyond the row)
+drop policy if exists "read own ticket messages" on public.ticket_messages;
 create policy "read own ticket messages" on public.ticket_messages
   for select using (
     ticket_id in (select id from public.support_tickets where customer_id = auth.uid())
     or sender_id = auth.uid()
   );
+drop policy if exists "send own ticket message" on public.ticket_messages;
 create policy "send own ticket message" on public.ticket_messages
   for insert with check (
     sender_id = auth.uid()
@@ -437,5 +478,6 @@ create policy "send own ticket message" on public.ticket_messages
   );
 
 -- Audit logs: admin-read only, never client-writable
+drop policy if exists "admin reads audit logs" on public.audit_logs;
 create policy "admin reads audit logs" on public.audit_logs
   for select using (public.current_role() in ('ops_admin','super_admin'));

@@ -40,14 +40,21 @@ export type CouponResult = {
 };
 
 /**
- * Gets the current user ID (real or mock)
+ * Gets the current user ID (real or mock).
+ * Prefers getSession (local) so onboarding works right after setSession.
  */
 async function getCurrentUserId(): Promise<string> {
   if (IS_MOCK_AUTH) {
     return MOCK_USER_ID;
   }
-  
-  const { data: { user } } = await supabase.auth.getUser();
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const sessionUserId = sessionData.session?.user?.id;
+  if (sessionUserId) return sessionUserId;
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) {
     throw new Error('User not authenticated');
   }

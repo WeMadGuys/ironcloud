@@ -1,0 +1,7 @@
+.filterBar {
+  display: flex;
+  gap: var(--ic-spacing-md);
+  margin-bottom: var(--ic-spacing-lg);
+  flex-wrap: wrap;
+  align-items: center;
+}

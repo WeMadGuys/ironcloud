@@ -230,6 +230,14 @@ export function ActiveOrderCard({ booking, onBookAgain }: Props) {
                         {booking.totalItemCount}
                       </Text>
                     </View>
+                    {booking.totalAmount > 0 && (
+                      <View style={styles.billRow}>
+                        <Text style={styles.billLabel}>Bill amount</Text>
+                        <Text style={styles.billValue}>
+                          ₹{booking.totalAmount}
+                        </Text>
+                      </View>
+                    )}
                   </>
                 ) : (
                   <Text style={[styles.detailBodyText, styles.detailMuted]}>
@@ -527,6 +535,22 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.bold,
     fontSize: 16,
     color: colors.text.heading,
+  },
+  billRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+  },
+  billLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  billValue: {
+    fontFamily: fonts.poppins.bold,
+    fontSize: 16,
+    color: colors.brand.primary,
   },
   deliveredFooter: {
     marginTop: spacing.md,

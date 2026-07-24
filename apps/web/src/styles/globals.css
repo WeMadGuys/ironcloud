@@ -1,0 +1,80 @@
+@import './tokens.css';
+@import './utilities.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-base);
+  line-height: 1.4;
+  color: var(--ic-text-primary);
+  background-color: var(--ic-surface-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--ic-font-display);
+  color: var(--ic-text-heading);
+  font-weight: 600;
+}
+
+a {
+  color: var(--ic-text-link);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ic-border-focus);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: var(--ic-brand-accent-muted);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -218,9 +218,9 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.userName}>{profile?.fullName || 'User'}</Text>
           <Text style={styles.userPhone}>+91 {profile?.phone || '9999999999'}</Text>
-          {profile?.email && (
+          {profile?.email ? (
             <Text style={styles.userEmail}>{profile.email}</Text>
-          )}
+          ) : null}
         </View>
 
         {/* Address Card */}
@@ -261,9 +261,9 @@ export default function ProfileScreen() {
                 <Text style={[styles.menuLabel, item.color && { color: item.color }]}>
                   {item.label}
                 </Text>
-                {item.subtitle && (
+                {item.subtitle ? (
                   <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                )}
+                ) : null}
               </View>
               {item.showArrow && (
                 <MaterialCommunityIcons

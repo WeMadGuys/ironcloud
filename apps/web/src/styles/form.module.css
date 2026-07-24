@@ -1,0 +1,64 @@
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-md);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-xs);
+}
+
+.label {
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+  color: var(--ic-text-primary);
+}
+
+.input,
+.select {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--ic-spacing-sm) var(--ic-spacing-md);
+  border: 1.5px solid var(--ic-border-input);
+  border-radius: var(--ic-radius-input);
+  background: var(--ic-surface-input);
+  color: var(--ic-text-heading);
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-sm);
+  outline: none;
+  transition: border-color var(--ic-transition-fast);
+}
+
+.input:focus,
+.select:focus {
+  border-color: var(--ic-border-focus);
+}
+
+.input::placeholder {
+  color: var(--ic-text-placeholder);
+}
+
+.hint {
+  font-size: var(--ic-font-size-xs);
+  color: var(--ic-text-muted);
+}
+
+.error {
+  font-size: var(--ic-font-size-xs);
+  font-weight: 500;
+  color: var(--ic-status-error);
+}
+
+.filtersGrow {
+  margin-left: auto;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-xs);
+  justify-content: flex-end;
+}

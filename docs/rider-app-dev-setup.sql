@@ -32,6 +32,13 @@ FROM public.orders o
 WHERE o.status NOT IN ('completed', 'rated', 'cancelled')
 ON CONFLICT DO NOTHING;
 
+-- Also cover every active community (so new customer bookings still reach the mock rider)
+INSERT INTO public.rider_communities (rider_id, community_id)
+SELECT '00000000-0000-0000-0000-000000000002'::uuid, c.id
+FROM public.communities c
+WHERE c.status = 'active'
+ON CONFLICT DO NOTHING;
+
 -- Backfill pickup jobs for active orders without a pickup job
 INSERT INTO public.rider_jobs (order_id, rider_id, job_type, status, scheduled_start, scheduled_end)
 SELECT

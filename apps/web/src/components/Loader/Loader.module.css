@@ -1,0 +1,23 @@
+.wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ic-spacing-4xl);
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--ic-border-default);
+  border-top-color: var(--ic-brand-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.fullPage {
+  min-height: 60vh;
+}

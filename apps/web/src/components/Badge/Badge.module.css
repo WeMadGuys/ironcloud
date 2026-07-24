@@ -1,0 +1,31 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sm {
+  padding: 4px 10px;
+  font-size: var(--ic-font-size-sm);
+  border-radius: var(--ic-radius-badge);
+}
+
+.md {
+  padding: var(--ic-spacing-xs) var(--ic-spacing-md);
+  font-size: var(--ic-font-size-base);
+  border-radius: var(--ic-radius-badge);
+}
+
+.default { background: var(--ic-surface-section); color: var(--ic-text-secondary); }
+.success { background: var(--ic-status-success-bg); color: var(--ic-status-success-text); }
+.warning { background: var(--ic-status-warning-bg); color: var(--ic-status-warning-text); }
+.error { background: var(--ic-status-error-bg); color: var(--ic-status-error-text); }
+.info { background: var(--ic-status-info-bg); color: var(--ic-status-info-text); }
+.purple { background: var(--ic-status-purple-bg); color: var(--ic-status-purple); }
+.pendingPickup { background: var(--ic-status-info-bg); color: var(--ic-status-info); }
+.pickedUp { background: var(--ic-status-info-bg); color: var(--ic-status-info); }
+.ironing { background: var(--ic-status-warning-bg); color: var(--ic-status-warning); }
+.outForDelivery { background: var(--ic-status-purple-bg); color: var(--ic-status-purple); }
+.delivered { background: var(--ic-status-success-bg); color: var(--ic-status-success-text); }
+.cancelled { background: var(--ic-status-error-bg); color: var(--ic-status-error-text); }

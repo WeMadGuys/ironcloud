@@ -91,6 +91,47 @@ async function getCurrentUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+/**
+ * Pick a pickup rider for the community.
+ * Prefers the mock rider when mapped (keeps customer↔rider E2E working),
+ * otherwise the first community-assigned rider, else mock fallback.
+ */
+async function resolvePickupRider(communityId: string): Promise<{
+  riderId: string;
+  riderName: string;
+  riderPhone: string | null;
+}> {
+  const { data: links, error } = await (supabase
+    .from('rider_communities') as ReturnType<typeof supabase.from>)
+    .select('rider_id')
+    .eq('community_id', communityId);
+
+  if (error) {
+    console.warn('[Booking] rider_communities lookup failed:', error.message);
+  }
+
+  const riderIds = ((links ?? []) as { rider_id: string }[]).map((row) => row.rider_id);
+
+  const riderId =
+    (IS_MOCK_AUTH && riderIds.includes(MOCK_RIDER_ID) ? MOCK_RIDER_ID : null) ??
+    riderIds[0] ??
+    MOCK_RIDER_ID;
+
+  const { data: profile } = await (supabase
+    .from('profiles') as ReturnType<typeof supabase.from>)
+    .select('full_name, phone')
+    .eq('id', riderId)
+    .maybeSingle();
+
+  const profileRow = profile as { full_name: string | null; phone: string | null } | null;
+
+  return {
+    riderId,
+    riderName: profileRow?.full_name?.trim() || 'Pickup Partner',
+    riderPhone: profileRow?.phone ?? null,
+  };
+}
+
 function buildWindow(dayOffset: number, startHour: number, endHour: number) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
@@ -647,10 +688,7 @@ export async function createBooking(input: CreateBookingInput): Promise<{
   }
 
   const orderNumber = generateOrderNumber();
-  const mockRider = {
-    rider_name: 'Ravi Kumar',
-    rider_phone: '9876543210',
-  };
+  const assignedRider = await resolvePickupRider(addressRow.community_id);
 
   const { data: order, error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
@@ -687,13 +725,17 @@ export async function createBooking(input: CreateBookingInput): Promise<{
       order_id: orderRow.id,
       status: 'pickup_assigned',
       note: 'Pickup partner assigned',
-      metadata: mockRider,
+      metadata: {
+        rider_id: assignedRider.riderId,
+        rider_name: assignedRider.riderName,
+        rider_phone: assignedRider.riderPhone,
+      },
     },
   ]);
 
   await (supabase.from('rider_jobs') as ReturnType<typeof supabase.from>).insert({
     order_id: orderRow.id,
-    rider_id: MOCK_RIDER_ID,
+    rider_id: assignedRider.riderId,
     job_type: 'pickup',
     status: 'assigned',
     scheduled_start: pickupWindow.start.toISOString(),

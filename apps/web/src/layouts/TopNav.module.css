@@ -1,0 +1,124 @@
+.topnav {
+  height: var(--ic-topnav-height);
+  background: var(--ic-surface-elevated);
+  border-bottom: 1px solid var(--ic-border-divider);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--ic-spacing-xl);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  font-family: var(--ic-font-display);
+  font-size: var(--ic-font-size-xl);
+  font-weight: 700;
+  color: var(--ic-text-heading);
+}
+
+.subtitle {
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-secondary);
+}
+
+.right {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+}
+
+.datePicker {
+  padding: var(--ic-spacing-sm) var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-input);
+  background: var(--ic-surface-input);
+  color: var(--ic-text-primary);
+  font-size: var(--ic-font-size-sm);
+}
+
+.iconButton {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ic-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ic-text-secondary);
+  transition: background var(--ic-transition-fast);
+}
+
+.iconButton:hover {
+  background: var(--ic-surface-section);
+  color: var(--ic-text-heading);
+}
+
+.badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--ic-radius-full);
+  background: var(--ic-status-error);
+  color: var(--ic-text-inverse);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profileMenu {
+  position: relative;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + var(--ic-spacing-sm));
+  right: 0;
+  min-width: 200px;
+  background: var(--ic-surface-elevated);
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-md);
+  box-shadow: var(--ic-shadow-md);
+  padding: var(--ic-spacing-sm);
+  z-index: 200;
+}
+
+.dropdownItem {
+  display: block;
+  width: 100%;
+  padding: var(--ic-spacing-sm) var(--ic-spacing-md);
+  text-align: left;
+  border-radius: var(--ic-radius-sm);
+  color: var(--ic-text-primary);
+  font-size: var(--ic-font-size-base);
+  transition: background var(--ic-transition-fast);
+}
+
+.dropdownItem:hover {
+  background: var(--ic-surface-section);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ic-radius-full);
+  background: var(--ic-brand-accent-muted);
+  color: var(--ic-brand-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--ic-font-size-sm);
+}

@@ -1,0 +1,188 @@
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: var(--ic-sidebar-width);
+  background: var(--ic-sidebar-bg);
+  border-right: 1px solid var(--ic-sidebar-border);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  transition: width var(--ic-transition-base);
+  overflow: hidden;
+}
+
+.collapsed {
+  width: var(--ic-sidebar-width-collapsed);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  padding: var(--ic-spacing-lg) var(--ic-spacing-lg);
+  border-bottom: 1px solid var(--ic-sidebar-border);
+  min-height: 64px;
+}
+
+.logoIcon {
+  width: 36px;
+  height: 36px;
+  background: var(--ic-brand-accent);
+  border-radius: var(--ic-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--ic-text-inverse);
+  font-weight: 800;
+  font-size: var(--ic-font-size-sm);
+}
+
+.logoText {
+  font-family: var(--ic-font-display);
+  font-weight: 700;
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-sidebar-text);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--ic-spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-xs);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  height: var(--ic-sidebar-item-height);
+  padding: 0 var(--ic-spacing-md);
+  border-radius: var(--ic-radius-sm);
+  color: var(--ic-sidebar-text-muted);
+  text-decoration: none;
+  font-size: var(--ic-font-size-base);
+  font-weight: 500;
+  transition: background var(--ic-transition-fast), color var(--ic-transition-fast);
+  white-space: nowrap;
+}
+
+.navItem:hover {
+  background: var(--ic-sidebar-item-hover);
+  color: var(--ic-sidebar-text);
+  text-decoration: none;
+}
+
+.active {
+  background: var(--ic-sidebar-item-active-bg);
+  color: var(--ic-sidebar-text);
+}
+
+.active .navIcon {
+  color: var(--ic-sidebar-item-active);
+}
+
+.navIcon {
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.user {
+  padding: var(--ic-spacing-md);
+  border-top: 1px solid var(--ic-sidebar-border);
+}
+
+.userCard {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  padding: var(--ic-spacing-md);
+  border-radius: var(--ic-radius-sm);
+  background: var(--ic-sidebar-item-hover);
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ic-radius-full);
+  background: var(--ic-brand-accent-muted);
+  color: var(--ic-brand-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: var(--ic-font-size-sm);
+  flex-shrink: 0;
+}
+
+.userName {
+  font-size: var(--ic-font-size-base);
+  font-weight: 600;
+  color: var(--ic-sidebar-text);
+}
+
+.userRole {
+  font-size: var(--ic-font-size-xs);
+  color: var(--ic-sidebar-text-muted);
+  text-transform: capitalize;
+}
+
+.logout {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  height: var(--ic-sidebar-item-height);
+  padding: 0 var(--ic-spacing-md);
+  border-radius: var(--ic-radius-sm);
+  color: var(--ic-sidebar-text-muted);
+  text-decoration: none;
+  font-size: var(--ic-font-size-base);
+  font-weight: 500;
+  transition: background var(--ic-transition-fast), color var(--ic-transition-fast);
+  white-space: nowrap;
+  width: 100%;
+  margin-top: var(--ic-spacing-xs);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.logout:hover {
+  background: var(--ic-sidebar-item-hover);
+  color: var(--ic-sidebar-text);
+}
+
+.toggle {
+  position: absolute;
+  right: -12px;
+  top: 72px;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ic-radius-full);
+  background: var(--ic-surface-elevated);
+  border: 1px solid var(--ic-border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--ic-shadow-sm);
+  z-index: 101;
+  color: var(--ic-text-secondary);
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+}

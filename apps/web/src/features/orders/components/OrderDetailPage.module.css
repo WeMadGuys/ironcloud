@@ -1,0 +1,23 @@
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  margin-bottom: var(--ic-spacing-lg);
+}
+
+.noteInput {
+  width: 100%;
+  padding: var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-input);
+  background: var(--ic-surface-input);
+  color: var(--ic-text-primary);
+  font-family: inherit;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-md);
+}

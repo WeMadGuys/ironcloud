@@ -1,0 +1,20 @@
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--ic-surface-section) 25%,
+    var(--ic-border-light) 50%,
+    var(--ic-surface-section) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--ic-radius-sm);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.text { height: 14px; margin-bottom: var(--ic-spacing-sm); }
+.title { height: 24px; width: 60%; margin-bottom: var(--ic-spacing-md); }
+.card { height: 120px; border-radius: var(--ic-radius-card); }

@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { IS_DEVELOPMENT, MOCK_OTP_CODE } from '../../config/auth';
+import { AUTH_PROVIDER, MOCK_OTP_CODE } from '../../config/auth';
 import { colors, radius, spacing, typography } from '@ironcloud/ui';
 
 type DevModeNoticeProps = {
@@ -12,15 +12,13 @@ type DevModeNoticeProps = {
 
 /**
  * Development mode notice component.
- * Only renders in development mode.
- * Shows helpful hints like the mock OTP code.
+ * Only renders for mock auth (shows the fixed OTP hint).
  */
 export const DevModeNotice = ({
   message,
   showOtpHint = true,
 }: DevModeNoticeProps) => {
-  // Don't render in production
-  if (!IS_DEVELOPMENT) {
+  if (AUTH_PROVIDER !== 'mock') {
     return null;
   }
 
@@ -36,7 +34,7 @@ export const DevModeNotice = ({
             Use OTP: <Text style={styles.code}>{MOCK_OTP_CODE}</Text>
           </Text>
         )}
-        {message && <Text style={styles.message}>{message}</Text>}
+        {message ? <Text style={styles.message}>{message}</Text> : null}
       </View>
     </View>
   );

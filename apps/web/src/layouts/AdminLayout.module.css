@@ -1,0 +1,30 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main {
+  flex: 1;
+  margin-left: var(--ic-sidebar-width);
+  transition: margin-left var(--ic-transition-base);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mainCollapsed {
+  margin-left: var(--ic-sidebar-width-collapsed);
+}
+
+.content {
+  flex: 1;
+  padding: var(--ic-spacing-xl);
+  overflow: auto;
+}
+
+@media (max-width: 768px) {
+  .main,
+  .mainCollapsed {
+    margin-left: 0;
+  }
+}

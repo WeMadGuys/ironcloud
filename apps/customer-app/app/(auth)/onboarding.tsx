@@ -221,9 +221,9 @@ export default function OnboardingScreen() {
                 color={colors.icon.secondary}
               />
             </Pressable>
-            {errors.community && (
+            {errors.community ? (
               <Text style={styles.errorText}>{errors.community}</Text>
-            )}
+            ) : null}
             <Pressable style={styles.linkRow}>
               <Text style={styles.linkText}>Can't find your apartment?</Text>
             </Pressable>
@@ -275,9 +275,9 @@ export default function OnboardingScreen() {
                   }}
                 />
               </View>
-              {errors.flatNumber && (
+              {errors.flatNumber ? (
                 <Text style={styles.errorText}>{errors.flatNumber}</Text>
-              )}
+              ) : null}
             </View>
           </View>
 
@@ -308,9 +308,9 @@ export default function OnboardingScreen() {
                 autoCapitalize="words"
               />
             </View>
-            {errors.fullName && (
+            {errors.fullName ? (
               <Text style={styles.errorText}>{errors.fullName}</Text>
-            )}
+            ) : null}
           </View>
 
           {/* Email Address */}
@@ -376,7 +376,7 @@ export default function OnboardingScreen() {
                 </Pressable>
               )}
             </View>
-            {promoMessage && (
+            {promoMessage ? (
               <Text
                 style={[
                   styles.promoMessage,
@@ -385,15 +385,15 @@ export default function OnboardingScreen() {
               >
                 {promoMessage}
               </Text>
-            )}
+            ) : null}
           </View>
         </View>
 
-        {errors.submit && (
+        {errors.submit ? (
           <View style={styles.submitErrorContainer}>
             <Text style={styles.submitErrorText}>{errors.submit}</Text>
           </View>
-        )}
+        ) : null}
 
         <View style={styles.footer}>
           <Pressable
@@ -404,14 +404,14 @@ export default function OnboardingScreen() {
             {isSubmitting ? (
               <ActivityIndicator size="small" color={colors.brand.onPrimary} />
             ) : (
-              <>
+              <View style={styles.continueButtonContent}>
                 <Text style={styles.continueText}>Continue</Text>
                 <MaterialCommunityIcons
                   name="arrow-right"
                   size={20}
                   color={colors.brand.onPrimary}
                 />
-              </>
+              </View>
             )}
           </Pressable>
 
@@ -673,6 +673,12 @@ const styles = StyleSheet.create({
   },
   continueButtonDisabled: {
     opacity: 0.7,
+  },
+  continueButtonContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   continueText: {
     fontFamily: fonts.poppins.semibold,

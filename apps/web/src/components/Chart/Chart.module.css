@@ -1,0 +1,32 @@
+.chart {
+  width: 100%;
+  min-height: 280px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-md);
+  margin-top: var(--ic-spacing-lg);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-xs);
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-secondary);
+}
+
+.legendDot1 { background: var(--ic-chart-1); }
+.legendDot2 { background: var(--ic-chart-2); }
+.legendDot3 { background: var(--ic-chart-3); }
+.legendDot4 { background: var(--ic-chart-4); }
+.legendDot5 { background: var(--ic-chart-5); }
+.legendDot6 { background: var(--ic-chart-6); }
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--ic-radius-full);
+}

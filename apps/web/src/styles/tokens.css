@@ -1,0 +1,162 @@
+/**
+ * CSS custom properties generated from @ironcloud/ui design tokens.
+ * Keep in sync with packages/ui/src/tokens/*
+ */
+
+:root,
+[data-theme='light'] {
+  /* Brand */
+  --ic-brand-primary: #0e2a4a;
+  --ic-brand-primary-pressed: #0a2039;
+  --ic-brand-accent: #5b9bd5;
+  --ic-brand-accent-pressed: #3b6fd9;
+  --ic-brand-accent-soft: #bbd3ec;
+  --ic-brand-accent-muted: #e4eef9;
+  --ic-brand-link: #3b6fd9;
+  --ic-brand-on-primary: #ffffff;
+  --ic-brand-on-accent: #ffffff;
+
+  /* Surface */
+  --ic-surface-background: #f7f9fc;
+  --ic-surface-section: #f4f8fc;
+  --ic-surface-elevated: #ffffff;
+  --ic-surface-card: #ffffff;
+  --ic-surface-input: #ffffff;
+  --ic-surface-disabled: #f4f8fc;
+  --ic-surface-overlay: rgba(11, 37, 69, 0.48);
+  --ic-surface-overlay-light: rgba(11, 37, 69, 0.24);
+
+  /* Text */
+  --ic-text-heading: #14294d;
+  --ic-text-primary: #33455e;
+  --ic-text-secondary: #7a8699;
+  --ic-text-muted: #8a94a6;
+  --ic-text-placeholder: #9aa5b1;
+  --ic-text-disabled: #9aa5b1;
+  --ic-text-inverse: #ffffff;
+  --ic-text-link: #3b6fd9;
+
+  /* Border */
+  --ic-border-default: #e3ecf6;
+  --ic-border-light: #e3ecf6;
+  --ic-border-divider: #e3ecf6;
+  --ic-border-input: #bbd3ec;
+  --ic-border-focus: #5b9bd5;
+  --ic-border-error: #dc2626;
+
+  /* Status */
+  --ic-status-success: #16a34a;
+  --ic-status-success-bg: #dcfce7;
+  --ic-status-success-text: #15803d;
+  --ic-status-warning: #f97316;
+  --ic-status-warning-bg: #fef3c7;
+  --ic-status-warning-text: #c2740a;
+  --ic-status-error: #dc2626;
+  --ic-status-error-bg: #fee2e2;
+  --ic-status-error-text: #b91c1c;
+  --ic-status-info: #2563eb;
+  --ic-status-info-bg: #dbeafe;
+  --ic-status-info-text: #0284c7;
+  --ic-status-purple: #7c3aed;
+  --ic-status-purple-bg: #ede9fe;
+
+  /* Sidebar */
+  --ic-sidebar-bg: #0b1e3f;
+  --ic-sidebar-bg-dark: #081528;
+  --ic-sidebar-item-active: #5b9bd5;
+  --ic-sidebar-item-active-bg: #1b335c;
+  --ic-sidebar-item-hover: rgba(255, 255, 255, 0.08);
+  --ic-sidebar-text: #ffffff;
+  --ic-sidebar-text-muted: #8a94a6;
+  --ic-sidebar-border: #1b335c;
+  --ic-sidebar-width: 260px;
+  --ic-sidebar-width-collapsed: 72px;
+
+  /* Chart */
+  --ic-chart-1: #6366f1;
+  --ic-chart-2: #8b5cf6;
+  --ic-chart-3: #f97316;
+  --ic-chart-4: #3b82f6;
+  --ic-chart-5: #14b8a6;
+  --ic-chart-6: #84cc16;
+  --ic-chart-fill: #e4e7fb;
+
+  /* Trend */
+  --ic-trend-positive: #16a34a;
+  --ic-trend-positive-bg: #dcfce7;
+  --ic-trend-negative: #dc2626;
+  --ic-trend-negative-bg: #fee2e2;
+  --ic-trend-neutral: #7a8699;
+  --ic-trend-neutral-bg: #f4f8fc;
+
+  /* Spacing */
+  --ic-spacing-none: 0;
+  --ic-spacing-xs: 4px;
+  --ic-spacing-sm: 8px;
+  --ic-spacing-md: 12px;
+  --ic-spacing-lg: 16px;
+  --ic-spacing-xl: 24px;
+  --ic-spacing-2xl: 32px;
+  --ic-spacing-3xl: 40px;
+  --ic-spacing-4xl: 48px;
+  --ic-spacing-card-padding: 20px;
+  --ic-spacing-section: 32px;
+
+  /* Radius */
+  --ic-radius-none: 0;
+  --ic-radius-sm: 6px;
+  --ic-radius-md: 12px;
+  --ic-radius-lg: 16px;
+  --ic-radius-xl: 24px;
+  --ic-radius-full: 999px;
+  --ic-radius-card: 16px;
+  --ic-radius-button: 12px;
+  --ic-radius-input: 12px;
+  --ic-radius-modal: 24px;
+  --ic-radius-badge: 6px;
+
+  /* Shadows */
+  --ic-shadow-none: none;
+  --ic-shadow-sm: 0 2px 8px rgba(11, 37, 69, 0.06);
+  --ic-shadow-md: 0 8px 20px rgba(11, 37, 69, 0.12);
+  --ic-shadow-lg: 0 20px 48px rgba(11, 37, 69, 0.18);
+
+  /* Typography */
+  --ic-font-display: var(--font-poppins), Poppins, -apple-system, BlinkMacSystemFont, sans-serif;
+  --ic-font-body: var(--font-inter), Inter, -apple-system, BlinkMacSystemFont, sans-serif;
+  --ic-font-size-xs: 12px;
+  --ic-font-size-sm: 13px;
+  --ic-font-size-base: 14px;
+  --ic-font-size-md: 15.5px;
+  --ic-font-size-lg: 16px;
+  --ic-font-size-xl: 22px;
+  --ic-font-size-2xl: 24px;
+  --ic-font-size-3xl: 29px;
+
+  /* Animation */
+  --ic-transition-fast: 150ms ease;
+  --ic-transition-base: 250ms ease;
+  --ic-transition-slow: 400ms ease;
+
+  /* Layout */
+  --ic-topnav-height: 64px;
+  --ic-sidebar-item-height: 44px;
+}
+
+[data-theme='dark'] {
+  --ic-brand-primary: #e4eef9;
+  --ic-brand-primary-pressed: #bbd3ec;
+  --ic-brand-accent: #5b9bd5;
+  --ic-surface-background: #0b1e3f;
+  --ic-surface-section: #151b2e;
+  --ic-surface-elevated: #0e2a4a;
+  --ic-surface-card: #0e2a4a;
+  --ic-text-heading: #f7f9fc;
+  --ic-text-primary: #e3ecf6;
+  --ic-text-secondary: #9aa5b1;
+  --ic-text-muted: #8a94a6;
+  --ic-border-default: #2b3245;
+  --ic-border-divider: #2b3245;
+  --ic-sidebar-bg: #081528;
+  --ic-chart-fill: #1e1b4b;
+}

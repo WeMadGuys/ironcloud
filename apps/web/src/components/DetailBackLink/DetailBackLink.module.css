@@ -1,0 +1,21 @@
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ic-spacing-xs);
+  margin-bottom: var(--ic-spacing-lg);
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-sm);
+  font-weight: 500;
+  color: var(--ic-text-secondary);
+  text-decoration: none;
+  transition: color var(--ic-transition-fast);
+}
+
+.backLink:hover {
+  color: var(--ic-brand-link);
+}
+
+.backArrow {
+  font-size: var(--ic-font-size-base);
+  line-height: 1;
+}

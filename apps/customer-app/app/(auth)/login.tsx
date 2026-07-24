@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   LayoutAnimation,
@@ -25,14 +25,19 @@ import {
   typographyScale,
 } from '@ironcloud/ui';
 
+import { DevModeNotice } from '../../src/components/shared';
+import { AUTH_PROVIDER, MOCK_USER_ID, OTP_LENGTH } from '../../src/config/auth';
+import { resendOtp, sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
+import { ensureMsg91Initialized } from '../../src/features/auth/services/msg91';
 import { supabase } from '../../src/lib/supabase';
 
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
+const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
+
+const EMPTY_OTP = Array.from({ length: OTP_LENGTH }, () => '');
 
 const FEATURES = [
   { icon: 'clock-outline' as const, label: '24 Hour\nService' },
@@ -48,11 +53,23 @@ export default function LoginScreen() {
   const [screenState, setScreenState] = useState<ScreenState>('phone');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [error, setError] = useState('');
-  const [otp, setOtp] = useState(['', '', '', '']);
+  const [otp, setOtp] = useState<string[]>(EMPTY_OTP);
   const [otpError, setOtpError] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
-  const otpRefs = useRef<(TextInput | null)[]>([null, null, null, null]);
+  const otpRefs = useRef<(TextInput | null)[]>(
+    Array.from({ length: OTP_LENGTH }, () => null),
+  );
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (AUTH_PROVIDER !== 'msg91') return;
+    ensureMsg91Initialized().catch((err) => {
+      console.warn('MSG91 init failed:', err);
+    });
+  }, []);
 
   const handlePhoneChange = (text: string) => {
     const digitsOnly = text.replace(/\D/g, '');
@@ -60,23 +77,15 @@ export default function LoginScreen() {
     if (error) setError('');
   };
 
-  const handleContinue = () => {
-    if (phoneNumber.length === 0) {
-      setError('Please enter your mobile number');
-      return;
-    }
-    if (phoneNumber.length < 10) {
-      setError('Mobile number must be 10 digits');
-      return;
-    }
-    setError('');
-
+  const transitionToOtp = () => {
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 200,
       useNativeDriver: true,
     }).start(() => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      setOtp([...EMPTY_OTP]);
+      setOtpError('');
       setScreenState('otp');
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -88,6 +97,33 @@ export default function LoginScreen() {
     });
   };
 
+  const handleContinue = async () => {
+    if (isSending) return;
+    if (phoneNumber.length === 0) {
+      setError('Please enter your mobile number');
+      return;
+    }
+    if (phoneNumber.length < 10) {
+      setError('Mobile number must be 10 digits');
+      return;
+    }
+    setError('');
+    setIsSending(true);
+
+    try {
+      const result = await sendOtp(phoneNumber);
+      if (result.error) {
+        setError(result.error.message);
+        return;
+      }
+      transitionToOtp();
+    } catch {
+      setError('Failed to send OTP. Please try again.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleChangeNumber = () => {
     Animated.timing(fadeAnim, {
       toValue: 0,
@@ -95,7 +131,7 @@ export default function LoginScreen() {
       useNativeDriver: true,
     }).start(() => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setOtp(['', '', '', '']);
+      setOtp([...EMPTY_OTP]);
       setOtpError('');
       setScreenState('phone');
       Animated.timing(fadeAnim, {
@@ -113,7 +149,7 @@ export default function LoginScreen() {
     setOtp(newOtp);
     if (otpError) setOtpError('');
 
-    if (digit && index < 3) {
+    if (digit && index < OTP_LENGTH - 1) {
       otpRefs.current[index + 1]?.focus();
     }
   };
@@ -124,18 +160,46 @@ export default function LoginScreen() {
     }
   };
 
+  const handleResendOtp = async () => {
+    if (isResending || !phoneNumber) return;
+    setIsResending(true);
+    setOtpError('');
+    try {
+      const result = await resendOtp(phoneNumber);
+      if (result.error) {
+        setOtpError(result.error.message);
+        return;
+      }
+      setOtp([...EMPTY_OTP]);
+      otpRefs.current[0]?.focus();
+    } catch {
+      setOtpError('Failed to resend OTP. Please try again.');
+    } finally {
+      setIsResending(false);
+    }
+  };
+
   const handleVerifyOtp = async () => {
+    if (isVerifying) return;
     const otpValue = otp.join('');
-    if (otpValue.length < 4) {
-      setOtpError('Please enter the complete OTP');
+    if (otpValue.length < OTP_LENGTH) {
+      setOtpError(`Please enter the complete ${OTP_LENGTH}-digit OTP`);
       return;
     }
     setOtpError('');
+    setIsVerifying(true);
 
-    // Check if user has already completed onboarding
     try {
-      const userId = IS_MOCK_AUTH ? MOCK_USER_ID : null;
-      
+      const result = await verifyOtp(phoneNumber, otpValue);
+      if (result.error || !result.data?.success) {
+        setOtpError(result.error?.message ?? 'Invalid OTP. Please try again.');
+        return;
+      }
+
+      const userId = IS_MOCK_AUTH
+        ? MOCK_USER_ID
+        : result.data.userId ?? null;
+
       if (userId) {
         const { data: addresses } = await (supabase
           .from('addresses') as ReturnType<typeof supabase.from>)
@@ -148,12 +212,14 @@ export default function LoginScreen() {
           return;
         }
       }
-    } catch (error) {
-      console.error('Error checking onboarding status:', error);
-    }
 
-    // No address found, go to onboarding
-    router.replace('/(auth)/onboarding');
+      router.replace('/(auth)/onboarding');
+    } catch (err) {
+      console.error('Error verifying OTP:', err);
+      setOtpError('Verification failed. Please try again.');
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const hasError = error.length > 0;
@@ -193,7 +259,7 @@ export default function LoginScreen() {
           <Text style={styles.subheadline}>
             {screenState === 'phone'
               ? 'Freshly pressed. Perfectly delivered.'
-              : 'Enter the 4-digit code sent to your phone'}
+              : `Enter the ${OTP_LENGTH}-digit code sent to your phone`}
           </Text>
         </View>
 
@@ -236,8 +302,14 @@ export default function LoginScreen() {
 
               {hasError && <Text style={styles.errorText}>{error}</Text>}
 
-              <Pressable style={styles.continueButton} onPress={handleContinue}>
-                <Text style={styles.continueText}>Continue</Text>
+              <Pressable
+                style={[styles.continueButton, isSending && styles.continueButtonDisabled]}
+                onPress={handleContinue}
+                disabled={isSending}
+              >
+                <Text style={styles.continueText}>
+                  {isSending ? 'Sending…' : 'Continue'}
+                </Text>
                 <MaterialCommunityIcons
                   name="arrow-right"
                   size={20}
@@ -294,10 +366,23 @@ export default function LoginScreen() {
                 ))}
               </View>
 
-              {otpError && <Text style={styles.errorText}>{otpError}</Text>}
+              {otpError ? <Text style={styles.errorText}>{otpError}</Text> : null}
 
-              <Pressable style={styles.continueButton} onPress={handleVerifyOtp}>
-                <Text style={styles.continueText}>Verify & Continue</Text>
+              <View style={styles.devNoticeWrap}>
+                <DevModeNotice />
+              </View>
+
+              <Pressable
+                style={[
+                  styles.continueButton,
+                  isVerifying && styles.continueButtonDisabled,
+                ]}
+                onPress={handleVerifyOtp}
+                disabled={isVerifying}
+              >
+                <Text style={styles.continueText}>
+                  {isVerifying ? 'Verifying…' : 'Verify & Continue'}
+                </Text>
                 <MaterialCommunityIcons
                   name="check"
                   size={20}
@@ -307,8 +392,10 @@ export default function LoginScreen() {
 
               <View style={styles.resendRow}>
                 <Text style={styles.resendText}>Didn&apos;t receive the code? </Text>
-                <Pressable>
-                  <Text style={styles.resendLink}>Resend OTP</Text>
+                <Pressable onPress={handleResendOtp} disabled={isResending}>
+                  <Text style={styles.resendLink}>
+                    {isResending ? 'Sending…' : 'Resend OTP'}
+                  </Text>
                 </Pressable>
               </View>
             </>
@@ -516,6 +603,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing['5'],
     ...shadows.button.native,
   },
+  continueButtonDisabled: {
+    opacity: 0.7,
+  },
   continueText: {
     fontFamily: fonts.poppins.semibold,
     fontSize: 16,
@@ -597,23 +687,28 @@ const styles = StyleSheet.create({
     color: colors.brand.link,
     marginLeft: spacing.md,
   },
+  devNoticeWrap: {
+    marginBottom: spacing.md,
+    marginTop: spacing.xs,
+  },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: spacing.sm,
+    flexWrap: 'nowrap',
   },
   otpBox: {
-    width: 56,
-    height: 56,
+    width: 44,
+    height: 52,
     borderWidth: 1.5,
     borderColor: colors.border.input,
     borderRadius: radius.input,
     backgroundColor: colors.surface.elevated,
     textAlign: 'center',
     fontFamily: fonts.poppins.bold,
-    fontSize: 24,
+    fontSize: 20,
     color: colors.text.heading,
-    marginHorizontal: spacing.xs,
+    marginHorizontal: 3,
   },
   otpBoxFilled: {
     borderColor: colors.brand.accent,

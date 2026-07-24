@@ -2,8 +2,11 @@ import {
   AUTH_PROVIDER,
   IS_DEVELOPMENT,
   MOCK_OTP_CODE,
+  MOCK_USER_ID,
 } from '../../../config/auth';
+import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import { msg91RetryOtp, msg91SendOtp, msg91VerifyOtp } from './msg91';
 
 export type AuthError = {
   message: string;
@@ -33,15 +36,89 @@ export type VerifyOtpResponse = {
 const mockOtpStore = new Map<string, { otp: string; timestamp: number }>();
 const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 
+const formatPhone = (phone: string) =>
+  phone.startsWith('+') ? phone : `+91${phone}`;
+
+const exchangeMsg91Session = async (
+  accessToken: string,
+  phone: string,
+): Promise<AuthResult<VerifyOtpResponse>> => {
+  const response = await fetch(`${getApiBaseUrl()}/api/auth/msg91-session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accessToken, phone }),
+  });
+
+  let payload: {
+    error?: string;
+    success?: boolean;
+    userId?: string;
+    isNewUser?: boolean;
+    accessToken?: string;
+    refreshToken?: string;
+  };
+
+  try {
+    payload = await response.json();
+  } catch {
+    return {
+      data: null,
+      error: { message: 'Invalid response from login server.' },
+    };
+  }
+
+  if (!response.ok || !payload.success || !payload.accessToken || !payload.refreshToken) {
+    return {
+      data: null,
+      error: {
+        message: payload.error || 'Failed to create session. Is the web API running?',
+      },
+    };
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+    access_token: payload.accessToken,
+    refresh_token: payload.refreshToken,
+  });
+
+  if (sessionError || !sessionData.user || !sessionData.session) {
+    return {
+      data: null,
+      error: {
+        message: sessionError?.message || 'Failed to store session.',
+      },
+    };
+  }
+
+  // Confirm session is readable (catches web storage failures early)
+  const { data: check } = await supabase.auth.getSession();
+  if (!check.session?.user?.id) {
+    return {
+      data: null,
+      error: {
+        message: 'Session could not be saved. Please try again.',
+      },
+    };
+  }
+
+  return {
+    data: {
+      success: true,
+      userId: payload.userId ?? sessionData.user.id,
+      isNewUser: payload.isNewUser,
+    },
+    error: null,
+  };
+};
+
 /**
  * Send OTP to phone number.
- * Uses mock provider in development, Supabase Auth in production.
+ * mock → local code; msg91 → MSG91 SMS; otherwise Supabase Auth.
  */
 export const sendOtp = async (
   phone: string,
 ): Promise<AuthResult<SendOtpResponse>> => {
   try {
-    // Validate phone
     if (!phone || phone.length < 10) {
       return {
         data: null,
@@ -49,11 +126,9 @@ export const sendOtp = async (
       };
     }
 
-    // Format phone with country code if needed
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const formattedPhone = formatPhone(phone);
 
     if (AUTH_PROVIDER === 'mock') {
-      // Mock provider - no SMS sent
       mockOtpStore.set(formattedPhone, {
         otp: MOCK_OTP_CODE,
         timestamp: Date.now(),
@@ -69,12 +144,21 @@ export const sendOtp = async (
       };
     }
 
-    // Production: Use Supabase Auth
+    if (AUTH_PROVIDER === 'msg91') {
+      const result = await msg91SendOtp(phone);
+      if ('error' in result) {
+        return { data: null, error: { message: result.error } };
+      }
+
+      return {
+        data: { success: true, message: 'OTP sent successfully.' },
+        error: null,
+      };
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       phone: formattedPhone,
-      options: {
-        channel: 'sms',
-      },
+      options: { channel: 'sms' },
     });
 
     if (error) {
@@ -85,13 +169,10 @@ export const sendOtp = async (
     }
 
     return {
-      data: {
-        success: true,
-        message: 'OTP sent successfully.',
-      },
+      data: { success: true, message: 'OTP sent successfully.' },
       error: null,
     };
-  } catch (err) {
+  } catch {
     return {
       data: null,
       error: { message: 'Failed to send OTP. Please try again.' },
@@ -108,10 +189,9 @@ export const verifyOtp = async (
   otp: string,
 ): Promise<AuthResult<VerifyOtpResponse>> => {
   try {
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const formattedPhone = formatPhone(phone);
 
     if (AUTH_PROVIDER === 'mock') {
-      // Mock provider verification
       const stored = mockOtpStore.get(formattedPhone);
 
       if (!stored) {
@@ -121,7 +201,6 @@ export const verifyOtp = async (
         };
       }
 
-      // Check expiry
       if (Date.now() - stored.timestamp > OTP_EXPIRY_MS) {
         mockOtpStore.delete(formattedPhone);
         return {
@@ -130,7 +209,6 @@ export const verifyOtp = async (
         };
       }
 
-      // Verify OTP
       if (otp !== stored.otp) {
         return {
           data: null,
@@ -138,58 +216,27 @@ export const verifyOtp = async (
         };
       }
 
-      // Clear stored OTP
       mockOtpStore.delete(formattedPhone);
-
-      // In mock mode, we still use Supabase for session management
-      // but we bypass the OTP verification
-      // Sign in with a magic link or create a custom session
-
-      // For development, use Supabase's signInWithPassword with a dev account
-      // or use the admin API to create a session
-
-      // Simplified: Use Supabase's phone auth in test mode
-      // Supabase allows OTP '123456' in test mode when configured
-      const { data, error } = await supabase.auth.signInWithOtp({
-        phone: formattedPhone,
-        options: { channel: 'sms' },
-      });
-
-      // Immediately verify with the mock OTP
-      const verifyResult = await supabase.auth.verifyOtp({
-        phone: formattedPhone,
-        token: otp,
-        type: 'sms',
-      });
-
-      if (verifyResult.error) {
-        // If Supabase verification fails in mock mode,
-        // we create a mock session for development
-        console.warn(
-          '[MockAuth] Supabase OTP verification failed, using mock session.',
-        );
-
-        return {
-          data: {
-            success: true,
-            userId: `mock-user-${formattedPhone}`,
-            isNewUser: true,
-          },
-          error: null,
-        };
-      }
 
       return {
         data: {
           success: true,
-          userId: verifyResult.data.user?.id,
-          isNewUser: !verifyResult.data.user?.last_sign_in_at,
+          userId: MOCK_USER_ID,
+          isNewUser: false,
         },
         error: null,
       };
     }
 
-    // Production: Verify with Supabase
+    if (AUTH_PROVIDER === 'msg91') {
+      const verified = await msg91VerifyOtp(phone, otp);
+      if ('error' in verified) {
+        return { data: null, error: { message: verified.error } };
+      }
+
+      return exchangeMsg91Session(verified.accessToken, phone);
+    }
+
     const { data, error } = await supabase.auth.verifyOtp({
       phone: formattedPhone,
       token: otp,
@@ -218,7 +265,7 @@ export const verifyOtp = async (
       },
       error: null,
     };
-  } catch (err) {
+  } catch {
     return {
       data: null,
       error: { message: 'Verification failed. Please try again.' },
@@ -232,6 +279,24 @@ export const verifyOtp = async (
 export const resendOtp = async (
   phone: string,
 ): Promise<AuthResult<SendOtpResponse>> => {
+  if (AUTH_PROVIDER === 'msg91') {
+    try {
+      const result = await msg91RetryOtp(phone);
+      if ('error' in result) {
+        return { data: null, error: { message: result.error } };
+      }
+      return {
+        data: { success: true, message: 'OTP resent successfully.' },
+        error: null,
+      };
+    } catch {
+      return {
+        data: null,
+        error: { message: 'Failed to resend OTP. Please try again.' },
+      };
+    }
+  }
+
   return sendOtp(phone);
 };
 
@@ -252,7 +317,7 @@ export const signOut = async (): Promise<
     }
 
     return { data: { signedOut: true }, error: null };
-  } catch (err) {
+  } catch {
     return {
       data: null,
       error: { message: 'Sign out failed. Please try again.' },

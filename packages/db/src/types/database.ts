@@ -346,6 +346,8 @@ export interface Database {
           coupon_id: string | null;
           payment_method: PaymentMethod;
           qr_code: string | null;
+          partner_id: string | null;
+          admin_notes: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -367,6 +369,8 @@ export interface Database {
           coupon_id?: string | null;
           payment_method?: PaymentMethod;
           qr_code?: string | null;
+          partner_id?: string | null;
+          admin_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -388,9 +392,364 @@ export interface Database {
           coupon_id?: string | null;
           payment_method?: PaymentMethod;
           qr_code?: string | null;
+          partner_id?: string | null;
+          admin_notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
+      };
+      partners: {
+        Row: {
+          id: string;
+          name: string;
+          contact_name: string | null;
+          phone: string | null;
+          email: string | null;
+          address: string | null;
+          city: string | null;
+          kyc_status: string;
+          verification_status: string;
+          working_hours: Json;
+          capacity: number;
+          rating_avg: number;
+          settlement_cycle: string;
+          bank_details: Json;
+          documents: Json;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          contact_name?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          address?: string | null;
+          city?: string | null;
+          kyc_status?: string;
+          verification_status?: string;
+          working_hours?: Json;
+          capacity?: number;
+          rating_avg?: number;
+          settlement_cycle?: string;
+          bank_details?: Json;
+          documents?: Json;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          contact_name?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          address?: string | null;
+          city?: string | null;
+          kyc_status?: string;
+          verification_status?: string;
+          working_hours?: Json;
+          capacity?: number;
+          rating_avg?: number;
+          settlement_cycle?: string;
+          bank_details?: Json;
+          documents?: Json;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      partner_communities: {
+        Row: { partner_id: string; community_id: string };
+        Insert: { partner_id: string; community_id: string };
+        Update: { partner_id?: string; community_id?: string };
+      };
+      partner_orders: {
+        Row: { partner_id: string; order_id: string; assigned_at: string };
+        Insert: { partner_id: string; order_id: string; assigned_at?: string };
+        Update: { partner_id?: string; order_id?: string; assigned_at?: string };
+      };
+      settlements: {
+        Row: {
+          id: string;
+          partner_id: string | null;
+          rider_id: string | null;
+          period_start: string;
+          period_end: string;
+          amount: number;
+          status: string;
+          paid_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          partner_id?: string | null;
+          rider_id?: string | null;
+          period_start: string;
+          period_end: string;
+          amount: number;
+          status?: string;
+          paid_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          partner_id?: string | null;
+          rider_id?: string | null;
+          period_start?: string;
+          period_end?: string;
+          amount?: number;
+          status?: string;
+          paid_at?: string | null;
+          created_at?: string;
+        };
+      };
+      invoices: {
+        Row: {
+          id: string;
+          order_id: string | null;
+          invoice_number: string;
+          subtotal: number;
+          gst_amount: number;
+          total: number;
+          pdf_url: string | null;
+          issued_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id?: string | null;
+          invoice_number: string;
+          subtotal: number;
+          gst_amount?: number;
+          total: number;
+          pdf_url?: string | null;
+          issued_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string | null;
+          invoice_number?: string;
+          subtotal?: number;
+          gst_amount?: number;
+          total?: number;
+          pdf_url?: string | null;
+          issued_at?: string;
+        };
+      };
+      campaigns: {
+        Row: {
+          id: string;
+          name: string;
+          type: string;
+          channel: NotificationChannel;
+          target: Json;
+          payload: Json;
+          status: string;
+          scheduled_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          type: string;
+          channel: NotificationChannel;
+          target?: Json;
+          payload?: Json;
+          status?: string;
+          scheduled_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          type?: string;
+          channel?: NotificationChannel;
+          target?: Json;
+          payload?: Json;
+          status?: string;
+          scheduled_at?: string | null;
+          created_at?: string;
+        };
+      };
+      banners: {
+        Row: {
+          id: string;
+          title: string;
+          image_url: string | null;
+          link: string | null;
+          community_ids: string[] | null;
+          position: string;
+          active_from: string | null;
+          active_to: string | null;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          image_url?: string | null;
+          link?: string | null;
+          community_ids?: string[] | null;
+          position?: string;
+          active_from?: string | null;
+          active_to?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          title?: string;
+          image_url?: string | null;
+          link?: string | null;
+          community_ids?: string[] | null;
+          position?: string;
+          active_from?: string | null;
+          active_to?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+        };
+      };
+      referrals: {
+        Row: {
+          id: string;
+          referrer_id: string;
+          referee_id: string | null;
+          code: string;
+          reward_amount: number;
+          status: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          referrer_id: string;
+          referee_id?: string | null;
+          code: string;
+          reward_amount?: number;
+          status?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          referrer_id?: string;
+          referee_id?: string | null;
+          code?: string;
+          reward_amount?: number;
+          status?: string;
+          created_at?: string;
+        };
+      };
+      subscriptions: {
+        Row: {
+          id: string;
+          customer_id: string;
+          plan_name: string;
+          amount: number;
+          billing_cycle: string;
+          status: string;
+          next_billing_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          customer_id: string;
+          plan_name: string;
+          amount: number;
+          billing_cycle?: string;
+          status?: string;
+          next_billing_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          customer_id?: string;
+          plan_name?: string;
+          amount?: number;
+          billing_cycle?: string;
+          status?: string;
+          next_billing_at?: string | null;
+          created_at?: string;
+        };
+      };
+      system_settings: {
+        Row: {
+          key: string;
+          value: Json;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          key?: string;
+          value?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+      };
+      role_permissions: {
+        Row: {
+          id: string;
+          role: UserRole;
+          resource: string;
+          action: string;
+        };
+        Insert: {
+          id?: string;
+          role: UserRole;
+          resource: string;
+          action: string;
+        };
+        Update: {
+          id?: string;
+          role?: UserRole;
+          resource?: string;
+          action?: string;
+        };
+      };
+      admin_notifications: {
+        Row: {
+          id: string;
+          recipient_id: string;
+          type: string;
+          title: string;
+          body: string | null;
+          entity_type: string | null;
+          entity_id: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          recipient_id: string;
+          type: string;
+          title: string;
+          body?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          recipient_id?: string;
+          type?: string;
+          title?: string;
+          body?: string | null;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          read_at?: string | null;
+          created_at?: string;
+        };
+      };
+      rider_communities: {
+        Row: { rider_id: string; community_id: string };
+        Insert: { rider_id: string; community_id: string };
+        Update: { rider_id?: string; community_id?: string };
       };
       order_items: {
         Row: {
@@ -721,6 +1080,23 @@ export interface Database {
           entity_id?: string | null;
           before?: Json | null;
           after?: Json | null;
+          created_at?: string;
+        };
+      };
+      admin_allowed_emails: {
+        Row: {
+          email: string;
+          role: UserRole;
+          created_at: string;
+        };
+        Insert: {
+          email: string;
+          role?: UserRole;
+          created_at?: string;
+        };
+        Update: {
+          email?: string;
+          role?: UserRole;
           created_at?: string;
         };
       };
