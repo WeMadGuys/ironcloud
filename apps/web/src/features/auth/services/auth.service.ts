@@ -48,12 +48,21 @@ export const signInWithGoogle = async (
 };
 
 export const signOut = async (): Promise<AuthResult<{ signedOut: true }>> => {
-  const supabase = getSupabase();
-  const { error } = await supabase.auth.signOut();
-  if (error) {
-    return { data: null, error: { message: error.message, code: error.code } };
+  try {
+    if (!isSupabaseConfigured()) {
+      return { data: { signedOut: true }, error: null };
+    }
+
+    const supabase = getSupabase();
+    // Global scope clears local + server session cookies used by middleware
+    const { error } = await supabase.auth.signOut({ scope: 'global' });
+    if (error) {
+      return { data: null, error: { message: error.message, code: error.code } };
+    }
+    return { data: { signedOut: true }, error: null };
+  } catch {
+    return { data: null, error: { message: 'Sign out failed. Please try again.' } };
   }
-  return { data: { signedOut: true }, error: null };
 };
 
 export const getProfile = async (userId: string) => {

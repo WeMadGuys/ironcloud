@@ -3,7 +3,7 @@
 import Icon from '@mdi/react';
 import { mdiChevronLeft, mdiChevronRight, mdiLogout } from '@mdi/js';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 import { NAV_ITEMS } from '@/constants/routes';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -16,13 +16,13 @@ import styles from './Sidebar.module.css';
 
 export const Sidebar = () => {
   const pathname = usePathname();
-  const router = useRouter();
   const { collapsed, toggleCollapsed } = useSidebar();
   const { profile, role } = useAdminRole();
 
   const handleLogout = async () => {
     await signOut();
-    router.push('/admin/login');
+    // Hard navigation so middleware sees cleared auth cookies
+    window.location.assign('/admin/login');
   };
 
   return (

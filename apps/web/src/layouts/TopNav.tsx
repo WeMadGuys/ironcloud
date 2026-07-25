@@ -8,6 +8,7 @@ import { useDateFilter } from '@/contexts/DateFilterContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdminRole } from '@/features/auth/hooks/useAdminRole';
 import { signOut } from '@/features/auth/services/auth.service';
+import { ADMIN_ROUTES } from '@/constants/routes';
 import { getSupabase } from '@/lib/supabase';
 import { getInitials, toISODate } from '@/utils/format';
 import { SearchInput } from '@/components/SearchInput/SearchInput';
@@ -27,6 +28,7 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
   const [notifCount, setNotifCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -62,6 +64,15 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
+
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setMenuOpen(false);
+    await signOut();
+    // Hard navigation so middleware sees cleared auth cookies
+    window.location.assign(ADMIN_ROUTES.login);
+  };
 
   return (
     <>
@@ -109,9 +120,10 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
                   type="button"
                   className={styles.dropdownItem}
                   role="menuitem"
-                  onClick={() => signOut()}
+                  onClick={handleLogout}
+                  disabled={loggingOut}
                 >
-                  Logout
+                  {loggingOut ? 'Signing out…' : 'Logout'}
                 </button>
               </div>
             )}
