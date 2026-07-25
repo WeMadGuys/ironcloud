@@ -10,8 +10,9 @@ import {
   mdiTag,
   mdiViewDashboard,
   mdiWallet,
-  type IconPathData,
 } from '@mdi/js';
+
+type IconPathData = string;
 
 const ICON_MAP: Record<string, IconPathData> = {
   viewDashboard: mdiViewDashboard,

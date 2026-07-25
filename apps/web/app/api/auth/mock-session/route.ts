@@ -1,9 +1,11 @@
 import { createServerClient } from '@supabase/ssr';
-import { createClient, type AuthError, type User } from '@supabase/supabase-js';
+import { createClient, type AuthError, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
 import { getServerSupabaseEnv } from '@/lib/server-env';
+
+type AdminClient = SupabaseClient<any>;
 
 const isMockAuthEnabled = () =>
   process.env.NODE_ENV === 'development' &&
@@ -47,7 +49,7 @@ const formatError = (err: unknown): string => {
 };
 
 const createDevUser = async (
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   profileId: string,
   digits: string,
 ) => {
@@ -63,7 +65,7 @@ const createDevUser = async (
 
 /** Resolve or create the GoTrue user for this dev phone login. */
 const ensureAuthUser = async (
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   profileId: string,
   digits: string,
 ): Promise<User> => {
@@ -205,7 +207,7 @@ export async function POST(request: Request) {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options?: Record<string, unknown> }[]) {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
           });

@@ -1,11 +1,10 @@
-import { createClient, type User } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 
-// Service-role client is untyped here (same pattern as mock-session).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AdminClient = any;
+// Service-role client used for admin Auth + profiles; schema generics are not needed here.
+type AdminClient = SupabaseClient<any>;
 
 const MSG91_VERIFY_URL =
   'https://control.msg91.com/api/v5/widget/verifyAccessToken';

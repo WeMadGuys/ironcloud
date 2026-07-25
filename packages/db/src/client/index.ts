@@ -1,8 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
-import type { Database } from '../types/database';
-
-export type TypedSupabaseClient = SupabaseClient<Database>;
+export type TypedSupabaseClient = SupabaseClient;
 
 type SupabaseConfig = {
   url: string;
@@ -14,13 +12,16 @@ let supabaseInstance: TypedSupabaseClient | null = null;
 /**
  * Creates or returns the singleton Supabase client for browser/app use.
  * Uses the anon key — safe for client-side code.
+ *
+ * Note: Database generics are intentionally omitted until generated types
+ * match the installed @supabase/supabase-js schema shape (avoids `never` rows).
  */
 export const createSupabaseClient = (config: SupabaseConfig): TypedSupabaseClient => {
   if (supabaseInstance) {
     return supabaseInstance;
   }
 
-  supabaseInstance = createClient<Database>(config.url, config.anonKey, {
+  supabaseInstance = createClient(config.url, config.anonKey, {
     auth: {
       autoRefreshToken: true,
       persistSession: true,
@@ -53,7 +54,7 @@ export const createServiceClient = (
   url: string,
   serviceRoleKey: string,
 ): TypedSupabaseClient => {
-  return createClient<Database>(url, serviceRoleKey, {
+  return createClient(url, serviceRoleKey, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

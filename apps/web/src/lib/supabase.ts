@@ -1,10 +1,9 @@
 import { createBrowserClient } from '@supabase/ssr';
-import type { Database } from '@ironcloud/db';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-export type SupabaseClient = ReturnType<typeof createBrowserClient<Database>>;
+export type SupabaseClient = ReturnType<typeof createBrowserClient>;
 
 let browserClient: SupabaseClient | null = null;
 
@@ -17,7 +16,8 @@ export const getSupabase = (): SupabaseClient => {
   }
 
   if (!browserClient) {
-    browserClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey);
+    // Untyped until packages/db Database matches current supabase-js generics
+    browserClient = createBrowserClient(supabaseUrl, supabaseAnonKey);
   }
 
   return browserClient;

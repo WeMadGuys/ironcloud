@@ -88,6 +88,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       warehouses: {
         Row: {
@@ -111,6 +112,7 @@ export interface Database {
           is_active?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
       communities: {
         Row: {
@@ -140,6 +142,7 @@ export interface Database {
           status?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       addresses: {
         Row: {
@@ -169,6 +172,7 @@ export interface Database {
           is_default?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
       service_slots: {
         Row: {
@@ -201,6 +205,7 @@ export interface Database {
           booked_count?: number;
           created_at?: string;
         };
+        Relationships: [];
       };
       riders: {
         Row: {
@@ -230,6 +235,7 @@ export interface Database {
           rating_avg?: number;
           created_at?: string;
         };
+        Relationships: [];
       };
       services: {
         Row: {
@@ -256,6 +262,7 @@ export interface Database {
           is_active?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
       pricing_rules: {
         Row: {
@@ -285,6 +292,7 @@ export interface Database {
           effective_from?: string;
           effective_to?: string | null;
         };
+        Relationships: [];
       };
       coupons: {
         Row: {
@@ -326,6 +334,7 @@ export interface Database {
           community_ids?: string[] | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       orders: {
         Row: {
@@ -397,6 +406,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       partners: {
         Row: {
@@ -459,6 +469,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       partner_communities: {
         Row: { partner_id: string; community_id: string };
@@ -504,6 +515,7 @@ export interface Database {
           paid_at?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       invoices: {
         Row: {
@@ -536,6 +548,7 @@ export interface Database {
           pdf_url?: string | null;
           issued_at?: string;
         };
+        Relationships: [];
       };
       campaigns: {
         Row: {
@@ -571,6 +584,7 @@ export interface Database {
           scheduled_at?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       banners: {
         Row: {
@@ -609,6 +623,7 @@ export interface Database {
           is_active?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
       referrals: {
         Row: {
@@ -638,6 +653,7 @@ export interface Database {
           status?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       subscriptions: {
         Row: {
@@ -670,6 +686,7 @@ export interface Database {
           next_billing_at?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       system_settings: {
         Row: {
@@ -690,6 +707,7 @@ export interface Database {
           updated_by?: string | null;
           updated_at?: string;
         };
+        Relationships: [];
       };
       role_permissions: {
         Row: {
@@ -710,6 +728,7 @@ export interface Database {
           resource?: string;
           action?: string;
         };
+        Relationships: [];
       };
       admin_notifications: {
         Row: {
@@ -745,6 +764,7 @@ export interface Database {
           read_at?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       rider_communities: {
         Row: { rider_id: string; community_id: string };
@@ -788,6 +808,7 @@ export interface Database {
           qc_status?: string;
           created_at?: string;
         };
+        Relationships: [];
       };
       order_events: {
         Row: {
@@ -817,6 +838,7 @@ export interface Database {
           note?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       rider_jobs: {
         Row: {
@@ -864,6 +886,7 @@ export interface Database {
           created_at?: string;
           completed_at?: string | null;
         };
+        Relationships: [];
       };
       wallets: {
         Row: {
@@ -884,6 +907,7 @@ export interface Database {
           balance?: number;
           updated_at?: string;
         };
+        Relationships: [];
       };
       wallet_transactions: {
         Row: {
@@ -919,6 +943,7 @@ export interface Database {
           description?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       notifications: {
         Row: {
@@ -957,6 +982,7 @@ export interface Database {
           created_at?: string;
           sent_at?: string | null;
         };
+        Relationships: [];
       };
       support_tickets: {
         Row: {
@@ -995,6 +1021,7 @@ export interface Database {
           created_at?: string;
           resolved_at?: string | null;
         };
+        Relationships: [];
       };
       ticket_messages: {
         Row: {
@@ -1021,6 +1048,7 @@ export interface Database {
           attachment_url?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       ratings: {
         Row: {
@@ -1050,6 +1078,7 @@ export interface Database {
           feedback?: string | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       audit_logs: {
         Row: {
@@ -1082,6 +1111,7 @@ export interface Database {
           after?: Json | null;
           created_at?: string;
         };
+        Relationships: [];
       };
       admin_allowed_emails: {
         Row: {
@@ -1099,6 +1129,7 @@ export interface Database {
           role?: UserRole;
           created_at?: string;
         };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
@@ -1118,6 +1149,9 @@ export interface Database {
       ticket_status: TicketStatus;
       slot_type: SlotType;
       payment_method: PaymentMethod;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

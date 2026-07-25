@@ -18,6 +18,8 @@ if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.EXPO_PUBLIC_SUPABA
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 }
 const nextConfig: NextConfig = {
+  // Required for correct file tracing when deployed from a monorepo on Vercel
+  outputFileTracingRoot: monorepoRoot,
   env: {
     NEXT_PUBLIC_SUPABASE_URL:
       process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
