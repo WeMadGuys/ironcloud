@@ -15,6 +15,8 @@ import type { ActiveBooking, BookingGarment } from '../services/booking.service'
 type Props = {
   booking: ActiveBooking;
   onBookAgain?: () => void;
+  onCancel?: () => void;
+  isCancelling?: boolean;
 };
 
 function garmentIcon(name: string): keyof typeof MaterialCommunityIcons.glyphMap {
@@ -58,11 +60,17 @@ function DetailBlock({
   );
 }
 
-export function ActiveOrderCard({ booking, onBookAgain }: Props) {
+export function ActiveOrderCard({
+  booking,
+  onBookAgain,
+  onCancel,
+  isCancelling = false,
+}: Props) {
   const isAwaiting = booking.phase === 'awaiting_pickup';
   const isDelivered = booking.phase === 'delivered';
   const showGarments = booking.isPickupComplete;
   const hasGarments = booking.items.length > 0;
+  const canCancel = isAwaiting && !!onCancel;
 
   const [showDetails, setShowDetails] = useState(false);
 
@@ -248,6 +256,18 @@ export function ActiveOrderCard({ booking, onBookAgain }: Props) {
             </>
           )}
         </View>
+      )}
+
+      {canCancel && (
+        <Pressable
+          style={[styles.cancelButton, isCancelling && styles.cancelButtonDisabled]}
+          onPress={onCancel}
+          disabled={isCancelling}
+        >
+          <Text style={styles.cancelButtonText}>
+            {isCancelling ? 'Cancelling…' : 'Cancel booking'}
+          </Text>
+        </Pressable>
       )}
 
       {isDelivered && onBookAgain && (
@@ -585,5 +605,21 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.semibold,
     fontSize: 15,
     color: colors.status.success.foreground,
+  },
+  cancelButton: {
+    marginTop: spacing.md,
+    borderWidth: 1.5,
+    borderColor: colors.status.error.foreground,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+  },
+  cancelButtonDisabled: {
+    opacity: 0.6,
+  },
+  cancelButtonText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 15,
+    color: colors.status.error.foreground,
   },
 });

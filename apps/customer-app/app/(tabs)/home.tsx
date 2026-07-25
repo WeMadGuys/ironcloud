@@ -23,6 +23,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  cancelBooking,
   createBooking,
   getBookedDayOffsets,
   getDeliveryWindowFromPickup,
@@ -105,7 +106,9 @@ export default function HomeScreen() {
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
-  const [checkingActive, setCheckingActive] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [contentLoading, setContentLoading] = useState(false);
   const [dayBooking, setDayBooking] = useState<ActiveBooking | null>(null);
   const [bookedDays, setBookedDays] = useState<number[]>([]);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -116,7 +119,12 @@ export default function HomeScreen() {
 
   const deliveryPreview = formatDeliveryPreview(selectedDay, selectedPickup);
 
-  const loadHomeData = useCallback(async (dayOffset: number) => {
+  const loadHomeData = useCallback(async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
+    if (mode === 'initial') {
+      setInitialLoading(true);
+    } else {
+      setContentLoading(true);
+    }
     try {
       const [booking, bookedOffsets, wallet, addresses] = await Promise.all([
         getHomeBookingForDay(dayOffset),
@@ -150,21 +158,22 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Error loading home data:', error);
     } finally {
-      setCheckingActive(false);
+      setInitialLoading(false);
+      setContentLoading(false);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      setCheckingActive(true);
-      loadHomeData(selectedDay);
+      // First paint uses full-screen loader; day changes only refresh content below.
+      loadHomeData(selectedDay, initialLoading ? 'initial' : 'content');
+      // initialLoading intentionally omitted from deps — only gates the first load mode.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadHomeData, selectedDay]),
   );
 
   const handleSelectDay = (index: number) => {
-    if (index === selectedDay) return;
-    setCheckingActive(true);
-    setDayBooking(null);
+    if (index === selectedDay || contentLoading) return;
     setSelectedDay(index);
   };
 
@@ -200,6 +209,39 @@ export default function HomeScreen() {
         error instanceof Error ? error.message : 'Could not start a new booking',
       );
     }
+  };
+
+  const handleCancelBooking = () => {
+    if (!dayBooking || isCancelling) return;
+
+    Alert.alert(
+      'Cancel booking?',
+      'This will cancel your pickup for this day. You can book again anytime.',
+      [
+        { text: 'Keep booking', style: 'cancel' },
+        {
+          text: 'Cancel booking',
+          style: 'destructive',
+          onPress: async () => {
+            setIsCancelling(true);
+            try {
+              await cancelBooking(dayBooking.orderId);
+              setDayBooking(null);
+              await loadHomeData(selectedDay);
+            } catch (error) {
+              Alert.alert(
+                'Cancel failed',
+                error instanceof Error
+                  ? error.message
+                  : 'Could not cancel this booking',
+              );
+            } finally {
+              setIsCancelling(false);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const addressName = dayBooking?.addressName || headerAddress.name || 'Your address';
@@ -257,7 +299,7 @@ export default function HomeScreen() {
     </View>
   );
 
-  if (checkingActive) {
+  if (initialLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.checkingContainer}>
@@ -309,8 +351,14 @@ export default function HomeScreen() {
     </View>
   );
 
+  const contentLoader = (
+    <View style={styles.contentLoader}>
+      <ActivityIndicator size="large" color={colors.brand.primary} />
+    </View>
+  );
+
   // Selected day already has a booking — show that day's order card only
-  if (dayBooking) {
+  if (dayBooking && !contentLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
@@ -326,8 +374,25 @@ export default function HomeScreen() {
             onBookAgain={
               dayBooking.phase === 'delivered' ? handleBookAgain : undefined
             }
+            onCancel={
+              dayBooking.phase === 'awaiting_pickup'
+                ? handleCancelBooking
+                : undefined
+            }
+            isCancelling={isCancelling}
           />
         </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  if (contentLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
+        {header}
+        {dateStrip}
+        {contentLoader}
       </SafeAreaView>
     );
   }
@@ -335,13 +400,13 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
+      {header}
+      {dateStrip}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {header}
-        {dateStrip}
 
         {/* Pickup Time Section */}
         <View style={styles.section}>
@@ -519,6 +584,12 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  contentLoader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing['2xl'],
   },
   scrollView: {
     flex: 1,

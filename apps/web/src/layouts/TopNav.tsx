@@ -10,7 +10,7 @@ import { useAdminRole } from '@/features/auth/hooks/useAdminRole';
 import { signOut } from '@/features/auth/services/auth.service';
 import { ADMIN_ROUTES } from '@/constants/routes';
 import { getSupabase } from '@/lib/supabase';
-import { getInitials, toISODate } from '@/utils/format';
+import { getInitials, parseISODate, toISODate } from '@/utils/format';
 import { SearchInput } from '@/components/SearchInput/SearchInput';
 import { GlobalSearch } from '@/features/search/components/GlobalSearch';
 
@@ -86,7 +86,10 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
             type="date"
             className={styles.datePicker}
             value={toISODate(selectedDate)}
-            onChange={(e) => setSelectedDate(new Date(e.target.value))}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              setSelectedDate(parseISODate(e.target.value));
+            }}
             aria-label="Select date"
           />
           <SearchInput

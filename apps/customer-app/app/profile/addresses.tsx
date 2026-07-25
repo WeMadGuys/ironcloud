@@ -3,7 +3,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -26,40 +25,39 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  getActiveCommunities,
   searchCommunities,
   type Community,
 } from '../../src/features/communities/services/communities.service';
 import {
-  addAddress,
-  listAddresses,
-  setDefaultAddress,
+  getCustomerAddress,
+  saveCustomerAddress,
   type CustomerAddress,
 } from '../../src/features/profile/services/address.service';
 
 export default function AddressesScreen() {
   const router = useRouter();
-  const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
+  const [address, setAddress] = useState<CustomerAddress | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showCommunityModal, setShowCommunityModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showCommunityPicker, setShowCommunityPicker] = useState(false);
 
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   const [communitySearch, setCommunitySearch] = useState('');
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [allCommunities, setAllCommunities] = useState<Community[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [tower, setTower] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
-  const [makeDefault, setMakeDefault] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
-  const loadAddresses = useCallback(async () => {
+  const loadAddress = useCallback(async () => {
     try {
       setIsLoading(true);
-      const data = await listAddresses();
-      setAddresses(data);
+      setAddress(await getCustomerAddress());
     } catch (err) {
-      console.error('Error loading addresses:', err);
+      console.error('Error loading address:', err);
     } finally {
       setIsLoading(false);
     }
@@ -67,35 +65,90 @@ export default function AddressesScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadAddresses();
-    }, [loadAddresses]),
+      loadAddress();
+    }, [loadAddress]),
   );
 
-  const handleSearchCommunities = useCallback(async (query: string) => {
-    setCommunitySearch(query);
-    if (query.length < 2) {
-      setCommunities([]);
-      return;
-    }
+  const openCommunityPicker = useCallback(async () => {
+    setShowCommunityPicker(true);
+    setCommunitySearch('');
     setSearchLoading(true);
     try {
-      setCommunities(await searchCommunities(query));
-    } catch {
+      const list = await getActiveCommunities();
+      setAllCommunities(list);
+      setCommunities(list);
+    } catch (err) {
+      console.error('Error loading communities:', err);
+      setAllCommunities([]);
       setCommunities([]);
     } finally {
       setSearchLoading(false);
     }
   }, []);
 
-  const openAddModal = () => {
-    setSelectedCommunity(null);
+  const handleSearchCommunities = useCallback(
+    async (query: string) => {
+      setCommunitySearch(query);
+      const trimmed = query.trim();
+
+      if (!trimmed) {
+        setCommunities(allCommunities);
+        return;
+      }
+
+      if (trimmed.length < 2) {
+        const local = allCommunities.filter((c) =>
+          c.name.toLowerCase().includes(trimmed.toLowerCase()),
+        );
+        setCommunities(local);
+        return;
+      }
+
+      setSearchLoading(true);
+      try {
+        const results = await searchCommunities(trimmed);
+        setCommunities(results.length > 0 ? results : allCommunities.filter((c) =>
+          c.name.toLowerCase().includes(trimmed.toLowerCase()),
+        ));
+      } catch {
+        setCommunities(
+          allCommunities.filter((c) =>
+            c.name.toLowerCase().includes(trimmed.toLowerCase()),
+          ),
+        );
+      } finally {
+        setSearchLoading(false);
+      }
+    },
+    [allCommunities],
+  );
+
+  const openEditModal = () => {
+    if (address) {
+      setSelectedCommunity({
+        id: address.communityId,
+        name: address.communityName,
+        city: address.city,
+        status: 'active',
+      });
+      setTower(address.tower ?? '');
+      setFlatNumber(address.flatNumber);
+    } else {
+      setSelectedCommunity(null);
+      setTower('');
+      setFlatNumber('');
+    }
+    setShowCommunityPicker(false);
     setCommunitySearch('');
     setCommunities([]);
-    setTower('');
-    setFlatNumber('');
-    setMakeDefault(addresses.length === 0);
     setError('');
-    setShowAddModal(true);
+    setShowEditModal(true);
+  };
+
+  const handleSelectCommunity = (community: Community) => {
+    setSelectedCommunity(community);
+    setShowCommunityPicker(false);
+    setCommunitySearch('');
   };
 
   const handleSaveAddress = async () => {
@@ -111,14 +164,13 @@ export default function AddressesScreen() {
     setIsSaving(true);
     setError('');
     try {
-      await addAddress({
+      const saved = await saveCustomerAddress({
         communityId: selectedCommunity.id,
         tower,
         flatNumber,
-        makeDefault,
       });
-      setShowAddModal(false);
-      await loadAddresses();
+      setAddress(saved);
+      setShowEditModal(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save address');
     } finally {
@@ -126,17 +178,7 @@ export default function AddressesScreen() {
     }
   };
 
-  const handleSetDefault = async (addressId: string) => {
-    try {
-      await setDefaultAddress(addressId);
-      await loadAddresses();
-    } catch (err) {
-      Alert.alert(
-        'Error',
-        err instanceof Error ? err.message : 'Failed to update default address',
-      );
-    }
-  };
+  const isEditing = !!address;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -146,7 +188,7 @@ export default function AddressesScreen() {
         <Pressable style={styles.backButton} onPress={() => router.back()}>
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon.primary} />
         </Pressable>
-        <Text style={styles.headerTitle}>My Addresses</Text>
+        <Text style={styles.headerTitle}>My Address</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -160,7 +202,40 @@ export default function AddressesScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {addresses.length === 0 ? (
+          {address ? (
+            <View style={styles.addressCard}>
+              <View style={styles.addressTop}>
+                <View style={styles.addressIconWrap}>
+                  <MaterialCommunityIcons
+                    name="home-outline"
+                    size={22}
+                    color={colors.brand.accent}
+                  />
+                </View>
+                <View style={styles.addressBody}>
+                  <Text style={styles.addressName} numberOfLines={2}>
+                    {address.communityName}
+                  </Text>
+                  <Text style={styles.addressDetail}>
+                    {address.tower ? `Tower ${address.tower} • ` : ''}
+                    Flat {address.flatNumber}
+                  </Text>
+                  {!!address.city && (
+                    <Text style={styles.addressCity}>{address.city}</Text>
+                  )}
+                </View>
+              </View>
+
+              <Pressable style={styles.editButton} onPress={openEditModal}>
+                <MaterialCommunityIcons
+                  name="pencil-outline"
+                  size={18}
+                  color={colors.brand.onPrimary}
+                />
+                <Text style={styles.editButtonText}>Edit address</Text>
+              </Pressable>
+            </View>
+          ) : (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconWrap}>
                 <MaterialCommunityIcons
@@ -169,241 +244,205 @@ export default function AddressesScreen() {
                   color={colors.brand.accent}
                 />
               </View>
-              <Text style={styles.emptyTitle}>No addresses yet</Text>
+              <Text style={styles.emptyTitle}>No address yet</Text>
               <Text style={styles.emptySubtitle}>
-                Add your apartment address to book pickups easily.
+                Add your apartment address to book pickups.
               </Text>
+              <Pressable style={styles.addButton} onPress={openEditModal}>
+                <MaterialCommunityIcons
+                  name="plus"
+                  size={22}
+                  color={colors.brand.onPrimary}
+                />
+                <Text style={styles.addButtonText}>Add address</Text>
+              </Pressable>
             </View>
-          ) : (
-            addresses.map((address) => (
-              <View key={address.id} style={styles.addressCard}>
-                <View style={styles.addressTop}>
-                  <View style={styles.addressIconWrap}>
-                    <MaterialCommunityIcons
-                      name="home-outline"
-                      size={22}
-                      color={colors.brand.accent}
-                    />
-                  </View>
-                  <View style={styles.addressBody}>
-                    <View style={styles.addressTitleRow}>
-                      <Text style={styles.addressName} numberOfLines={1}>
-                        {address.communityName}
-                      </Text>
-                      {address.isDefault && (
-                        <View style={styles.defaultBadge}>
-                          <Text style={styles.defaultBadgeText}>Default</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.addressDetail}>
-                      {address.tower ? `Tower ${address.tower} • ` : ''}
-                      Flat {address.flatNumber}
-                    </Text>
-                    {!!address.city && (
-                      <Text style={styles.addressCity}>{address.city}</Text>
-                    )}
-                  </View>
-                </View>
-                {!address.isDefault && (
-                  <Pressable
-                    style={styles.setDefaultButton}
-                    onPress={() => handleSetDefault(address.id)}
-                  >
-                    <Text style={styles.setDefaultText}>Set as default</Text>
-                  </Pressable>
-                )}
-              </View>
-            ))
           )}
-
-          <Pressable style={styles.addButton} onPress={openAddModal}>
-            <MaterialCommunityIcons name="plus" size={22} color={colors.brand.onPrimary} />
-            <Text style={styles.addButtonText}>Add New Address</Text>
-          </Pressable>
         </ScrollView>
       )}
 
-      {/* Add Address Modal */}
       <Modal
-        visible={showAddModal}
+        visible={showEditModal}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setShowAddModal(false)}
+        onRequestClose={() => {
+          if (showCommunityPicker) {
+            setShowCommunityPicker(false);
+            return;
+          }
+          setShowEditModal(false);
+        }}
       >
         <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add New Address</Text>
-            <Pressable
-              onPress={() => setShowAddModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <MaterialCommunityIcons name="close" size={24} color={colors.icon.primary} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            contentContainerStyle={styles.addForm}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.inputLabel}>Apartment / Society</Text>
-            <Pressable
-              style={styles.selectField}
-              onPress={() => setShowCommunityModal(true)}
-            >
-              <MaterialCommunityIcons
-                name="magnify"
-                size={22}
-                color={colors.icon.secondary}
-                style={styles.inputIcon}
-              />
-              <Text
-                style={[
-                  styles.selectText,
-                  !selectedCommunity && styles.placeholderText,
-                ]}
-                numberOfLines={1}
-              >
-                {selectedCommunity?.name || 'Search your apartment or society'}
-              </Text>
-              <MaterialCommunityIcons
-                name="chevron-down"
-                size={20}
-                color={colors.icon.secondary}
-              />
-            </Pressable>
-
-            <View style={styles.rowFields}>
-              <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Tower / Block</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Optional"
-                    placeholderTextColor={inputs.placeholder.color}
-                    value={tower}
-                    onChangeText={setTower}
-                  />
-                </View>
-              </View>
-              <View style={styles.halfField}>
-                <Text style={styles.inputLabel}>Flat Number</Text>
-                <View style={styles.inputContainer}>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 1204"
-                    placeholderTextColor={inputs.placeholder.color}
-                    value={flatNumber}
-                    onChangeText={setFlatNumber}
-                  />
-                </View>
-              </View>
-            </View>
-
-            {addresses.length > 0 && (
-              <Pressable
-                style={styles.checkboxRow}
-                onPress={() => setMakeDefault((prev) => !prev)}
-              >
-                <MaterialCommunityIcons
-                  name={makeDefault ? 'checkbox-marked' : 'checkbox-blank-outline'}
-                  size={22}
-                  color={makeDefault ? colors.brand.accent : colors.icon.muted}
-                />
-                <Text style={styles.checkboxLabel}>Set as default address</Text>
-              </Pressable>
-            )}
-
-            {!!error && <Text style={styles.errorText}>{error}</Text>}
-
-            <Pressable
-              style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-              onPress={handleSaveAddress}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <ActivityIndicator size="small" color={colors.brand.onPrimary} />
-              ) : (
-                <Text style={styles.saveButtonText}>Save Address</Text>
-              )}
-            </Pressable>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Community Search Modal */}
-      <Modal
-        visible={showCommunityModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowCommunityModal(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Select Apartment / Society</Text>
-            <Pressable
-              onPress={() => setShowCommunityModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <MaterialCommunityIcons name="close" size={24} color={colors.icon.primary} />
-            </Pressable>
-          </View>
-
-          <View style={styles.searchContainer}>
-            <MaterialCommunityIcons
-              name="magnify"
-              size={22}
-              color={colors.icon.secondary}
-            />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search apartment name..."
-              placeholderTextColor={inputs.placeholder.color}
-              value={communitySearch}
-              onChangeText={handleSearchCommunities}
-              autoFocus
-            />
-          </View>
-
-          {searchLoading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator size="small" color={colors.brand.primary} />
-            </View>
-          ) : (
-            <FlatList
-              data={communities}
-              keyExtractor={(item) => item.id}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.communityList}
-              ListEmptyComponent={
-                communitySearch.length >= 2 ? (
-                  <Text style={styles.emptySearch}>No apartments found</Text>
-                ) : (
-                  <Text style={styles.emptySearch}>Type at least 2 characters to search</Text>
-                )
-              }
-              renderItem={({ item }) => (
+          {showCommunityPicker ? (
+            <>
+              <View style={styles.modalHeader}>
                 <Pressable
-                  style={styles.communityItem}
-                  onPress={() => {
-                    setSelectedCommunity(item);
-                    setShowCommunityModal(false);
-                    setCommunitySearch('');
-                    setCommunities([]);
-                  }}
+                  onPress={() => setShowCommunityPicker(false)}
+                  style={styles.modalCloseButton}
                 >
                   <MaterialCommunityIcons
-                    name="office-building"
-                    size={22}
-                    color={colors.brand.accent}
+                    name="arrow-left"
+                    size={24}
+                    color={colors.icon.primary}
                   />
-                  <View style={styles.communityText}>
-                    <Text style={styles.communityName}>{item.name}</Text>
-                    <Text style={styles.communityCity}>{item.city}</Text>
-                  </View>
                 </Pressable>
+                <Text style={styles.modalTitle}>Select apartment</Text>
+                <View style={styles.headerSpacer} />
+              </View>
+
+              <View style={styles.searchContainer}>
+                <MaterialCommunityIcons
+                  name="magnify"
+                  size={22}
+                  color={colors.icon.secondary}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search apartment name..."
+                  placeholderTextColor={inputs.placeholder.color}
+                  value={communitySearch}
+                  onChangeText={handleSearchCommunities}
+                  autoFocus
+                />
+              </View>
+
+              {searchLoading ? (
+                <View style={styles.centered}>
+                  <ActivityIndicator size="small" color={colors.brand.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  data={communities}
+                  keyExtractor={(item) => item.id}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.communityList}
+                  ListEmptyComponent={
+                    <Text style={styles.emptySearch}>
+                      {communitySearch.trim()
+                        ? 'No apartments found'
+                        : 'No active communities available'}
+                    </Text>
+                  }
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={[
+                        styles.communityItem,
+                        selectedCommunity?.id === item.id && styles.communityItemSelected,
+                      ]}
+                      onPress={() => handleSelectCommunity(item)}
+                    >
+                      <MaterialCommunityIcons
+                        name="office-building"
+                        size={22}
+                        color={colors.brand.accent}
+                      />
+                      <View style={styles.communityText}>
+                        <Text style={styles.communityName}>{item.name}</Text>
+                        <Text style={styles.communityCity}>{item.city}</Text>
+                      </View>
+                      {selectedCommunity?.id === item.id && (
+                        <MaterialCommunityIcons
+                          name="check"
+                          size={20}
+                          color={colors.brand.accent}
+                        />
+                      )}
+                    </Pressable>
+                  )}
+                />
               )}
-            />
+            </>
+          ) : (
+            <>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {isEditing ? 'Edit address' : 'Add address'}
+                </Text>
+                <Pressable
+                  onPress={() => setShowEditModal(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={24}
+                    color={colors.icon.primary}
+                  />
+                </Pressable>
+              </View>
+
+              <ScrollView
+                contentContainerStyle={styles.addForm}
+                keyboardShouldPersistTaps="handled"
+              >
+                <Text style={styles.inputLabel}>Apartment / Society</Text>
+                <Pressable style={styles.selectField} onPress={openCommunityPicker}>
+                  <MaterialCommunityIcons
+                    name="magnify"
+                    size={22}
+                    color={colors.icon.secondary}
+                    style={styles.inputIcon}
+                  />
+                  <Text
+                    style={[
+                      styles.selectText,
+                      !selectedCommunity && styles.placeholderText,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {selectedCommunity?.name || 'Search your apartment or society'}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name="chevron-down"
+                    size={20}
+                    color={colors.icon.secondary}
+                  />
+                </Pressable>
+
+                <View style={styles.rowFields}>
+                  <View style={styles.halfField}>
+                    <Text style={styles.inputLabel}>Tower / Block</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Optional"
+                        placeholderTextColor={inputs.placeholder.color}
+                        value={tower}
+                        onChangeText={setTower}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.halfField}>
+                    <Text style={styles.inputLabel}>Flat Number</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="e.g. 1204"
+                        placeholderTextColor={inputs.placeholder.color}
+                        value={flatNumber}
+                        onChangeText={setFlatNumber}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {!!error && <Text style={styles.errorText}>{error}</Text>}
+
+                <Pressable
+                  style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                  onPress={handleSaveAddress}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color={colors.brand.onPrimary} />
+                  ) : (
+                    <Text style={styles.saveButtonText}>
+                      {isEditing ? 'Save changes' : 'Save address'}
+                    </Text>
+                  )}
+                </Pressable>
+              </ScrollView>
+            </>
           )}
         </SafeAreaView>
       </Modal>
@@ -460,7 +499,6 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     paddingVertical: spacing['2xl'],
-    marginBottom: spacing.lg,
   },
   emptyIconWrap: {
     width: 72,
@@ -483,6 +521,7 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
   },
   addressCard: {
     backgroundColor: colors.surface.elevated,
@@ -490,12 +529,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
     padding: spacing.lg,
-    marginBottom: spacing.md,
     ...shadows.sm.native,
   },
   addressTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    marginBottom: spacing.lg,
   },
   addressIconWrap: {
     width: 40,
@@ -509,28 +548,11 @@ const styles = StyleSheet.create({
   addressBody: {
     flex: 1,
   },
-  addressTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: 4,
-  },
   addressName: {
-    flex: 1,
     fontFamily: fonts.inter.semibold,
     fontSize: 16,
     color: colors.text.heading,
-  },
-  defaultBadge: {
-    backgroundColor: colors.brand.accentMuted,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  defaultBadgeText: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 11,
-    color: colors.brand.accent,
+    marginBottom: 4,
   },
   addressDetail: {
     fontFamily: fonts.inter.regular,
@@ -543,15 +565,19 @@ const styles = StyleSheet.create({
     color: colors.text.muted,
     marginTop: 2,
   },
-  setDefaultButton: {
-    marginTop: spacing.md,
-    alignSelf: 'flex-start',
-    paddingVertical: spacing.xs,
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.brand.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
   },
-  setDefaultText: {
+  editButtonText: {
     fontFamily: fonts.inter.semibold,
-    fontSize: 13,
-    color: colors.brand.accent,
+    fontSize: 15,
+    color: colors.brand.onPrimary,
   },
   addButton: {
     flexDirection: 'row',
@@ -560,8 +586,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand.primary,
     borderRadius: radius.lg,
     paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
     gap: spacing.sm,
-    marginTop: spacing.sm,
   },
   addButtonText: {
     fontFamily: fonts.inter.semibold,
@@ -607,10 +633,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.surface.elevated,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radius.md,
+    borderColor: colors.border.input,
+    borderRadius: radius.input,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    minHeight: 52,
     marginBottom: spacing.lg,
   },
   inputIcon: {
@@ -623,7 +649,7 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   placeholderText: {
-    color: colors.text.muted,
+    color: inputs.placeholder.color,
   },
   rowFields: {
     flexDirection: 'row',
@@ -636,26 +662,17 @@ const styles = StyleSheet.create({
   inputContainer: {
     backgroundColor: colors.surface.elevated,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radius.md,
+    borderColor: colors.border.input,
+    borderRadius: radius.input,
     paddingHorizontal: spacing.md,
+    minHeight: 52,
+    justifyContent: 'center',
   },
   input: {
     fontFamily: fonts.inter.regular,
     fontSize: 15,
     color: colors.text.primary,
-    paddingVertical: spacing.md,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  checkboxLabel: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 14,
-    color: colors.text.primary,
+    paddingVertical: spacing.sm,
   },
   errorText: {
     fontFamily: fonts.inter.regular,
@@ -668,6 +685,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     paddingVertical: spacing.md,
     alignItems: 'center',
+    marginTop: spacing.sm,
   },
   saveButtonDisabled: {
     opacity: 0.7,
@@ -680,12 +698,14 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    margin: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.md,
     paddingHorizontal: spacing.md,
     backgroundColor: colors.surface.elevated,
     borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radius.md,
+    borderColor: colors.border.input,
+    borderRadius: radius.input,
+    minHeight: 48,
     gap: spacing.sm,
   },
   searchInput: {
@@ -693,7 +713,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.regular,
     fontSize: 15,
     color: colors.text.primary,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
   },
   communityList: {
     paddingHorizontal: spacing.lg,
@@ -706,6 +726,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border.divider,
     gap: spacing.md,
+  },
+  communityItemSelected: {
+    backgroundColor: colors.brand.accentMuted,
+    marginHorizontal: -spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
   communityText: {
     flex: 1,

@@ -4,8 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Badge, EmptyState, Loader, Pagination, SearchInput, Table } from '@/components';
 import type { OrderStatus } from '@ironcloud/db';
+import { useDateFilter } from '@/contexts/DateFilterContext';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { formatCurrency, formatOrderStatus, formatRelativeTime, getOrderStatusBadge } from '@/utils/format';
+import {
+  formatCurrency,
+  formatOrderStatus,
+  formatRelativeTime,
+  getOrderStatusBadge,
+  toISODate,
+} from '@/utils/format';
 
 import { fetchOrders } from '../services/orders.service';
 
@@ -15,7 +22,21 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'booked', 'pickup_assigned', 'picked_up', 'ironing', 'out_for_delivery', 'delivered', 'cancelled',
 ];
 
+const formatPickupSlot = (order: {
+  pickup_slot?: { window_start: string } | { window_start: string }[] | null;
+}): string => {
+  const slot = order.pickup_slot;
+  const windowStart = Array.isArray(slot) ? slot[0]?.window_start : slot?.window_start;
+  if (!windowStart) return '—';
+  return new Date(windowStart).toLocaleTimeString('en-IN', {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+};
+
 export const OrdersListPage = () => {
+  const { selectedDate } = useDateFilter();
+  const selectedDateKey = toISODate(selectedDate);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
@@ -28,6 +49,10 @@ export const OrdersListPage = () => {
   const pageSize = 25;
 
   useEffect(() => {
+    setPage(1);
+  }, [selectedDateKey]);
+
+  useEffect(() => {
     if (hasLoadedRef.current) setRefreshing(true);
     else setLoading(true);
 
@@ -36,6 +61,7 @@ export const OrdersListPage = () => {
       pageSize,
       search: debouncedSearch || undefined,
       status: status || undefined,
+      date: selectedDate,
     }).then((res) => {
       setData(res.data);
       setTotal(res.total);
@@ -43,7 +69,7 @@ export const OrdersListPage = () => {
       setLoading(false);
       setRefreshing(false);
     });
-  }, [page, debouncedSearch, status]);
+  }, [page, debouncedSearch, status, selectedDateKey, selectedDate]);
 
   if (loading) return <Loader fullPage />;
 
@@ -115,8 +141,13 @@ export const OrdersListPage = () => {
                   render: (o) => formatCurrency(Number(o.total_amount)),
                 },
                 {
-                  key: 'time',
-                  header: 'Time',
+                  key: 'pickup',
+                  header: 'Pickup',
+                  render: (o) => formatPickupSlot(o),
+                },
+                {
+                  key: 'booked',
+                  header: 'Booked',
                   render: (o) => formatRelativeTime(o.created_at),
                 },
               ]}

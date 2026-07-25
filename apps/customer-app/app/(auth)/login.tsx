@@ -3,15 +3,12 @@ import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  LayoutAnimation,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -32,10 +29,6 @@ import { ensureMsg91Initialized } from '../../src/features/auth/services/msg91';
 import { supabase } from '../../src/lib/supabase';
 
 const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const EMPTY_OTP = Array.from({ length: OTP_LENGTH }, () => '');
 
@@ -78,20 +71,17 @@ export default function LoginScreen() {
   };
 
   const transitionToOtp = () => {
+    // Avoid LayoutAnimation + native-driver opacity on iOS — it can hide OTP inputs.
+    setOtp([...EMPTY_OTP]);
+    setOtpError('');
+    setScreenState('otp');
+    fadeAnim.setValue(0);
     Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
+      toValue: 1,
+      duration: 250,
       useNativeDriver: true,
     }).start(() => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setOtp([...EMPTY_OTP]);
-      setOtpError('');
-      setScreenState('otp');
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
+      requestAnimationFrame(() => {
         otpRefs.current[0]?.focus();
       });
     });
@@ -125,21 +115,15 @@ export default function LoginScreen() {
   };
 
   const handleChangeNumber = () => {
+    setOtp([...EMPTY_OTP]);
+    setOtpError('');
+    setScreenState('phone');
+    fadeAnim.setValue(0);
     Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
+      toValue: 1,
+      duration: 250,
       useNativeDriver: true,
-    }).start(() => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setOtp([...EMPTY_OTP]);
-      setOtpError('');
-      setScreenState('phone');
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    });
+    }).start();
   };
 
   const handleOtpChange = (text: string, index: number) => {
@@ -694,21 +678,22 @@ const styles = StyleSheet.create({
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: spacing.sm,
-    flexWrap: 'nowrap',
+    gap: spacing.sm,
   },
   otpBox: {
-    width: 44,
-    height: 52,
+    width: 52,
+    height: 56,
     borderWidth: 1.5,
     borderColor: colors.border.input,
     borderRadius: radius.input,
     backgroundColor: colors.surface.elevated,
     textAlign: 'center',
     fontFamily: fonts.poppins.bold,
-    fontSize: 20,
+    fontSize: 22,
     color: colors.text.heading,
-    marginHorizontal: 3,
+    padding: 0,
   },
   otpBoxFilled: {
     borderColor: colors.brand.accent,

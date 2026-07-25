@@ -14,6 +14,8 @@
     "ios": "npm run ios --workspace=@ironcloud/customer-app",
     "web": "npm run web --workspace=@ironcloud/customer-app",
     "customer:start": "npm run start --workspace=@ironcloud/customer-app",
+    "customer:start:clear": "npm run start:clear --workspace=@ironcloud/customer-app",
+    "customer:start:tunnel": "npm run start:tunnel --workspace=@ironcloud/customer-app",
     "rider:start": "npm run start --workspace=@ironcloud/rider-app",
     "rider:start:clear": "npm run start:clear --workspace=@ironcloud/rider-app",
     "rider:start:8082": "npm run start:8082:clear --workspace=@ironcloud/rider-app",
@@ -22,9 +24,5 @@
   "devDependencies": {
     "turbo": "^2.5.4",
     "typescript": "~6.0.3"
-  },
-  "dependencies": {
-    "expo-font": "^57.0.1",
-    "expo-splash-screen": "^57.0.4"
   }
 }

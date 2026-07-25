@@ -1,8 +1,11 @@
 import { supabase } from '../../../lib/supabase';
+import { getApiBaseUrl } from '../../../lib/api';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 const MOCK_RIDER_ID = '00000000-0000-0000-0000-000000000002';
+
+const RESOLVE_RIDER_TIMEOUT_MS = 15000;
 
 export type SlotKey = 'morning' | 'afternoon' | 'evening';
 
@@ -93,10 +96,99 @@ async function getCurrentUserId(): Promise<string | null> {
 
 /**
  * Pick a pickup rider for the community.
- * Prefers the mock rider when mapped (keeps customer↔rider E2E working),
- * otherwise the first community-assigned rider, else mock fallback.
+ *
+ * Real auth: resolves via Next API (service role) because customers cannot
+ * read rider_communities under RLS — otherwise we silently fell back to the
+ * mock rider (Rahul).
+ *
+ * Mock auth: prefers the mock rider when mapped to the community (E2E), else
+ * first community rider, else mock fallback.
  */
 async function resolvePickupRider(communityId: string): Promise<{
+  riderId: string;
+  riderName: string;
+  riderPhone: string | null;
+}> {
+  if (!IS_MOCK_AUTH) {
+    return resolvePickupRiderViaApi(communityId);
+  }
+
+  return resolvePickupRiderClientSide(communityId);
+}
+
+async function resolvePickupRiderViaApi(communityId: string): Promise<{
+  riderId: string;
+  riderName: string;
+  riderPhone: string | null;
+}> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Please sign in again to book a pickup.');
+  }
+
+  const apiBase = getApiBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), RESOLVE_RIDER_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/booking/resolve-pickup-rider`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ communityId }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const aborted =
+      (err instanceof Error && err.name === 'AbortError') ||
+      (typeof err === 'object' &&
+        err !== null &&
+        'name' in err &&
+        (err as { name?: string }).name === 'AbortError');
+    throw new Error(
+      aborted
+        ? `Could not assign a pickup rider (timed out contacting ${apiBase}). Is web:dev reachable?`
+        : `Could not assign a pickup rider (cannot reach ${apiBase}). Check EXPO_PUBLIC_API_URL.`,
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  let payload: {
+    error?: string;
+    success?: boolean;
+    riderId?: string;
+    riderName?: string;
+    riderPhone?: string | null;
+  };
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('Invalid response while assigning pickup rider.');
+  }
+
+  if (!response.ok || !payload.success || !payload.riderId) {
+    throw new Error(
+      payload.error || 'No rider is assigned to this community. Ask ops to assign one.',
+    );
+  }
+
+  return {
+    riderId: payload.riderId,
+    riderName: payload.riderName?.trim() || 'Pickup Partner',
+    riderPhone: payload.riderPhone ?? null,
+  };
+}
+
+async function resolvePickupRiderClientSide(communityId: string): Promise<{
   riderId: string;
   riderName: string;
   riderPhone: string | null;
@@ -110,10 +202,12 @@ async function resolvePickupRider(communityId: string): Promise<{
     console.warn('[Booking] rider_communities lookup failed:', error.message);
   }
 
-  const riderIds = ((links ?? []) as { rider_id: string }[]).map((row) => row.rider_id);
+  const riderIds = ((links ?? []) as { rider_id: string }[])
+    .map((row) => row.rider_id)
+    .sort();
 
   const riderId =
-    (IS_MOCK_AUTH && riderIds.includes(MOCK_RIDER_ID) ? MOCK_RIDER_ID : null) ??
+    (riderIds.includes(MOCK_RIDER_ID) ? MOCK_RIDER_ID : null) ??
     riderIds[0] ??
     MOCK_RIDER_ID;
 
@@ -273,6 +367,75 @@ function generateOrderNumber(): string {
   const d = String(now.getDate()).padStart(2, '0');
   const rand = Math.floor(1000 + Math.random() * 9000);
   return `IC${y}${m}${d}${rand}`.slice(0, 12);
+}
+
+/**
+ * Reuse an existing community slot window when present (e.g. after cancel + rebook),
+ * otherwise insert. Avoids unique (community_id, slot_type, window_start) conflicts.
+ */
+async function ensureServiceSlot(params: {
+  communityId: string;
+  slotType: 'pickup' | 'delivery';
+  windowStart: Date;
+  windowEnd: Date;
+}): Promise<string> {
+  const windowStartIso = params.windowStart.toISOString();
+  const windowEndIso = params.windowEnd.toISOString();
+
+  const findExisting = async () => {
+    const { data, error } = await (supabase
+      .from('service_slots') as ReturnType<typeof supabase.from>)
+      .select('id, booked_count')
+      .eq('community_id', params.communityId)
+      .eq('slot_type', params.slotType)
+      .eq('window_start', windowStartIso)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('[Booking] service_slots lookup failed:', error.message);
+      return null;
+    }
+    return data as { id: string; booked_count: number | null } | null;
+  };
+
+  const existing = await findExisting();
+  if (existing) {
+    await (supabase.from('service_slots') as ReturnType<typeof supabase.from>)
+      .update({ booked_count: (existing.booked_count ?? 0) + 1 })
+      .eq('id', existing.id);
+    return existing.id;
+  }
+
+  const { data: created, error: insertError } = await (supabase
+    .from('service_slots') as ReturnType<typeof supabase.from>)
+    .insert({
+      community_id: params.communityId,
+      slot_type: params.slotType,
+      window_start: windowStartIso,
+      window_end: windowEndIso,
+      capacity: 50,
+      booked_count: 1,
+    })
+    .select('id')
+    .single();
+
+  if (!insertError && created) {
+    return (created as { id: string }).id;
+  }
+
+  // Concurrent insert or leftover slot from a cancelled order — reuse it.
+  const raced = await findExisting();
+  if (raced) {
+    await (supabase.from('service_slots') as ReturnType<typeof supabase.from>)
+      .update({ booked_count: (raced.booked_count ?? 0) + 1 })
+      .eq('id', raced.id);
+    return raced.id;
+  }
+
+  console.error('[Booking] service_slots insert error:', insertError);
+  throw new Error(
+    insertError?.message || `Failed to reserve ${params.slotType} slot`,
+  );
 }
 
 function getDayBounds(dayOffset: number) {
@@ -651,41 +814,19 @@ export async function createBooking(input: CreateBookingInput): Promise<{
     pickupWindow.end,
   );
 
-  const { data: pickupSlot, error: pickupSlotError } = await (supabase
-    .from('service_slots') as ReturnType<typeof supabase.from>)
-    .insert({
-      community_id: addressRow.community_id,
-      slot_type: 'pickup',
-      window_start: pickupWindow.start.toISOString(),
-      window_end: pickupWindow.end.toISOString(),
-      capacity: 50,
-      booked_count: 1,
-    })
-    .select('id')
-    .single();
+  const pickupSlotId = await ensureServiceSlot({
+    communityId: addressRow.community_id,
+    slotType: 'pickup',
+    windowStart: pickupWindow.start,
+    windowEnd: pickupWindow.end,
+  });
 
-  if (pickupSlotError || !pickupSlot) {
-    console.error('[Booking] Pickup slot error:', pickupSlotError);
-    throw new Error(pickupSlotError?.message || 'Failed to reserve pickup slot');
-  }
-
-  const { data: deliverySlot, error: deliverySlotError } = await (supabase
-    .from('service_slots') as ReturnType<typeof supabase.from>)
-    .insert({
-      community_id: addressRow.community_id,
-      slot_type: 'delivery',
-      window_start: deliveryWindow.start.toISOString(),
-      window_end: deliveryWindow.end.toISOString(),
-      capacity: 50,
-      booked_count: 1,
-    })
-    .select('id')
-    .single();
-
-  if (deliverySlotError || !deliverySlot) {
-    console.error('[Booking] Delivery slot error:', deliverySlotError);
-    throw new Error(deliverySlotError?.message || 'Failed to reserve delivery slot');
-  }
+  const deliverySlotId = await ensureServiceSlot({
+    communityId: addressRow.community_id,
+    slotType: 'delivery',
+    windowStart: deliveryWindow.start,
+    windowEnd: deliveryWindow.end,
+  });
 
   const orderNumber = generateOrderNumber();
   const assignedRider = await resolvePickupRider(addressRow.community_id);
@@ -698,8 +839,8 @@ export async function createBooking(input: CreateBookingInput): Promise<{
       address_id: addressRow.id,
       community_id: addressRow.community_id,
       status: 'pickup_assigned',
-      pickup_slot_id: (pickupSlot as { id: string }).id,
-      delivery_slot_id: (deliverySlot as { id: string }).id,
+      pickup_slot_id: pickupSlotId,
+      delivery_slot_id: deliverySlotId,
       special_instructions: input.specialInstructions?.trim() || null,
       subtotal: 0,
       total_amount: 0,
@@ -733,19 +874,104 @@ export async function createBooking(input: CreateBookingInput): Promise<{
     },
   ]);
 
-  await (supabase.from('rider_jobs') as ReturnType<typeof supabase.from>).insert({
-    order_id: orderRow.id,
-    rider_id: assignedRider.riderId,
-    job_type: 'pickup',
-    status: 'assigned',
-    scheduled_start: pickupWindow.start.toISOString(),
-    scheduled_end: pickupWindow.end.toISOString(),
+  await ensurePickupJob({
+    orderId: orderRow.id,
+    riderId: assignedRider.riderId,
+    scheduledStart: pickupWindow.start.toISOString(),
+    scheduledEnd: pickupWindow.end.toISOString(),
   });
 
   return {
     orderId: orderRow.id,
     orderNumber: orderRow.order_number,
   };
+}
+
+async function ensurePickupJob(params: {
+  orderId: string;
+  riderId: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+}): Promise<void> {
+  if (!IS_MOCK_AUTH) {
+    await ensurePickupJobViaApi(params);
+    return;
+  }
+
+  const { error } = await (supabase.from('rider_jobs') as ReturnType<typeof supabase.from>).insert({
+    order_id: params.orderId,
+    rider_id: params.riderId,
+    job_type: 'pickup',
+    status: 'assigned',
+    scheduled_start: params.scheduledStart,
+    scheduled_end: params.scheduledEnd,
+  });
+
+  if (error) {
+    console.error('[Booking] rider_jobs insert error:', error);
+    throw new Error(error.message || 'Failed to assign pickup job to rider');
+  }
+}
+
+async function ensurePickupJobViaApi(params: {
+  orderId: string;
+  scheduledStart: string;
+  scheduledEnd: string;
+}): Promise<void> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Please sign in again to complete booking.');
+  }
+
+  const apiBase = getApiBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), RESOLVE_RIDER_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/booking/ensure-pickup-job`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        orderId: params.orderId,
+        scheduledStart: params.scheduledStart,
+        scheduledEnd: params.scheduledEnd,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const aborted =
+      (err instanceof Error && err.name === 'AbortError') ||
+      (typeof err === 'object' &&
+        err !== null &&
+        'name' in err &&
+        (err as { name?: string }).name === 'AbortError');
+    throw new Error(
+      aborted
+        ? `Could not assign rider job (timed out contacting ${apiBase}).`
+        : `Could not assign rider job (cannot reach ${apiBase}).`,
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  let payload: { error?: string; success?: boolean };
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('Invalid response while assigning rider job.');
+  }
+
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || 'Failed to assign pickup job to rider.');
+  }
 }
 
 /** Marks a delivered order complete so the customer can book again. */
@@ -765,6 +991,124 @@ export async function markOrderReadyForRebook(orderId: string): Promise<void> {
     note: 'Order closed — customer ready to book again',
     metadata: {},
   });
+}
+
+const CANCEL_TIMEOUT_MS = 15000;
+
+const CANCELLABLE_STATUSES = [
+  'booked',
+  'pickup_assigned',
+  'pickup_in_progress',
+] as const;
+
+/**
+ * Cancel a pre-pickup booking so home returns to the slot picker.
+ */
+export async function cancelBooking(orderId: string): Promise<void> {
+  if (!IS_MOCK_AUTH) {
+    return cancelBookingViaApi(orderId);
+  }
+  return cancelBookingClientSide(orderId);
+}
+
+async function cancelBookingViaApi(orderId: string): Promise<void> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Please sign in again to cancel this booking.');
+  }
+
+  const apiBase = getApiBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CANCEL_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/booking/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ orderId }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const aborted =
+      (err instanceof Error && err.name === 'AbortError') ||
+      (typeof err === 'object' &&
+        err !== null &&
+        'name' in err &&
+        (err as { name?: string }).name === 'AbortError');
+    throw new Error(
+      aborted
+        ? `Cancel timed out contacting ${apiBase}. Is web:dev reachable?`
+        : `Cannot reach cancel server (${apiBase}). Check EXPO_PUBLIC_API_URL.`,
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  let payload: { error?: string; success?: boolean };
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('Invalid response while cancelling booking.');
+  }
+
+  if (!response.ok || !payload.success) {
+    throw new Error(payload.error || 'Failed to cancel booking.');
+  }
+}
+
+async function cancelBookingClientSide(orderId: string): Promise<void> {
+  const { data: order, error: fetchError } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .select('id, status')
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  const status = (order as { status?: string } | null)?.status;
+  if (
+    !status ||
+    !CANCELLABLE_STATUSES.includes(status as (typeof CANCELLABLE_STATUSES)[number])
+  ) {
+    throw new Error(
+      'This booking can no longer be cancelled. Pickup may already be underway or complete.',
+    );
+  }
+
+  const { error } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .update({ status: 'cancelled' })
+    .eq('id', orderId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
+    order_id: orderId,
+    status: 'cancelled',
+    note: 'Cancelled by customer',
+    metadata: {},
+  });
+
+  await (supabase.from('rider_jobs') as ReturnType<typeof supabase.from>)
+    .update({
+      status: 'failed',
+      failure_reason: 'Customer cancelled',
+      completed_at: new Date().toISOString(),
+    })
+    .eq('order_id', orderId)
+    .in('status', ['assigned', 'in_progress']);
 }
 
 export { PICKUP_HOURS };

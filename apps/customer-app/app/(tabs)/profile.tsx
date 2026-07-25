@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -20,10 +20,17 @@ import {
   typographyScale,
 } from '@ironcloud/ui';
 
+import { AUTH_PROVIDER, MOCK_USER_ID } from '../../src/config/auth';
 import { supabase } from '../../src/lib/supabase';
 
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
+const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
+
+function formatDisplayPhone(phone: string | null | undefined): string {
+  if (!phone?.trim()) return 'Phone not set';
+  const digits = phone.replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return phone.trim();
+  return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+}
 
 interface UserProfile {
   fullName: string;
@@ -49,15 +56,22 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    loadProfile();
-  }, []);
-
-  async function loadProfile() {
+  const loadProfile = useCallback(async () => {
     try {
-      const userId = IS_MOCK_AUTH ? MOCK_USER_ID : null;
+      setIsLoading(true);
+
+      let userId: string | null = null;
+      if (IS_MOCK_AUTH) {
+        userId = MOCK_USER_ID;
+      } else {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        userId = user?.id ?? null;
+      }
+
       if (!userId) {
-        setIsLoading(false);
+        setProfile(null);
         return;
       }
 
@@ -65,7 +79,7 @@ export default function ProfileScreen() {
         .from('profiles') as ReturnType<typeof supabase.from>)
         .select('full_name, phone, email')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       const { data: addressData } = await (supabase
         .from('addresses') as ReturnType<typeof supabase.from>)
@@ -76,24 +90,39 @@ export default function ProfileScreen() {
         `)
         .eq('customer_id', userId)
         .eq('is_default', true)
-        .single();
+        .maybeSingle();
 
-      const communityName = (addressData as { community: { name: string } | null })?.community?.name || 'Not set';
+      const communityName =
+        (addressData as { community: { name: string } | null } | null)?.community
+          ?.name || 'Not set';
+
+      const row = profileData as {
+        full_name: string | null;
+        phone: string | null;
+        email: string | null;
+      } | null;
 
       setProfile({
-        fullName: (profileData as { full_name: string })?.full_name || 'User',
-        phone: (profileData as { phone: string })?.phone || '9999999999',
-        email: (profileData as { email: string | null })?.email || null,
+        fullName: row?.full_name?.trim() || 'User',
+        phone: row?.phone?.trim() || '',
+        email: row?.email ?? null,
         apartment: communityName,
-        tower: (addressData as { tower: string | null })?.tower || null,
-        flatNumber: (addressData as { flat_number: string })?.flat_number || '',
+        tower: (addressData as { tower: string | null } | null)?.tower || null,
+        flatNumber:
+          (addressData as { flat_number: string } | null)?.flat_number || '',
       });
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
       setIsLoading(false);
     }
-  }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [loadProfile]),
+  );
 
   const handleLogout = () => {
     Alert.alert(
@@ -104,7 +133,14 @@ export default function ProfileScreen() {
         {
           text: 'Logout',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
+            try {
+              if (!IS_MOCK_AUTH) {
+                await supabase.auth.signOut();
+              }
+            } catch (error) {
+              console.warn('Logout signOut failed:', error);
+            }
             router.replace('/(auth)/login');
           },
         },
@@ -124,8 +160,8 @@ export default function ProfileScreen() {
     {
       id: 'addresses',
       icon: 'map-marker-outline',
-      label: 'My Addresses',
-      subtitle: 'Manage your addresses',
+      label: 'My Address',
+      subtitle: 'View or edit your address',
       onPress: () => router.push('/profile/addresses'),
       showArrow: true,
     },
@@ -217,7 +253,7 @@ export default function ProfileScreen() {
             </Pressable>
           </View>
           <Text style={styles.userName}>{profile?.fullName || 'User'}</Text>
-          <Text style={styles.userPhone}>+91 {profile?.phone || '9999999999'}</Text>
+          <Text style={styles.userPhone}>{formatDisplayPhone(profile?.phone)}</Text>
           {profile?.email ? (
             <Text style={styles.userEmail}>{profile.email}</Text>
           ) : null}

@@ -4,15 +4,12 @@ import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
-  LayoutAnimation,
-  Platform,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
-  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -28,10 +25,6 @@ import {
 
 import { OTP_LENGTH } from '../../src/config/auth';
 import { resendOtp, sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const FEATURES = [
   { icon: 'map-marker-path' as const, label: 'Optimized\nRoutes' },
@@ -63,18 +56,17 @@ export default function LoginScreen() {
   };
 
   const transitionToOtp = () => {
+    // Avoid LayoutAnimation + native-driver opacity on iOS — it can hide OTP inputs.
+    setOtp([...EMPTY_OTP]);
+    setOtpError('');
+    setScreenState('otp');
+    fadeAnim.setValue(0);
     Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
+      toValue: 1,
+      duration: 250,
       useNativeDriver: true,
     }).start(() => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setScreenState('otp');
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
+      requestAnimationFrame(() => {
         otpRefs.current[0]?.focus();
       });
     });
@@ -101,21 +93,15 @@ export default function LoginScreen() {
   };
 
   const handleChangeNumber = () => {
+    setOtp([...EMPTY_OTP]);
+    setOtpError('');
+    setScreenState('phone');
+    fadeAnim.setValue(0);
     Animated.timing(fadeAnim, {
-      toValue: 0,
-      duration: 200,
+      toValue: 1,
+      duration: 250,
       useNativeDriver: true,
-    }).start(() => {
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setOtp(EMPTY_OTP);
-      setOtpError('');
-      setScreenState('phone');
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-    });
+    }).start();
   };
 
   const handleOtpChange = (text: string, index: number) => {
@@ -145,7 +131,7 @@ export default function LoginScreen() {
       setOtpError(result.error.message);
       return;
     }
-    setOtp(EMPTY_OTP);
+    setOtp([...EMPTY_OTP]);
     otpRefs.current[0]?.focus();
   };
 
@@ -157,17 +143,22 @@ export default function LoginScreen() {
     }
     setOtpError('');
     setLoading(true);
-    const result = await verifyOtp(phoneNumber, otpValue);
-    setLoading(false);
-    if (result.error) {
-      setOtpError(result.error.message);
-      return;
+    try {
+      const result = await verifyOtp(phoneNumber, otpValue);
+      if (result.error) {
+        setOtpError(result.error.message);
+        return;
+      }
+      if (result.data.isActive === false) {
+        router.replace('/(auth)/pending');
+        return;
+      }
+      router.replace('/(tabs)/home');
+    } catch {
+      setOtpError('Verification failed. Check your connection and try again.');
+    } finally {
+      setLoading(false);
     }
-    if (result.data.isActive === false) {
-      router.replace('/(auth)/pending');
-      return;
-    }
-    router.replace('/(tabs)/home');
   };
 
   const hasError = error.length > 0;
@@ -649,13 +640,13 @@ const styles = StyleSheet.create({
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     marginBottom: spacing.sm,
-    flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   otpBox: {
-    width: 46,
-    height: 52,
+    width: 52,
+    height: 56,
     borderWidth: 1.5,
     borderColor: colors.border.input,
     borderRadius: radius.input,
@@ -664,6 +655,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.bold,
     fontSize: 22,
     color: colors.text.heading,
+    padding: 0,
   },
   otpBoxFilled: {
     borderColor: colors.brand.accent,

@@ -120,15 +120,42 @@ export async function isRiderAuthenticated(): Promise<boolean> {
   return !!user;
 }
 
+const SESSION_FETCH_TIMEOUT_MS = 15000;
+
 const exchangeMsg91Session = async (
   accessToken: string,
   phone: string,
 ): Promise<AuthResult<VerifyOtpResponse>> => {
-  const response = await fetch(`${getApiBaseUrl()}/api/auth/msg91-session-rider`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accessToken, phone }),
-  });
+  const apiBase = getApiBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SESSION_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/auth/msg91-session-rider`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken, phone }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const aborted =
+      (err instanceof Error && err.name === 'AbortError') ||
+      (typeof err === 'object' &&
+        err !== null &&
+        'name' in err &&
+        (err as { name?: string }).name === 'AbortError');
+    return {
+      data: null,
+      error: {
+        message: aborted
+          ? `Login server timed out (${apiBase}). Is web:dev running and reachable from this phone?`
+          : `Cannot reach login server (${apiBase}). Use the same Wi‑Fi as your PC, or set EXPO_PUBLIC_API_URL to a public URL.`,
+      },
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   let payload: {
     error?: string;

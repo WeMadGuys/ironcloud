@@ -1,32 +1,54 @@
 import type { OrderStatus } from '@ironcloud/db';
 import { getSupabase } from '@/lib/supabase';
+import { endOfDay, startOfDay } from '@/utils/format';
 
 export type OrderListParams = {
   page: number;
   pageSize: number;
   search?: string;
   status?: OrderStatus;
+  /** Filter by pickup slot day (not booking created_at). */
+  date?: Date;
   sortKey?: string;
   sortAsc?: boolean;
 };
 
 export const fetchOrders = async (params: OrderListParams) => {
   const supabase = getSupabase();
-  const { page, pageSize, search, status, sortKey = 'created_at', sortAsc = false } = params;
+  const { page, pageSize, search, status, date, sortKey = 'created_at', sortAsc = false } = params;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
+
+  let pickupSlotIds: string[] | null = null;
+  if (date) {
+    const dayStart = startOfDay(date).toISOString();
+    const dayEnd = endOfDay(date).toISOString();
+    const { data: slots, error: slotsError } = await supabase
+      .from('service_slots')
+      .select('id')
+      .gte('window_start', dayStart)
+      .lte('window_start', dayEnd);
+
+    if (slotsError) return { data: [], total: 0, error: slotsError };
+    pickupSlotIds = (slots ?? []).map((s) => s.id);
+    if (pickupSlotIds.length === 0) {
+      return { data: [], total: 0, error: null };
+    }
+  }
 
   let query = supabase
     .from('orders')
     .select(`
-      id, order_number, status, total_amount, created_at, payment_method,
+      id, order_number, status, total_amount, created_at, payment_method, pickup_slot_id,
       profiles!orders_customer_id_fkey(full_name, phone),
       communities(name),
-      addresses(flat_number, tower)
+      addresses(flat_number, tower),
+      pickup_slot:service_slots!pickup_slot_id(window_start, window_end)
     `, { count: 'exact' });
 
   if (status) query = query.eq('status', status);
   if (search) query = query.ilike('order_number', `%${search}%`);
+  if (pickupSlotIds) query = query.in('pickup_slot_id', pickupSlotIds);
 
   const { data, count, error } = await query
     .order(sortKey, { ascending: sortAsc })

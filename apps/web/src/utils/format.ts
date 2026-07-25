@@ -70,4 +70,16 @@ export const endOfDay = (date: Date): Date => {
   return d;
 };
 
-export const toISODate = (date: Date): string => date.toISOString().split('T')[0];
+/** Local calendar date as YYYY-MM-DD (avoids UTC day-shift from toISOString). */
+export const toISODate = (date: Date): string => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+/** Parse YYYY-MM-DD as local midnight (avoids UTC parsing of `new Date('YYYY-MM-DD')`). */
+export const parseISODate = (isoDate: string): Date => {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};

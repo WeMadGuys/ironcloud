@@ -92,7 +92,8 @@ export default function HomeScreen() {
   const days = getNextDays(7);
   const [selectedDay, setSelectedDay] = useState(0);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [contentLoading, setContentLoading] = useState(false);
   const [profileName, setProfileName] = useState('Rider');
   const [summary, setSummary] = useState({
     pickupOrders: 0,
@@ -104,8 +105,12 @@ export default function HomeScreen() {
   });
   const [communities, setCommunities] = useState<CommunityJobSummary[]>([]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (mode: 'initial' | 'content' = 'content') => {
+    if (mode === 'initial') {
+      setInitialLoading(true);
+    } else {
+      setContentLoading(true);
+    }
     try {
       const [profile, dash, list] = await Promise.all([
         getRiderProfile(),
@@ -116,15 +121,23 @@ export default function HomeScreen() {
       setSummary(dash);
       setCommunities(list);
     } finally {
-      setLoading(false);
+      setInitialLoading(false);
+      setContentLoading(false);
     }
   }, [selectedDay, search]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
+      loadData(initialLoading ? 'initial' : 'content');
+      // initialLoading intentionally omitted — only gates first load mode.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadData]),
   );
+
+  const handleSelectDay = (index: number) => {
+    if (index === selectedDay || contentLoading) return;
+    setSelectedDay(index);
+  };
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -133,100 +146,120 @@ export default function HomeScreen() {
     return 'Good Evening';
   })();
 
+  if (initialLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.fullLoader}>
+          <ActivityIndicator size="large" color={colors.brand.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar barStyle="dark-content" />
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <View style={styles.topSection}>
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={styles.greeting}>
-                {greeting}, {profileName}
-              </Text>
-              <Text style={styles.greetingSub}>Ready to get things pressed.</Text>
-            </View>
-            <Pressable
-              style={styles.avatar}
-              onPress={() => router.push('/(tabs)/profile')}
-              hitSlop={8}
-            >
-              <Text style={styles.avatarText}>{profileName[0]}</Text>
-            </Pressable>
+      <View style={styles.topSection}>
+        <View style={styles.header}>
+          <View style={styles.headerText}>
+            <Text style={styles.greeting}>
+              {greeting}, {profileName}
+            </Text>
+            <Text style={styles.greetingSub}>Ready to get things pressed.</Text>
           </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.dateStrip}
+          <Pressable
+            style={styles.avatar}
+            onPress={() => router.push('/(tabs)/profile')}
+            hitSlop={8}
           >
-            {days.map((day, index) => {
-              const selected = selectedDay === index;
-              const hasJobs = summary.jobDayOffsets.includes(index);
-              return (
-                <Pressable key={index} style={styles.dayItem} onPress={() => setSelectedDay(index)}>
-                  <Text style={[styles.dayLabel, selected && styles.dayLabelSelected]}>
-                    {day.isToday ? 'Today' : day.day}
+            <Text style={styles.avatarText}>{profileName[0]}</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.dateStrip}
+        >
+          {days.map((day, index) => {
+            const selected = selectedDay === index;
+            const hasJobs = summary.jobDayOffsets.includes(index);
+            return (
+              <Pressable
+                key={index}
+                style={styles.dayItem}
+                onPress={() => handleSelectDay(index)}
+              >
+                <Text style={[styles.dayLabel, selected && styles.dayLabelSelected]}>
+                  {day.isToday ? 'Today' : day.day}
+                </Text>
+                <View style={[styles.dayCircle, selected && styles.dayCircleSelected]}>
+                  <Text style={[styles.dayDate, selected && styles.dayDateSelected]}>
+                    {String(day.date).padStart(2, '0')}
                   </Text>
-                  <View style={[styles.dayCircle, selected && styles.dayCircleSelected]}>
-                    <Text style={[styles.dayDate, selected && styles.dayDateSelected]}>
-                      {String(day.date).padStart(2, '0')}
-                    </Text>
-                  </View>
-                  {hasJobs && !selected && <View style={styles.dayDot} />}
-                  {selected && <View style={styles.dayUnderline} />}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+                </View>
+                {hasJobs && !selected && <View style={styles.dayDot} />}
+                {selected && <View style={styles.dayUnderline} />}
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
 
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryHeader}>
-            <Text style={styles.summaryTitle}>Today&apos;s Summary</Text>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        {contentLoading ? (
+          <View style={styles.contentLoader}>
+            <ActivityIndicator size="large" color={colors.brand.primary} />
           </View>
-          <View style={styles.summaryRow}>
-            <SummaryItem icon="shopping-outline" label="Pickup Orders" value={summary.pickupOrders} color={colors.brand.accent} />
-            <SummaryItem icon="truck-delivery-outline" label="Delivery Orders" value={summary.deliveryOrders} color={colors.status.success.foreground} />
-            <SummaryItem icon="tshirt-crew-outline" label="Total Garments" value={summary.totalGarments} color={colors.status.warning.foreground} />
-            <SummaryItem icon="office-building-outline" label="Communities" value={summary.communities} color="#7C3AED" />
-          </View>
-        </View>
-
-        <View style={styles.searchRow}>
-          <View style={styles.searchBox}>
-            <MaterialCommunityIcons name="magnify" size={20} color={colors.icon.secondary} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search apartment, tower or flat"
-              placeholderTextColor={inputs.placeholder.color}
-              value={search}
-              onChangeText={setSearch}
-              onSubmitEditing={loadData}
-            />
-          </View>
-        </View>
-
-        {loading ? (
-          <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
-        ) : communities.length === 0 ? (
-          <Text style={styles.empty}>No jobs for this day.</Text>
         ) : (
-          communities.map((item) => (
-            <CommunityCard
-              key={item.communityId}
-              item={item}
-              onPress={() =>
-                router.push({
-                  pathname: '/jobs/community/[communityId]',
-                  params: {
-                    communityId: item.communityId,
-                    day: String(selectedDay),
-                    communityName: item.communityName,
-                  },
-                })
-              }
-            />
-          ))
+          <>
+            <View style={styles.summaryCard}>
+              <View style={styles.summaryHeader}>
+                <Text style={styles.summaryTitle}>Today&apos;s Summary</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <SummaryItem icon="shopping-outline" label="Pickup Orders" value={summary.pickupOrders} color={colors.brand.accent} />
+                <SummaryItem icon="truck-delivery-outline" label="Delivery Orders" value={summary.deliveryOrders} color={colors.status.success.foreground} />
+                <SummaryItem icon="tshirt-crew-outline" label="Total Garments" value={summary.totalGarments} color={colors.status.warning.foreground} />
+                <SummaryItem icon="office-building-outline" label="Communities" value={summary.communities} color="#7C3AED" />
+              </View>
+            </View>
+
+            <View style={styles.searchRow}>
+              <View style={styles.searchBox}>
+                <MaterialCommunityIcons name="magnify" size={20} color={colors.icon.secondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search apartment, tower or flat"
+                  placeholderTextColor={inputs.placeholder.color}
+                  value={search}
+                  onChangeText={setSearch}
+                  onSubmitEditing={() => loadData('content')}
+                />
+              </View>
+            </View>
+
+            {communities.length === 0 ? (
+              <Text style={styles.empty}>No jobs for this day.</Text>
+            ) : (
+              communities.map((item) => (
+                <CommunityCard
+                  key={item.communityId}
+                  item={item}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/jobs/community/[communityId]',
+                      params: {
+                        communityId: item.communityId,
+                        day: String(selectedDay),
+                        communityName: item.communityName,
+                      },
+                    })
+                  }
+                />
+              ))
+            )}
+          </>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -262,7 +295,18 @@ const fonts = fontFamily.native;
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.surface.background },
-  scroll: { paddingBottom: spacing['2xl'] },
+  scroll: { paddingBottom: spacing['2xl'], flexGrow: 1 },
+  fullLoader: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentLoader: {
+    minHeight: 280,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing['2xl'],
+  },
   topSection: {
     backgroundColor: colors.calendar.todayBackground,
     paddingTop: spacing.md,
