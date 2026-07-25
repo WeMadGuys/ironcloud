@@ -14,16 +14,18 @@ ON CONFLICT (id) DO UPDATE SET
   role = EXCLUDED.role,
   full_name = EXCLUDED.full_name;
 
-INSERT INTO public.riders (id, vehicle_number, kyc_status, rating_avg)
+INSERT INTO public.riders (id, vehicle_number, kyc_status, rating_avg, is_active)
 VALUES (
   '00000000-0000-0000-0000-000000000002'::uuid,
   'KA01AB1234',
   'approved',
-  4.8
+  4.8,
+  true
 )
 ON CONFLICT (id) DO UPDATE SET
   kyc_status = EXCLUDED.kyc_status,
-  rating_avg = EXCLUDED.rating_avg;
+  rating_avg = EXCLUDED.rating_avg,
+  is_active = EXCLUDED.is_active;
 
 -- Map rider to all communities that have active orders
 INSERT INTO public.rider_communities (rider_id, community_id)

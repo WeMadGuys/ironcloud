@@ -44,6 +44,7 @@ export const RidersListPage = () => {
   const createMutation = trpc.riders.create.useMutation();
   const updateMutation = trpc.riders.update.useMutation();
   const deleteMutation = trpc.riders.delete.useMutation();
+  const setActiveMutation = trpc.riders.setActive.useMutation();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -193,6 +194,11 @@ export const RidersListPage = () => {
               },
               { key: 'kyc', header: 'KYC', render: (r) => r.kyc_status },
               {
+                key: 'status',
+                header: 'Status',
+                render: (r) => (r.is_active ? 'Active' : 'Inactive'),
+              },
+              {
                 key: 'location',
                 header: 'Location',
                 render: (r) =>
@@ -205,6 +211,28 @@ export const RidersListPage = () => {
                 header: 'Actions',
                 render: (r) => (
                   <div className={formStyles.rowActions}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() =>
+                        setActiveMutation.mutate(
+                          { id: r.id, isActive: !r.is_active },
+                          {
+                            onSuccess: () => {
+                              toast(
+                                r.is_active ? 'Rider deactivated' : 'Rider activated',
+                                'success',
+                              );
+                              load();
+                            },
+                            onError: (err) => toast(err.message, 'error'),
+                          },
+                        )
+                      }
+                      disabled={setActiveMutation.isPending}
+                    >
+                      {r.is_active ? 'Deactivate' : 'Activate'}
+                    </Button>
                     <Button variant="secondary" size="sm" onClick={() => openEdit(r)}>
                       Edit
                     </Button>

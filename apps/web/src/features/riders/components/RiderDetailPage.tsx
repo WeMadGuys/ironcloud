@@ -49,6 +49,15 @@ export const RiderDetailPage = () => {
     onError: (err) => toast(err.message, 'error'),
   });
 
+  const setActiveMutation = trpc.riders.setActive.useMutation({
+    onSuccess: async (_data, variables) => {
+      toast(variables.isActive ? 'Rider activated' : 'Rider deactivated', 'success');
+      const riderData = await fetchRiderById(id);
+      setData(riderData);
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
   useEffect(() => {
     setLoading(true);
     fetchRiderById(id).then((riderData) => {
@@ -82,7 +91,8 @@ export const RiderDetailPage = () => {
   if (!data?.rider) return <div>Rider not found</div>;
 
   const profile = data.rider.profiles as { full_name: string; phone: string } | null;
-  const isMutating = assignMutation.isPending || unassignMutation.isPending;
+  const isMutating =
+    assignMutation.isPending || unassignMutation.isPending || setActiveMutation.isPending;
 
   return (
     <div className={pageStyles.detailGrid}>
@@ -108,6 +118,7 @@ export const RiderDetailPage = () => {
 
         <Card title={profile?.full_name ?? 'Rider'}>
           <p>Phone: {profile?.phone}</p>
+          <p>Status: {data.rider.is_active ? 'Active' : 'Inactive (cannot use app)'}</p>
           <p>Rating: ★ {Number(data.rider.rating_avg).toFixed(1)}</p>
           <p>KYC: {data.rider.kyc_status}</p>
           {data.rider.vehicle_number && <p>Vehicle: {data.rider.vehicle_number}</p>}
@@ -116,6 +127,25 @@ export const RiderDetailPage = () => {
               Location: {data.rider.current_lat.toFixed(4)}, {data.rider.current_lng?.toFixed(4)}
             </p>
           )}
+
+          <div className={detailStyles.sectionTitle} style={{ marginTop: 16 }}>
+            <Button
+              variant={data.rider.is_active ? 'danger' : 'primary'}
+              onClick={() =>
+                setActiveMutation.mutate({
+                  id,
+                  isActive: !data.rider!.is_active,
+                })
+              }
+              disabled={isMutating}
+            >
+              {setActiveMutation.isPending
+                ? 'Updating...'
+                : data.rider.is_active
+                  ? 'Deactivate rider'
+                  : 'Activate rider'}
+            </Button>
+          </div>
 
           <h4 className={detailStyles.sectionTitle}>Recent Jobs ({data.jobs.length})</h4>
           {data.jobs.length === 0 ? (

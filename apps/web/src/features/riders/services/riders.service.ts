@@ -3,6 +3,7 @@ import { getSupabase } from '@/lib/supabase';
 type RiderExtension = {
   vehicle_number: string | null;
   kyc_status: string | null;
+  is_active: boolean | null;
   current_lat: number | null;
   current_lng: number | null;
   rating_avg: number | null;
@@ -22,6 +23,7 @@ export type RiderListItem = {
   id: string;
   vehicle_number: string | null;
   kyc_status: string;
+  is_active: boolean;
   current_lat: number | null;
   current_lng: number | null;
   rating_avg: number;
@@ -45,6 +47,7 @@ const mapProfileToRider = (profile: RiderProfileRow): RiderListItem => {
     id: profile.id,
     vehicle_number: rider?.vehicle_number ?? null,
     kyc_status: rider?.kyc_status ?? 'pending',
+    is_active: Boolean(rider?.is_active),
     current_lat: rider?.current_lat ?? null,
     current_lng: rider?.current_lng ?? null,
     rating_avg: Number(rider?.rating_avg ?? 5),
@@ -65,7 +68,7 @@ export const fetchRiders = async (page = 1, pageSize = 25) => {
   const { data, error, count } = await supabase
     .from('profiles')
     .select(
-      'id, full_name, phone, avatar_url, created_at, riders(vehicle_number, kyc_status, current_lat, current_lng, rating_avg, created_at)',
+      'id, full_name, phone, avatar_url, created_at, riders(vehicle_number, kyc_status, is_active, current_lat, current_lng, rating_avg, created_at)',
       { count: 'exact' },
     )
     .eq('role', 'rider')
@@ -89,7 +92,7 @@ export const fetchRiderById = async (riderId: string) => {
     supabase
       .from('profiles')
       .select(
-        'id, full_name, phone, avatar_url, created_at, riders(vehicle_number, kyc_status, current_lat, current_lng, rating_avg, created_at)',
+        'id, full_name, phone, avatar_url, created_at, riders(vehicle_number, kyc_status, is_active, current_lat, current_lng, rating_avg, created_at)',
       )
       .eq('id', riderId)
       .eq('role', 'rider')
@@ -115,6 +118,7 @@ export const fetchRiderById = async (riderId: string) => {
         id: profile.id,
         vehicle_number: riderExtension?.vehicle_number ?? null,
         kyc_status: riderExtension?.kyc_status ?? 'pending',
+        is_active: Boolean(riderExtension?.is_active),
         current_lat: riderExtension?.current_lat ?? null,
         current_lng: riderExtension?.current_lng ?? null,
         rating_avg: Number(riderExtension?.rating_avg ?? 5),

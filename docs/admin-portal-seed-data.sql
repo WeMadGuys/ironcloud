@@ -99,13 +99,14 @@ VALUES
   ('c1000000-0000-0000-0000-000000000004'::uuid, 'Brigade Metropolis', 'Bengaluru', 'active', 'standard')
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, status = 'active';
 
-INSERT INTO public.riders (id, vehicle_number, kyc_status, rating_avg, current_lat, current_lng)
+INSERT INTO public.riders (id, vehicle_number, kyc_status, rating_avg, current_lat, current_lng, is_active)
 VALUES
-  ('c0000000-0000-0000-0000-000000000005'::uuid, 'KA01CD5678', 'approved', 4.7, 12.9698, 77.7499),
-  ('c0000000-0000-0000-0000-000000000006'::uuid, 'KA03EF9012', 'approved', 4.5, 12.9352, 77.6245)
+  ('c0000000-0000-0000-0000-000000000005'::uuid, 'KA01CD5678', 'approved', 4.7, 12.9698, 77.7499, true),
+  ('c0000000-0000-0000-0000-000000000006'::uuid, 'KA03EF9012', 'approved', 4.5, 12.9352, 77.6245, true)
 ON CONFLICT (id) DO UPDATE SET
   kyc_status = EXCLUDED.kyc_status,
-  rating_avg = EXCLUDED.rating_avg;
+  rating_avg = EXCLUDED.rating_avg,
+  is_active = EXCLUDED.is_active;
 
 INSERT INTO public.rider_communities (rider_id, community_id)
 VALUES

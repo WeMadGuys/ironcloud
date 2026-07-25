@@ -97,6 +97,7 @@ export const ridersRouter = router({
         id,
         vehicle_number: input.vehicleNumber?.trim() || null,
         kyc_status: 'pending',
+        is_active: false,
       });
 
       if (riderError) {
@@ -117,6 +118,31 @@ export const ridersRouter = router({
       });
 
       return { id };
+    }),
+
+  setActive: adminProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      isActive: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.supabase
+        .from('riders')
+        .update({ is_active: input.isActive })
+        .eq('id', input.id);
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: input.isActive ? 'rider.activate' : 'rider.deactivate',
+        entityType: 'rider',
+        entityId: input.id,
+        after: { isActive: input.isActive },
+      });
+
+      return { success: true };
     }),
 
   update: adminProcedure

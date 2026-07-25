@@ -4,9 +4,12 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { colors } from '@ironcloud/ui';
 
-import { isRiderAuthenticated } from '../src/features/auth/services/auth';
+import {
+  getRiderActivation,
+  isRiderAuthenticated,
+} from '../src/features/auth/services/auth';
 
-type Destination = 'login' | 'home' | null;
+type Destination = 'login' | 'home' | 'pending' | null;
 
 export default function Index() {
   const [destination, setDestination] = useState<Destination>(null);
@@ -15,7 +18,13 @@ export default function Index() {
     (async () => {
       try {
         const authenticated = await isRiderAuthenticated();
-        setDestination(authenticated ? 'home' : 'login');
+        if (!authenticated) {
+          setDestination('login');
+          return;
+        }
+
+        const { isActive } = await getRiderActivation();
+        setDestination(isActive ? 'home' : 'pending');
       } catch {
         setDestination('login');
       }
@@ -32,6 +41,10 @@ export default function Index() {
 
   if (destination === 'home') {
     return <Redirect href="/(tabs)/home" />;
+  }
+
+  if (destination === 'pending') {
+    return <Redirect href="/(auth)/pending" />;
   }
 
   return <Redirect href="/(auth)/login" />;

@@ -212,6 +212,7 @@ export interface Database {
           id: string;
           vehicle_number: string | null;
           kyc_status: string;
+          is_active: boolean;
           current_lat: number | null;
           current_lng: number | null;
           rating_avg: number;
@@ -221,6 +222,7 @@ export interface Database {
           id: string;
           vehicle_number?: string | null;
           kyc_status?: string;
+          is_active?: boolean;
           current_lat?: number | null;
           current_lng?: number | null;
           rating_avg?: number;
@@ -230,6 +232,7 @@ export interface Database {
           id?: string;
           vehicle_number?: string | null;
           kyc_status?: string;
+          is_active?: boolean;
           current_lat?: number | null;
           current_lng?: number | null;
           rating_avg?: number;

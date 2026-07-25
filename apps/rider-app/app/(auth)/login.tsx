@@ -27,7 +27,7 @@ import {
 } from '@ironcloud/ui';
 
 import { OTP_LENGTH } from '../../src/config/auth';
-import { sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
+import { resendOtp, sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -139,7 +139,7 @@ export default function LoginScreen() {
   const handleResendOtp = async () => {
     setOtpError('');
     setLoading(true);
-    const result = await sendOtp(phoneNumber);
+    const result = await resendOtp(phoneNumber);
     setLoading(false);
     if (result.error) {
       setOtpError(result.error.message);
@@ -161,6 +161,10 @@ export default function LoginScreen() {
     setLoading(false);
     if (result.error) {
       setOtpError(result.error.message);
+      return;
+    }
+    if (result.data.isActive === false) {
+      router.replace('/(auth)/pending');
       return;
     }
     router.replace('/(tabs)/home');

@@ -67,9 +67,9 @@ ON CONFLICT (id) DO UPDATE SET
   role = EXCLUDED.role,
   full_name = EXCLUDED.full_name;
 
-INSERT INTO public.riders (id, vehicle_number, kyc_status, rating_avg)
-VALUES ('00000000-0000-0000-0000-000000000002'::uuid, 'KA01AB1234', 'approved', 4.8)
-ON CONFLICT (id) DO UPDATE SET kyc_status = EXCLUDED.kyc_status;
+INSERT INTO public.riders (id, vehicle_number, kyc_status, rating_avg, is_active)
+VALUES ('00000000-0000-0000-0000-000000000002'::uuid, 'KA01AB1234', 'approved', 4.8, true)
+ON CONFLICT (id) DO UPDATE SET kyc_status = EXCLUDED.kyc_status, is_active = EXCLUDED.is_active;
 
 -- ============================================================
 -- 4) Community, address, slots (TODAY pickup / TOMORROW delivery IST)
