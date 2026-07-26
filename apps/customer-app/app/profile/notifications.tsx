@@ -16,56 +16,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   colors,
   radius,
-  shadows,
   spacing,
   typographyScale,
 } from '@ironcloud/ui';
 
 import {
-  formatActivityTime,
-  getActivityFeed,
   getNotificationPrefs,
   saveNotificationPrefs,
-  type ActivityItem,
   type NotificationPrefs,
 } from '../../src/features/notifications/services/notifications.service';
 
-function activityIcon(status: string): keyof typeof MaterialCommunityIcons.glyphMap {
-  switch (status) {
-    case 'booked':
-    case 'pickup_assigned':
-      return 'calendar-clock';
-    case 'pickup_in_progress':
-      return 'motorbike';
-    case 'picked_up':
-      return 'package-variant';
-    case 'ironing':
-      return 'iron';
-    case 'out_for_delivery':
-      return 'truck-delivery-outline';
-    case 'delivered':
-    case 'completed':
-      return 'check-circle-outline';
-    default:
-      return 'bell-outline';
-  }
-}
-
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [feed, notificationPrefs] = await Promise.all([
-        getActivityFeed(),
-        getNotificationPrefs(),
-      ]);
-      setActivities(feed);
-      setPrefs(notificationPrefs);
+      setPrefs(await getNotificationPrefs());
     } catch (error) {
       console.error('Error loading notifications:', error);
     } finally {
@@ -155,51 +124,6 @@ export default function NotificationsScreen() {
               isLast
             />
           </View>
-
-          <Text style={styles.sectionTitle}>Activity</Text>
-          {activities.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconWrap}>
-                <MaterialCommunityIcons
-                  name="history"
-                  size={32}
-                  color={colors.brand.accent}
-                />
-              </View>
-              <Text style={styles.emptyTitle}>No activity yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Pickup scheduled, delivery updates, and other order events will show here.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.activityCard}>
-              {activities.map((item, index) => (
-                <View
-                  key={item.id}
-                  style={[
-                    styles.activityItem,
-                    index === activities.length - 1 && styles.activityItemLast,
-                  ]}
-                >
-                  <View style={styles.activityIconWrap}>
-                    <MaterialCommunityIcons
-                      name={activityIcon(item.status)}
-                      size={20}
-                      color={colors.brand.accent}
-                    />
-                  </View>
-                  <View style={styles.activityBody}>
-                    <Text style={styles.activityTitle}>{item.title}</Text>
-                    <Text style={styles.activityDescription}>{item.description}</Text>
-                    <Text style={styles.activityMeta}>
-                      {item.orderNumber ? `${item.orderNumber} • ` : ''}
-                      {formatActivityTime(item.createdAt)}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -343,82 +267,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.muted,
     marginTop: 2,
-  },
-  activityCard: {
-    backgroundColor: colors.surface.elevated,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    overflow: 'hidden',
-    ...shadows.sm.native,
-  },
-  activityItem: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.divider,
-  },
-  activityItemLast: {
-    borderBottomWidth: 0,
-  },
-  activityIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.brand.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  activityBody: {
-    flex: 1,
-  },
-  activityTitle: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 15,
-    color: colors.text.heading,
-  },
-  activityDescription: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 13,
-    color: colors.text.secondary,
-    marginTop: 2,
-  },
-  activityMeta: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.muted,
-    marginTop: spacing.xs,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing['2xl'],
-    backgroundColor: colors.surface.elevated,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-  },
-  emptyIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.brand.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  emptyTitle: {
-    fontFamily: fonts.poppins.semibold,
-    fontSize: 16,
-    color: colors.text.heading,
-    marginBottom: spacing.xs,
-  },
-  emptySubtitle: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 13,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
   },
 });
