@@ -65,7 +65,15 @@ const ACTIVE_STATUSES: OrderStatus[] = [
   'out_for_delivery',
 ];
 
-const COMPLETED_STATUSES: OrderStatus[] = ['delivered', 'completed', 'rated'];
+/** Delivered and later — shown under Previous Orders. */
+const PREVIOUS_STATUSES: OrderStatus[] = [
+  'delivered',
+  'completed',
+  'rated',
+  'cancelled',
+  'refund_initiated',
+  'refund_completed',
+];
 
 async function getCurrentUserId(): Promise<string | null> {
   if (IS_MOCK_AUTH) return MOCK_USER_ID;
@@ -132,12 +140,12 @@ function mapOrder(row: {
 }
 
 export async function getCustomerOrders(): Promise<{
-  currentOrder: Order | null;
+  activeOrders: Order[];
   previousOrders: Order[];
 }> {
   const userId = await getCurrentUserId();
   if (!userId) {
-    return { currentOrder: null, previousOrders: [] };
+    return { activeOrders: [], previousOrders: [] };
   }
 
   const { data, error } = await (supabase
@@ -167,19 +175,20 @@ export async function getCustomerOrders(): Promise<{
 
   if (error) {
     console.error('Error fetching orders:', error);
-    return { currentOrder: null, previousOrders: [] };
+    return { activeOrders: [], previousOrders: [] };
   }
 
   const orders = ((data as Parameters<typeof mapOrder>[0][]) || []).map(mapOrder);
 
-  const currentOrder =
-    orders.find((order) => ACTIVE_STATUSES.includes(order.status)) || null;
-
+  // Active = not yet delivered. Previous = delivered and beyond (plus cancelled).
+  const activeOrders = orders.filter((order) =>
+    ACTIVE_STATUSES.includes(order.status),
+  );
   const previousOrders = orders.filter((order) =>
-    COMPLETED_STATUSES.includes(order.status),
+    PREVIOUS_STATUSES.includes(order.status),
   );
 
-  return { currentOrder, previousOrders };
+  return { activeOrders, previousOrders };
 }
 
 export function getStatusLabel(status: OrderStatus): string {

@@ -40,14 +40,14 @@ const PROGRESS_STEPS = [
 export default function OrdersScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
-  const [currentOrder, setCurrentOrder] = useState<Order | null>(null);
+  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
   const [previousOrders, setPreviousOrders] = useState<Order[]>([]);
 
   const loadOrders = useCallback(async () => {
     try {
       setIsLoading(true);
       const result = await getCustomerOrders();
-      setCurrentOrder(result.currentOrder);
+      setActiveOrders(result.activeOrders);
       setPreviousOrders(result.previousOrders);
     } catch (error) {
       console.error('Error loading orders:', error);
@@ -62,9 +62,181 @@ export default function OrdersScreen() {
     }, [loadOrders]),
   );
 
-  const progressIndex = currentOrder
-    ? getProgressStepIndex(currentOrder.status)
-    : -1;
+  const renderActiveOrderCard = (order: Order) => {
+    const progressIndex = getProgressStepIndex(order.status);
+    return (
+      <View key={order.id} style={styles.currentCard}>
+        <View style={styles.currentHeader}>
+          <View style={styles.currentBadge}>
+            <View style={styles.currentDot} />
+            <Text style={styles.currentBadgeText}>ACTIVE ORDER</Text>
+          </View>
+          <Text style={styles.currentOrderId}>
+            Order ID #{order.orderNumber}
+          </Text>
+        </View>
+
+        <View style={styles.statusRow}>
+          <View style={styles.statusIconWrap}>
+            <MaterialCommunityIcons
+              name="shopping"
+              size={28}
+              color={colors.status.success.foreground}
+            />
+          </View>
+          <View style={styles.statusCopy}>
+            <Text style={styles.statusTitle}>
+              {getStatusLabel(order.status)}
+            </Text>
+            <Text style={styles.statusSubtitle}>
+              {getStatusDescription(order.status)}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.progressRow}>
+          {PROGRESS_STEPS.map((step, index) => {
+            const isDone = progressIndex >= index;
+            const isLast = index === PROGRESS_STEPS.length - 1;
+            const leftLineDone = progressIndex >= index;
+            const rightLineDone = progressIndex > index;
+            return (
+              <View key={step.key} style={styles.progressStep}>
+                <View style={styles.progressCircleWrap}>
+                  {index > 0 && (
+                    <View
+                      style={[
+                        styles.progressLineLeft,
+                        leftLineDone && styles.progressLineDone,
+                      ]}
+                    />
+                  )}
+                  {!isLast && (
+                    <View
+                      style={[
+                        styles.progressLineRight,
+                        rightLineDone && styles.progressLineDone,
+                      ]}
+                    />
+                  )}
+                  <View
+                    style={[
+                      styles.progressCircle,
+                      isDone && styles.progressCircleDone,
+                    ]}
+                  >
+                    {isDone ? (
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={12}
+                        color={colors.brand.onPrimary}
+                      />
+                    ) : null}
+                  </View>
+                </View>
+                <Text
+                  style={[
+                    styles.progressLabel,
+                    isDone && styles.progressLabelDone,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {step.label}
+                </Text>
+                {index === 0 && order.pickedUpAt ? (
+                  <Text style={styles.progressMeta}>
+                    {formatOrderDateTime(order.pickedUpAt)}
+                  </Text>
+                ) : (
+                  <Text style={styles.progressMeta}> </Text>
+                )}
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={styles.slotRow}>
+          <View style={styles.slotCol}>
+            <View style={styles.slotIconWrap}>
+              <MaterialCommunityIcons
+                name="shopping-outline"
+                size={18}
+                color={colors.status.success.foreground}
+              />
+            </View>
+            <Text style={styles.slotTitle}>Pickup Time</Text>
+            <Text style={styles.slotDate}>
+              {formatSlotRange(order.pickupStart, order.pickupEnd).dateLabel}
+            </Text>
+            <Text style={styles.slotTime}>
+              {formatSlotRange(order.pickupStart, order.pickupEnd).timeLabel}
+            </Text>
+          </View>
+          <View style={styles.slotDivider} />
+          <View style={styles.slotCol}>
+            <View style={[styles.slotIconWrap, styles.slotIconDelivery]}>
+              <MaterialCommunityIcons
+                name="tshirt-crew-outline"
+                size={18}
+                color={colors.brand.accent}
+              />
+            </View>
+            <Text style={styles.slotTitle}>Delivery Time</Text>
+            <Text style={styles.slotDate}>
+              {formatSlotRange(order.deliveryStart, order.deliveryEnd).dateLabel}
+            </Text>
+            <Text style={styles.slotTime}>
+              {formatSlotRange(order.deliveryStart, order.deliveryEnd).timeLabel}
+            </Text>
+          </View>
+        </View>
+
+        {order.items.length > 0 && (
+          <View style={styles.garmentsSection}>
+            <View style={styles.garmentsHeader}>
+              <MaterialCommunityIcons
+                name="hanger"
+                size={18}
+                color={colors.brand.primary}
+              />
+              <Text style={styles.garmentsTitle}>Garments Collected</Text>
+            </View>
+            {order.items.map((item) => (
+              <View key={item.id} style={styles.garmentRow}>
+                <View style={styles.garmentLeft}>
+                  <Text style={styles.garmentName}>{item.garmentName}</Text>
+                  <Text style={styles.garmentMeta}>
+                    ₹{item.unitPrice} × {item.quantity}
+                  </Text>
+                </View>
+                <Text style={styles.garmentTotal}>₹{item.lineTotal}</Text>
+              </View>
+            ))}
+            <View style={styles.garmentTotalRow}>
+              <Text style={styles.garmentTotalLabel}>Total</Text>
+              <Text style={styles.garmentGrandTotal}>
+                ₹{order.totalAmount || order.items.reduce((s, i) => s + i.lineTotal, 0)}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <Pressable style={styles.detailsButton}>
+          <MaterialCommunityIcons
+            name="file-document-outline"
+            size={18}
+            color={colors.text.primary}
+          />
+          <Text style={styles.detailsButtonText}>View Order Details</Text>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={colors.icon.muted}
+          />
+        </Pressable>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -93,208 +265,38 @@ export default function OrdersScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Request Pickup CTA */}
-          <Pressable
-            style={styles.requestCard}
-            onPress={() => router.push('/(tabs)/home')}
-          >
-            <View style={styles.requestIconWrap}>
-              <MaterialCommunityIcons
-                name="shopping-outline"
-                size={22}
-                color={colors.brand.accent}
-              />
-            </View>
-            <View style={styles.requestCopy}>
-              <Text style={styles.requestTitle}>Request Pickup Today</Text>
-              <Text style={styles.requestSubtitle}>
-                We'll pick up your clothes within your selected time slot.
-              </Text>
-            </View>
-            <View style={styles.requestArrow}>
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={18}
-                color={colors.brand.onPrimary}
-              />
-            </View>
-          </Pressable>
-
-          {/* Current Order */}
-          <Text style={styles.sectionTitle}>Current Order</Text>
-          {currentOrder ? (
-            <View style={styles.currentCard}>
-              <View style={styles.currentHeader}>
-                <View style={styles.currentBadge}>
-                  <View style={styles.currentDot} />
-                  <Text style={styles.currentBadgeText}>CURRENT ORDER</Text>
-                </View>
-                <Text style={styles.currentOrderId}>
-                  Order ID #{currentOrder.orderNumber}
+          {activeOrders.length === 0 && (
+            <Pressable
+              style={styles.requestCard}
+              onPress={() => router.push('/(tabs)/home')}
+            >
+              <View style={styles.requestIconWrap}>
+                <MaterialCommunityIcons
+                  name="shopping-outline"
+                  size={22}
+                  color={colors.brand.accent}
+                />
+              </View>
+              <View style={styles.requestCopy}>
+                <Text style={styles.requestTitle}>Request Pickup Today</Text>
+                <Text style={styles.requestSubtitle}>
+                  We'll pick up your clothes within your selected time slot.
                 </Text>
               </View>
-
-              <View style={styles.statusRow}>
-                <View style={styles.statusIconWrap}>
-                  <MaterialCommunityIcons
-                    name="shopping"
-                    size={28}
-                    color={colors.status.success.foreground}
-                  />
-                </View>
-                <View style={styles.statusCopy}>
-                  <Text style={styles.statusTitle}>
-                    {getStatusLabel(currentOrder.status)}
-                  </Text>
-                  <Text style={styles.statusSubtitle}>
-                    {getStatusDescription(currentOrder.status)}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Progress Stepper — circles centered above labels */}
-              <View style={styles.progressRow}>
-                {PROGRESS_STEPS.map((step, index) => {
-                  const isDone = progressIndex >= index;
-                  const isLast = index === PROGRESS_STEPS.length - 1;
-                  const leftLineDone = progressIndex >= index;
-                  const rightLineDone = progressIndex > index;
-                  return (
-                    <View key={step.key} style={styles.progressStep}>
-                      <View style={styles.progressCircleWrap}>
-                        {index > 0 && (
-                          <View
-                            style={[
-                              styles.progressLineLeft,
-                              leftLineDone && styles.progressLineDone,
-                            ]}
-                          />
-                        )}
-                        {!isLast && (
-                          <View
-                            style={[
-                              styles.progressLineRight,
-                              rightLineDone && styles.progressLineDone,
-                            ]}
-                          />
-                        )}
-                        <View
-                          style={[
-                            styles.progressCircle,
-                            isDone && styles.progressCircleDone,
-                          ]}
-                        >
-                          {isDone ? (
-                            <MaterialCommunityIcons
-                              name="check"
-                              size={12}
-                              color={colors.brand.onPrimary}
-                            />
-                          ) : null}
-                        </View>
-                      </View>
-                      <Text
-                        style={[
-                          styles.progressLabel,
-                          isDone && styles.progressLabelDone,
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {step.label}
-                      </Text>
-                      {index === 0 && currentOrder.pickedUpAt ? (
-                        <Text style={styles.progressMeta}>
-                          {formatOrderDateTime(currentOrder.pickedUpAt)}
-                        </Text>
-                      ) : (
-                        <Text style={styles.progressMeta}> </Text>
-                      )}
-                    </View>
-                  );
-                })}
-              </View>
-
-              {/* Pickup / Delivery */}
-              <View style={styles.slotRow}>
-                <View style={styles.slotCol}>
-                  <View style={styles.slotIconWrap}>
-                    <MaterialCommunityIcons
-                      name="shopping-outline"
-                      size={18}
-                      color={colors.status.success.foreground}
-                    />
-                  </View>
-                  <Text style={styles.slotTitle}>Pickup Time</Text>
-                  <Text style={styles.slotDate}>
-                    {formatSlotRange(currentOrder.pickupStart, currentOrder.pickupEnd).dateLabel}
-                  </Text>
-                  <Text style={styles.slotTime}>
-                    {formatSlotRange(currentOrder.pickupStart, currentOrder.pickupEnd).timeLabel}
-                  </Text>
-                </View>
-                <View style={styles.slotDivider} />
-                <View style={styles.slotCol}>
-                  <View style={[styles.slotIconWrap, styles.slotIconDelivery]}>
-                    <MaterialCommunityIcons
-                      name="tshirt-crew-outline"
-                      size={18}
-                      color={colors.brand.accent}
-                    />
-                  </View>
-                  <Text style={styles.slotTitle}>Delivery Time</Text>
-                  <Text style={styles.slotDate}>
-                    {formatSlotRange(currentOrder.deliveryStart, currentOrder.deliveryEnd).dateLabel}
-                  </Text>
-                  <Text style={styles.slotTime}>
-                    {formatSlotRange(currentOrder.deliveryStart, currentOrder.deliveryEnd).timeLabel}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Garments collected by rider */}
-              {currentOrder.items.length > 0 && (
-                <View style={styles.garmentsSection}>
-                  <View style={styles.garmentsHeader}>
-                    <MaterialCommunityIcons
-                      name="hanger"
-                      size={18}
-                      color={colors.brand.primary}
-                    />
-                    <Text style={styles.garmentsTitle}>Garments Collected</Text>
-                  </View>
-                  {currentOrder.items.map((item) => (
-                    <View key={item.id} style={styles.garmentRow}>
-                      <View style={styles.garmentLeft}>
-                        <Text style={styles.garmentName}>{item.garmentName}</Text>
-                        <Text style={styles.garmentMeta}>
-                          ₹{item.unitPrice} × {item.quantity}
-                        </Text>
-                      </View>
-                      <Text style={styles.garmentTotal}>₹{item.lineTotal}</Text>
-                    </View>
-                  ))}
-                  <View style={styles.garmentTotalRow}>
-                    <Text style={styles.garmentTotalLabel}>Total</Text>
-                    <Text style={styles.garmentGrandTotal}>
-                      ₹{currentOrder.totalAmount || currentOrder.items.reduce((s, i) => s + i.lineTotal, 0)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              <Pressable style={styles.detailsButton}>
+              <View style={styles.requestArrow}>
                 <MaterialCommunityIcons
-                  name="file-document-outline"
+                  name="arrow-right"
                   size={18}
-                  color={colors.text.primary}
+                  color={colors.brand.onPrimary}
                 />
-                <Text style={styles.detailsButtonText}>View Order Details</Text>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={20}
-                  color={colors.icon.muted}
-                />
-              </Pressable>
+              </View>
+            </Pressable>
+          )}
+
+          <Text style={styles.sectionTitle}>Active Orders</Text>
+          {activeOrders.length > 0 ? (
+            <View style={styles.activeList}>
+              {activeOrders.map(renderActiveOrderCard)}
             </View>
           ) : (
             <View style={styles.emptyCard}>
@@ -305,12 +307,11 @@ export default function OrdersScreen() {
               />
               <Text style={styles.emptyTitle}>No active orders</Text>
               <Text style={styles.emptySubtitle}>
-                Book a pickup to see your current order here.
+                Book a pickup to see your active order here.
               </Text>
             </View>
           )}
 
-          {/* Previous Orders */}
           <Text style={[styles.sectionTitle, styles.previousTitle]}>
             Previous Orders
           </Text>
@@ -476,6 +477,9 @@ const styles = StyleSheet.create({
   },
   previousTitle: {
     marginTop: spacing.xl,
+  },
+  activeList: {
+    gap: spacing.md,
   },
   currentCard: {
     backgroundColor: colors.surface.elevated,

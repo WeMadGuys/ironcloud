@@ -5,7 +5,12 @@
   },
   "files": [],
   "references": [
-    { "path": "./apps/customer-app" },
-    { "path": "./packages/ui" }
-  ]
+    {
+      "path": "./apps/customer-app"
+    },
+    {
+      "path": "./packages/ui"
+    }
+  ],
+  "extends": "expo/tsconfig.base"
 }

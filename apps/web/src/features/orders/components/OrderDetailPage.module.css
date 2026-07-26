@@ -21,3 +21,20 @@
   flex-direction: column;
   gap: var(--ic-spacing-md);
 }
+
+.statusControl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-sm);
+}
+
+.statusControl select {
+  width: 100%;
+}
+
+.statusLabel {
+  font-size: var(--ic-font-size-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--ic-text-primary);
+}
+

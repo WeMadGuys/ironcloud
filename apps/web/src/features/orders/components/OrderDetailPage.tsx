@@ -13,6 +13,24 @@ import { fetchOrderById, fetchOrderEvents } from '../services/orders.service';
 import pageStyles from '@/styles/pages.module.css';
 import detailStyles from './OrderDetailPage.module.css';
 
+const STATUS_OPTIONS: OrderStatus[] = [
+  'booked',
+  'pickup_assigned',
+  'pickup_in_progress',
+  'picked_up',
+  'warehouse_received',
+  'sorting',
+  'ironing',
+  'quality_check',
+  'packed',
+  'ready_for_delivery',
+  'delivery_assigned',
+  'out_for_delivery',
+  'delivered',
+  'completed',
+  'cancelled',
+];
+
 export const OrderDetailPage = () => {
   const params = useParams();
   const orderId = params.id as string;
@@ -20,6 +38,7 @@ export const OrderDetailPage = () => {
   const [events, setEvents] = useState<Awaited<ReturnType<typeof fetchOrderEvents>>>([]);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | ''>('');
 
   const addNoteMutation = trpc.orders.addNote.useMutation();
   const cancelMutation = trpc.orders.cancel.useMutation();
@@ -33,6 +52,9 @@ export const OrderDetailPage = () => {
     ]);
     setOrder(orderRes.data);
     setEvents(eventsRes);
+    if (orderRes.data?.status) {
+      setSelectedStatus(orderRes.data.status);
+    }
     setLoading(false);
   };
 
@@ -44,6 +66,26 @@ export const OrderDetailPage = () => {
   const customer = order.profiles as { full_name: string; phone: string } | null;
   const community = order.communities as { name: string; city: string } | null;
   const address = order.addresses as { flat_number: string; tower: string } | null;
+
+  const statusUnchanged = !selectedStatus || selectedStatus === order.status;
+  const statusUpdating = updateStatusMutation.isPending;
+
+  const handleUpdateStatus = () => {
+    if (!selectedStatus || selectedStatus === order.status) return;
+    updateStatusMutation.mutate(
+      {
+        orderId,
+        status: selectedStatus,
+        note: note.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          setNote('');
+          load();
+        },
+      },
+    );
+  };
 
   return (
     <div className={pageStyles.detailGrid}>
@@ -77,33 +119,52 @@ export const OrderDetailPage = () => {
       <div>
         <Card title="Actions">
           <div className={detailStyles.actions}>
+            <div className={detailStyles.statusControl}>
+              <label htmlFor="order-status" className={detailStyles.statusLabel}>
+                Update status
+              </label>
+              <select
+                id="order-status"
+                className={pageStyles.select}
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value as OrderStatus)}
+                aria-label="Select order status"
+              >
+                {STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {formatOrderStatus(status)}
+                  </option>
+                ))}
+              </select>
+              <Button
+                variant="secondary"
+                onClick={handleUpdateStatus}
+                disabled={statusUnchanged || statusUpdating}
+              >
+                {statusUpdating ? 'Updating…' : 'Update Status'}
+              </Button>
+            </div>
+
             <textarea
               className={detailStyles.noteInput}
               rows={3}
-              placeholder="Add admin note..."
+              placeholder="Add admin note (optional for status update)..."
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />
             <Button
               onClick={() => addNoteMutation.mutate({ orderId, note }, { onSuccess: () => { setNote(''); load(); } })}
-              disabled={!note}
+              disabled={!note || addNoteMutation.isPending}
             >
               Add Note
             </Button>
             <Button
               variant="danger"
               onClick={() => cancelMutation.mutate({ orderId, reason: 'Admin cancelled' }, { onSuccess: load })}
+              disabled={cancelMutation.isPending || order.status === 'cancelled'}
             >
               Cancel Order
             </Button>
-            {order.status === 'booked' && (
-              <Button
-                variant="secondary"
-                onClick={() => updateStatusMutation.mutate({ orderId, status: 'pickup_assigned' as OrderStatus }, { onSuccess: load })}
-              >
-                Assign Pickup
-              </Button>
-            )}
           </div>
         </Card>
       </div>
