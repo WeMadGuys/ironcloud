@@ -339,6 +339,9 @@ export interface Database {
           valid_from: string | null;
           valid_to: string | null;
           community_ids: string[] | null;
+          applicable_on: string[];
+          cities: string[] | null;
+          min_amount: number | null;
           created_at: string;
         };
         Insert: {
@@ -352,6 +355,9 @@ export interface Database {
           valid_from?: string | null;
           valid_to?: string | null;
           community_ids?: string[] | null;
+          applicable_on?: string[];
+          cities?: string[] | null;
+          min_amount?: number | null;
           created_at?: string;
         };
         Update: {
@@ -365,6 +371,42 @@ export interface Database {
           valid_from?: string | null;
           valid_to?: string | null;
           community_ids?: string[] | null;
+          applicable_on?: string[];
+          cities?: string[] | null;
+          min_amount?: number | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      coupon_redemptions: {
+        Row: {
+          id: string;
+          coupon_id: string;
+          customer_id: string;
+          context: string;
+          wallet_transaction_id: string | null;
+          topup_amount: number | null;
+          bonus_amount: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          coupon_id: string;
+          customer_id: string;
+          context: string;
+          wallet_transaction_id?: string | null;
+          topup_amount?: number | null;
+          bonus_amount?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          coupon_id?: string;
+          customer_id?: string;
+          context?: string;
+          wallet_transaction_id?: string | null;
+          topup_amount?: number | null;
+          bonus_amount?: number | null;
           created_at?: string;
         };
         Relationships: [];

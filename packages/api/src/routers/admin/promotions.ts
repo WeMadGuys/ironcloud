@@ -3,17 +3,25 @@ import { z } from 'zod';
 import { writeAuditLog } from '../../lib/audit';
 import { adminProcedure, router } from '../../trpc/init';
 
+const couponScope = z.enum(['order', 'wallet_topup']);
+
+const couponFields = {
+  code: z.string().min(1),
+  discountType: z.enum(['flat', 'percentage']),
+  discountValue: z.number().positive(),
+  maxDiscount: z.number().positive().optional().nullable(),
+  usageLimit: z.number().int().positive().optional().nullable(),
+  validFrom: z.string().datetime().optional().nullable(),
+  validTo: z.string().datetime().optional().nullable(),
+  applicableOn: z.array(couponScope).min(1),
+  communityIds: z.array(z.string().uuid()).optional().nullable(),
+  cities: z.array(z.string().min(1)).optional().nullable(),
+  minAmount: z.number().positive().optional().nullable(),
+};
+
 export const promotionsRouter = router({
   createCoupon: adminProcedure
-    .input(z.object({
-      code: z.string().min(1),
-      discountType: z.enum(['flat', 'percentage']),
-      discountValue: z.number().positive(),
-      maxDiscount: z.number().positive().optional(),
-      usageLimit: z.number().int().positive().optional(),
-      validFrom: z.string().datetime().optional(),
-      validTo: z.string().datetime().optional(),
-    }))
+    .input(z.object(couponFields))
     .mutation(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from('coupons')
@@ -25,6 +33,16 @@ export const promotionsRouter = router({
           usage_limit: input.usageLimit ?? null,
           valid_from: input.validFrom ?? null,
           valid_to: input.validTo ?? null,
+          applicable_on: input.applicableOn,
+          community_ids:
+            input.communityIds && input.communityIds.length > 0
+              ? input.communityIds
+              : null,
+          cities:
+            input.cities && input.cities.length > 0
+              ? input.cities.map((c) => c.trim()).filter(Boolean)
+              : null,
+          min_amount: input.minAmount ?? null,
         })
         .select('id')
         .single();
@@ -37,21 +55,14 @@ export const promotionsRouter = router({
         action: 'coupon.create',
         entityType: 'coupon',
         entityId: data.id,
-        after: { code: input.code },
+        after: { code: input.code, applicableOn: input.applicableOn },
       });
 
       return { id: data.id };
     }),
 
   updateCoupon: adminProcedure
-    .input(z.object({
-      id: z.string().uuid(),
-      code: z.string().min(1),
-      discountType: z.enum(['flat', 'percentage']),
-      discountValue: z.number().positive(),
-      maxDiscount: z.number().positive().optional().nullable(),
-      usageLimit: z.number().int().positive().optional().nullable(),
-    }))
+    .input(z.object({ id: z.string().uuid(), ...couponFields }))
     .mutation(async ({ ctx, input }) => {
       const updates = {
         code: input.code.toUpperCase(),
@@ -59,6 +70,18 @@ export const promotionsRouter = router({
         discount_value: input.discountValue,
         max_discount: input.maxDiscount ?? null,
         usage_limit: input.usageLimit ?? null,
+        valid_from: input.validFrom ?? null,
+        valid_to: input.validTo ?? null,
+        applicable_on: input.applicableOn,
+        community_ids:
+          input.communityIds && input.communityIds.length > 0
+            ? input.communityIds
+            : null,
+        cities:
+          input.cities && input.cities.length > 0
+            ? input.cities.map((c) => c.trim()).filter(Boolean)
+            : null,
+        min_amount: input.minAmount ?? null,
       };
 
       const { error } = await ctx.supabase.from('coupons').update(updates).eq('id', input.id);

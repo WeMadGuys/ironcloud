@@ -1,8 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -26,6 +27,9 @@ import {
   formatTransactionDate,
   getWallet,
   getWalletTransactions,
+  listApplicableWalletCoupons,
+  topUpWallet,
+  type ApplicableWalletCoupon,
   type WalletTransaction,
 } from '../../src/features/wallet/services/wallet.service';
 
@@ -38,10 +42,50 @@ export default function WalletScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [addAmount, setAddAmount] = useState('');
+  const [applicableCoupons, setApplicableCoupons] = useState<ApplicableWalletCoupon[]>([]);
+  const [couponsLoading, setCouponsLoading] = useState(false);
+  const [selectedCouponCode, setSelectedCouponCode] = useState<string | null>(null);
+  const [isToppingUp, setIsToppingUp] = useState(false);
+  const couponFetchRef = useRef(0);
 
   useEffect(() => {
     loadWalletData();
   }, []);
+
+  useEffect(() => {
+    if (!showAddMoney) return;
+
+    const amount = parseInt(addAmount, 10);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setApplicableCoupons([]);
+      setSelectedCouponCode(null);
+      setCouponsLoading(false);
+      return;
+    }
+
+    const requestId = ++couponFetchRef.current;
+    setCouponsLoading(true);
+    const timer = setTimeout(() => {
+      listApplicableWalletCoupons(amount)
+        .then((coupons) => {
+          if (requestId !== couponFetchRef.current) return;
+          setApplicableCoupons(coupons);
+          setSelectedCouponCode((prev) =>
+            prev && coupons.some((c) => c.code === prev) ? prev : null,
+          );
+        })
+        .catch(() => {
+          if (requestId !== couponFetchRef.current) return;
+          setApplicableCoupons([]);
+        })
+        .finally(() => {
+          if (requestId !== couponFetchRef.current) return;
+          setCouponsLoading(false);
+        });
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [addAmount, showAddMoney]);
 
   async function loadWalletData() {
     try {
@@ -112,11 +156,45 @@ export default function WalletScreen() {
     }
   };
 
-  const handleAddMoney = () => {
-    const amount = parseInt(addAmount, 10);
-    if (amount > 0) {
-      setShowAddMoney(false);
-      setAddAmount('');
+  const selectedCoupon =
+    applicableCoupons.find((c) => c.code === selectedCouponCode) ?? null;
+  const parsedAmount = parseInt(addAmount, 10);
+  const validAmount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 0;
+  const creditTotal = selectedCoupon
+    ? selectedCoupon.creditTotal
+    : validAmount;
+  const bonusAmount = selectedCoupon?.bonus ?? 0;
+
+  const closeAddMoney = () => {
+    setShowAddMoney(false);
+    setAddAmount('');
+    setApplicableCoupons([]);
+    setSelectedCouponCode(null);
+  };
+
+  const handleAddMoney = async () => {
+    if (!validAmount || isToppingUp) return;
+
+    try {
+      setIsToppingUp(true);
+      const result = await topUpWallet({
+        amount: validAmount,
+        couponCode: selectedCouponCode,
+      });
+      setBalance(result.balance);
+      closeAddMoney();
+      await loadWalletData();
+      Alert.alert(
+        'Money added',
+        result.bonus > 0
+          ? `₹${result.creditTotal} credited (₹${validAmount} + ₹${result.bonus} bonus).`
+          : `₹${result.creditTotal} credited to your wallet.`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Top-up failed';
+      Alert.alert('Could not add money', message);
+    } finally {
+      setIsToppingUp(false);
     }
   };
 
@@ -287,15 +365,12 @@ export default function WalletScreen() {
         visible={showAddMoney}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setShowAddMoney(false)}
+        onRequestClose={closeAddMoney}
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Add Money</Text>
-            <Pressable
-              onPress={() => setShowAddMoney(false)}
-              style={styles.modalCloseButton}
-            >
+            <Pressable onPress={closeAddMoney} style={styles.modalCloseButton}>
               <MaterialCommunityIcons
                 name="close"
                 size={24}
@@ -304,7 +379,11 @@ export default function WalletScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.modalContent}>
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Amount Input */}
             <View style={styles.amountInputContainer}>
               <Text style={styles.currencySymbol}>₹</Text>
@@ -342,79 +421,94 @@ export default function WalletScreen() {
               ))}
             </View>
 
-            {/* Payment Methods */}
+            {validAmount > 0 && (
+              <View style={styles.couponsSection}>
+                <Text style={styles.couponsTitle}>Applicable coupons</Text>
+                {couponsLoading ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.brand.primary}
+                    style={styles.couponsLoader}
+                  />
+                ) : applicableCoupons.length === 0 ? (
+                  <Text style={styles.couponsEmpty}>
+                    No coupons available for this amount
+                  </Text>
+                ) : (
+                  applicableCoupons.map((coupon) => {
+                    const selected = selectedCouponCode === coupon.code;
+                    return (
+                      <Pressable
+                        key={coupon.id}
+                        style={[
+                          styles.couponRow,
+                          selected && styles.couponRowSelected,
+                        ]}
+                        onPress={() =>
+                          setSelectedCouponCode((prev) =>
+                            prev === coupon.code ? null : coupon.code,
+                          )
+                        }
+                      >
+                        <View style={styles.couponText}>
+                          <Text style={styles.couponCode}>{coupon.code}</Text>
+                          <Text style={styles.couponLabel}>{coupon.label}</Text>
+                        </View>
+                        <MaterialCommunityIcons
+                          name={selected ? 'check-circle' : 'circle-outline'}
+                          size={22}
+                          color={
+                            selected
+                              ? colors.brand.primary
+                              : colors.icon.secondary
+                          }
+                        />
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+            )}
+
+            {validAmount > 0 && (
+              <View style={styles.creditSummary}>
+                <Text style={styles.creditSummaryLabel}>Wallet will be credited</Text>
+                <Text style={styles.creditSummaryValue}>₹{creditTotal}</Text>
+                {bonusAmount > 0 ? (
+                  <Text style={styles.creditSummaryBonus}>
+                    ₹{validAmount} + ₹{bonusAmount} bonus
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {/* Payment Methods — Razorpay later */}
             <View style={styles.paymentMethods}>
               <Text style={styles.paymentMethodsTitle}>Payment Methods</Text>
-              <Pressable style={styles.paymentMethod}>
-                <View style={styles.paymentMethodIcon}>
-                  <MaterialCommunityIcons
-                    name="cellphone"
-                    size={24}
-                    color={colors.brand.accent}
-                  />
-                </View>
-                <View style={styles.paymentMethodContent}>
-                  <Text style={styles.paymentMethodLabel}>UPI</Text>
-                  <Text style={styles.paymentMethodSubtitle}>Pay via any UPI app</Text>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={22}
-                  color={colors.icon.muted}
-                />
-              </Pressable>
-              <Pressable style={styles.paymentMethod}>
-                <View style={styles.paymentMethodIcon}>
-                  <MaterialCommunityIcons
-                    name="credit-card-outline"
-                    size={24}
-                    color={colors.status.info.foreground}
-                  />
-                </View>
-                <View style={styles.paymentMethodContent}>
-                  <Text style={styles.paymentMethodLabel}>Card</Text>
-                  <Text style={styles.paymentMethodSubtitle}>Credit or Debit card</Text>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={22}
-                  color={colors.icon.muted}
-                />
-              </Pressable>
-              <Pressable style={styles.paymentMethod}>
-                <View style={styles.paymentMethodIcon}>
-                  <MaterialCommunityIcons
-                    name="bank"
-                    size={24}
-                    color={colors.status.success.foreground}
-                  />
-                </View>
-                <View style={styles.paymentMethodContent}>
-                  <Text style={styles.paymentMethodLabel}>Net Banking</Text>
-                  <Text style={styles.paymentMethodSubtitle}>All major banks supported</Text>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={22}
-                  color={colors.icon.muted}
-                />
-              </Pressable>
+              <Text style={styles.paymentMethodsHint}>
+                Payment gateway coming soon. Confirm will credit your wallet now.
+              </Text>
             </View>
-          </View>
+          </ScrollView>
 
-          {/* Add Money CTA */}
           <View style={styles.modalFooter}>
             <Pressable
               style={[
                 styles.addMoneyCtaButton,
-                !addAmount && styles.addMoneyCtaButtonDisabled,
+                (!validAmount || isToppingUp) && styles.addMoneyCtaButtonDisabled,
               ]}
               onPress={handleAddMoney}
-              disabled={!addAmount}
+              disabled={!validAmount || isToppingUp}
             >
-              <Text style={styles.addMoneyCtaText}>
-                {addAmount ? `Add ₹${addAmount}` : 'Enter Amount'}
-              </Text>
+              {isToppingUp ? (
+                <ActivityIndicator size="small" color={colors.brand.onPrimary} />
+              ) : (
+                <Text style={styles.addMoneyCtaText}>
+                  {validAmount
+                    ? `Add ₹${validAmount}${bonusAmount > 0 ? ` · Get ₹${creditTotal}` : ''}`
+                    : 'Enter Amount'}
+                </Text>
+              )}
             </Pressable>
           </View>
         </SafeAreaView>
@@ -660,9 +754,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalContent: {
-    flex: 1,
     paddingHorizontal: spacing.xl,
-    paddingTop: spacing['2xl'],
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+  },
+  modalScroll: {
+    flex: 1,
   },
   amountInputContainer: {
     flexDirection: 'row',
@@ -717,42 +814,87 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.semibold,
     fontSize: 14,
     color: colors.text.secondary,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  paymentMethod: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface.elevated,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-  },
-  paymentMethodIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  paymentMethodContent: {
-    flex: 1,
-  },
-  paymentMethodLabel: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 15,
-    color: colors.text.primary,
-  },
-  paymentMethodSubtitle: {
+  paymentMethodsHint: {
     fontFamily: fonts.inter.regular,
     fontSize: 13,
     color: colors.text.muted,
+    lineHeight: 18,
+  },
+  couponsSection: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  couponsTitle: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  couponsLoader: {
+    marginVertical: spacing.sm,
+  },
+  couponsEmpty: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.text.muted,
+  },
+  couponRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  couponRowSelected: {
+    borderColor: colors.brand.primary,
+    backgroundColor: colors.brand.accentMuted,
+  },
+  couponText: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  couponCode: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  couponLabel: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.secondary,
     marginTop: 2,
+  },
+  creditSummary: {
+    marginTop: spacing.lg,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    alignItems: 'center',
+  },
+  creditSummaryLabel: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.secondary,
+  },
+  creditSummaryValue: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 22,
+    color: colors.text.heading,
+    marginTop: 4,
+  },
+  creditSummaryBonus: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.status.success.foreground,
+    marginTop: 4,
   },
   modalFooter: {
     paddingHorizontal: spacing.xl,

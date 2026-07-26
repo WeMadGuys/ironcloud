@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
@@ -18,15 +19,43 @@ export type WalletInfo = {
   balance: number;
 };
 
-/**
- * Get wallet info for current user
- */
-export async function getWallet(): Promise<WalletInfo | null> {
-  const userId = IS_MOCK_AUTH ? MOCK_USER_ID : null;
-  
-  if (!userId) {
-    return null;
+export type ApplicableWalletCoupon = {
+  id: string;
+  code: string;
+  discountType: string;
+  discountValue: number;
+  maxDiscount: number | null;
+  minAmount: number | null;
+  bonus: number;
+  label: string;
+  creditTotal: number;
+};
+
+async function getCurrentUserId(): Promise<string | null> {
+  if (IS_MOCK_AUTH) return MOCK_USER_ID;
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.user?.id) return sessionData.session.user.id;
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+}
+
+async function getAccessToken(): Promise<string | null> {
+  if (IS_MOCK_AUTH) {
+    // Mock mode still needs a real session token for API routes when available.
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token ?? null;
   }
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+export async function getWallet(): Promise<WalletInfo | null> {
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
 
   const { data, error } = await (supabase
     .from('wallets') as ReturnType<typeof supabase.from>)
@@ -45,26 +74,17 @@ export async function getWallet(): Promise<WalletInfo | null> {
   };
 }
 
-/**
- * Get wallet transactions for current user
- */
 export async function getWalletTransactions(limit = 20): Promise<WalletTransaction[]> {
-  const userId = IS_MOCK_AUTH ? MOCK_USER_ID : null;
-  
-  if (!userId) {
-    return [];
-  }
+  const userId = await getCurrentUserId();
+  if (!userId) return [];
 
-  // First get the wallet ID
   const { data: wallet } = await (supabase
     .from('wallets') as ReturnType<typeof supabase.from>)
     .select('id')
     .eq('customer_id', userId)
     .single();
 
-  if (!wallet) {
-    return [];
-  }
+  if (!wallet) return [];
 
   const walletId = (wallet as { id: string }).id;
 
@@ -99,9 +119,75 @@ export async function getWalletTransactions(limit = 20): Promise<WalletTransacti
   }));
 }
 
-/**
- * Format date for display
- */
+export async function listApplicableWalletCoupons(
+  amount: number,
+): Promise<ApplicableWalletCoupon[]> {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Please sign in to view coupons.');
+  }
+
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(
+    `${apiBase}/api/wallet/applicable-coupons?amount=${encodeURIComponent(String(amount))}`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    coupons?: ApplicableWalletCoupon[];
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not load coupons.');
+  }
+
+  return payload.coupons ?? [];
+}
+
+export async function topUpWallet(params: {
+  amount: number;
+  couponCode?: string | null;
+}): Promise<{ balance: number; bonus: number; creditTotal: number }> {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Please sign in to add money.');
+  }
+
+  const apiBase = getApiBaseUrl();
+  const response = await fetch(`${apiBase}/api/wallet/top-up`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      amount: params.amount,
+      couponCode: params.couponCode ?? null,
+    }),
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as {
+    balance?: number;
+    bonus?: number;
+    creditTotal?: number;
+    error?: string;
+  };
+
+  if (!response.ok) {
+    throw new Error(payload.error || 'Top-up failed.');
+  }
+
+  return {
+    balance: Number(payload.balance ?? 0),
+    bonus: Number(payload.bonus ?? 0),
+    creditTotal: Number(payload.creditTotal ?? params.amount),
+  };
+}
+
 export function formatTransactionDate(dateString: string): string {
   const date = new Date(dateString);
   const day = date.getDate();

@@ -1,6 +1,4 @@
-'use client';
-
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   Badge,
@@ -12,6 +10,10 @@ import {
   Table,
 } from '@/components';
 import { useToast } from '@/components/Toast/ToastProvider';
+import {
+  fetchCommunityOptions,
+  type CommunityOption,
+} from '@/features/communities/services/communities.service';
 import { trpc } from '@/lib/trpc';
 
 import {
@@ -34,6 +36,13 @@ const emptyCoupon = () => ({
   discountValue: '',
   maxDiscount: '',
   usageLimit: '',
+  applicableOrder: true,
+  applicableWallet: false,
+  minAmount: '',
+  validFrom: '',
+  validTo: '',
+  communityIds: [] as string[],
+  cities: [] as string[],
 });
 
 const emptyCampaign = () => ({
@@ -50,12 +59,36 @@ const emptyBanner = () => ({
   isActive: true,
 });
 
+function toIsoOrNull(local: string): string | null {
+  if (!local.trim()) return null;
+  const d = new Date(local);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function scopeLabel(applicableOn: string[] | null | undefined): string {
+  const scopes = applicableOn ?? ['order'];
+  const parts: string[] = [];
+  if (scopes.includes('order')) parts.push('Order');
+  if (scopes.includes('wallet_topup')) parts.push('Wallet');
+  return parts.join(' + ') || '—';
+}
+
 export const PromotionsPage = () => {
   const { toast } = useToast();
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [banners, setBanners] = useState<BannerRow[]>([]);
   const [referrals, setReferrals] = useState<Awaited<ReturnType<typeof fetchReferrals>>>([]);
+  const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('coupons');
   const [modalOpen, setModalOpen] = useState(false);
@@ -77,17 +110,30 @@ export const PromotionsPage = () => {
   const updateBanner = trpc.promotions.updateBanner.useMutation();
   const deleteBanner = trpc.promotions.deleteBanner.useMutation();
 
+  const cityOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of communities) {
+      if (c.city?.trim()) set.add(c.city.trim());
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [communities]);
+
   const load = useCallback(() => {
     setLoading(true);
-    Promise.all([fetchCoupons(), fetchCampaigns(), fetchBanners(), fetchReferrals()]).then(
-      ([c, ca, b, r]) => {
-        setCoupons(c);
-        setCampaigns(ca);
-        setBanners(b);
-        setReferrals(r);
-        setLoading(false);
-      },
-    );
+    Promise.all([
+      fetchCoupons(),
+      fetchCampaigns(),
+      fetchBanners(),
+      fetchReferrals(),
+      fetchCommunityOptions(),
+    ]).then(([c, ca, b, r, communityOpts]) => {
+      setCoupons(c);
+      setCampaigns(ca);
+      setBanners(b);
+      setReferrals(r);
+      setCommunities(communityOpts.filter((x) => x.status === 'active' || !x.status));
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => {
@@ -109,6 +155,27 @@ export const PromotionsPage = () => {
     setModalOpen(true);
   };
 
+  const buildCouponPayload = () => {
+    const discountValue = Number(couponForm.discountValue);
+    const applicableOn: Array<'order' | 'wallet_topup'> = [];
+    if (couponForm.applicableOrder) applicableOn.push('order');
+    if (couponForm.applicableWallet) applicableOn.push('wallet_topup');
+
+    return {
+      code: couponForm.code.trim(),
+      discountType: couponForm.discountType,
+      discountValue,
+      maxDiscount: couponForm.maxDiscount ? Number(couponForm.maxDiscount) : null,
+      usageLimit: couponForm.usageLimit ? Number(couponForm.usageLimit) : null,
+      validFrom: toIsoOrNull(couponForm.validFrom),
+      validTo: toIsoOrNull(couponForm.validTo),
+      applicableOn,
+      communityIds: couponForm.communityIds.length ? couponForm.communityIds : null,
+      cities: couponForm.cities.length ? couponForm.cities : null,
+      minAmount: couponForm.minAmount ? Number(couponForm.minAmount) : null,
+    };
+  };
+
   const handleSave = () => {
     if (tab === 'coupons') {
       const discountValue = Number(couponForm.discountValue);
@@ -116,13 +183,12 @@ export const PromotionsPage = () => {
         toast('Code and a positive discount value are required', 'error');
         return;
       }
-      const payload = {
-        code: couponForm.code.trim(),
-        discountType: couponForm.discountType,
-        discountValue,
-        maxDiscount: couponForm.maxDiscount ? Number(couponForm.maxDiscount) : undefined,
-        usageLimit: couponForm.usageLimit ? Number(couponForm.usageLimit) : undefined,
-      };
+      if (!couponForm.applicableOrder && !couponForm.applicableWallet) {
+        toast('Select at least one applicable area (Order or Wallet top-up)', 'error');
+        return;
+      }
+
+      const payload = buildCouponPayload();
 
       if (editingCoupon) {
         updateCoupon.mutate(
@@ -251,6 +317,26 @@ export const PromotionsPage = () => {
     if (deleteTarget.type === 'banner') deleteBanner.mutate({ id: deleteTarget.id }, onDone);
   };
 
+  const openEditCoupon = (c: CouponRow) => {
+    const scopes = (c.applicable_on as string[] | null) ?? ['order'];
+    setEditingCoupon(c);
+    setCouponForm({
+      code: c.code ?? '',
+      discountType: (c.discount_type as 'flat' | 'percentage') || 'percentage',
+      discountValue: String(c.discount_value ?? ''),
+      maxDiscount: c.max_discount != null ? String(c.max_discount) : '',
+      usageLimit: c.usage_limit != null ? String(c.usage_limit) : '',
+      applicableOrder: scopes.includes('order'),
+      applicableWallet: scopes.includes('wallet_topup'),
+      minAmount: c.min_amount != null ? String(c.min_amount) : '',
+      validFrom: toLocalInput(c.valid_from),
+      validTo: toLocalInput(c.valid_to),
+      communityIds: (c.community_ids as string[] | null) ?? [],
+      cities: (c.cities as string[] | null) ?? [],
+    });
+    setModalOpen(true);
+  };
+
   if (loading) return <Loader fullPage />;
 
   const tabs = ['coupons', 'campaigns', 'banners', 'referrals'] as const;
@@ -274,6 +360,24 @@ export const PromotionsPage = () => {
     updateBanner.isPending;
   const deleting =
     deleteCoupon.isPending || deleteCampaign.isPending || deleteBanner.isPending;
+
+  const toggleCommunity = (id: string) => {
+    setCouponForm((f) => ({
+      ...f,
+      communityIds: f.communityIds.includes(id)
+        ? f.communityIds.filter((x) => x !== id)
+        : [...f.communityIds, id],
+    }));
+  };
+
+  const toggleCity = (city: string) => {
+    setCouponForm((f) => ({
+      ...f,
+      cities: f.cities.includes(city)
+        ? f.cities.filter((x) => x !== city)
+        : [...f.cities, city],
+    }));
+  };
 
   return (
     <div>
@@ -305,8 +409,31 @@ export const PromotionsPage = () => {
           <Table
             columns={[
               { key: 'code', header: 'Code', render: (c) => c.code },
+              {
+                key: 'scope',
+                header: 'Applies to',
+                render: (c) => scopeLabel(c.applicable_on as string[] | null),
+              },
               { key: 'type', header: 'Type', render: (c) => c.discount_type },
               { key: 'value', header: 'Value', render: (c) => c.discount_value },
+              {
+                key: 'min',
+                header: 'Min amount',
+                render: (c) => (c.min_amount != null ? `₹${c.min_amount}` : '—'),
+              },
+              {
+                key: 'target',
+                header: 'Target',
+                render: (c) => {
+                  const communitiesCount = (c.community_ids as string[] | null)?.length ?? 0;
+                  const citiesCount = (c.cities as string[] | null)?.length ?? 0;
+                  if (!communitiesCount && !citiesCount) return 'Everyone';
+                  const bits: string[] = [];
+                  if (communitiesCount) bits.push(`${communitiesCount} community`);
+                  if (citiesCount) bits.push(`${citiesCount} city`);
+                  return bits.join(', ');
+                },
+              },
               {
                 key: 'used',
                 header: 'Used',
@@ -317,21 +444,7 @@ export const PromotionsPage = () => {
                 header: 'Actions',
                 render: (c) => (
                   <div className={formStyles.rowActions}>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setEditingCoupon(c);
-                        setCouponForm({
-                          code: c.code ?? '',
-                          discountType: (c.discount_type as 'flat' | 'percentage') || 'percentage',
-                          discountValue: String(c.discount_value ?? ''),
-                          maxDiscount: c.max_discount != null ? String(c.max_discount) : '',
-                          usageLimit: c.usage_limit != null ? String(c.usage_limit) : '',
-                        });
-                        setModalOpen(true);
-                      }}
-                    >
+                    <Button variant="secondary" size="sm" onClick={() => openEditCoupon(c)}>
                       Edit
                     </Button>
                     <Button
@@ -376,8 +489,7 @@ export const PromotionsPage = () => {
                         setCampaignForm({
                           name: c.name ?? '',
                           type: c.type ?? 'promo',
-                          channel:
-                            (c.channel as typeof campaignForm.channel) || 'push',
+                          channel: (c.channel as typeof campaignForm.channel) || 'push',
                           status: c.status ?? 'draft',
                         });
                         setModalOpen(true);
@@ -492,6 +604,31 @@ export const PromotionsPage = () => {
               />
             </div>
             <div className={formStyles.field}>
+              <span className={formStyles.label}>Applicable on *</span>
+              <div className={formStyles.checkRow}>
+                <label className={formStyles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={couponForm.applicableOrder}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({ ...f, applicableOrder: e.target.checked }))
+                    }
+                  />
+                  Order
+                </label>
+                <label className={formStyles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={couponForm.applicableWallet}
+                    onChange={(e) =>
+                      setCouponForm((f) => ({ ...f, applicableWallet: e.target.checked }))
+                    }
+                  />
+                  Wallet top-up
+                </label>
+              </div>
+            </div>
+            <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="coupon-type">
                 Discount type
               </label>
@@ -509,6 +646,9 @@ export const PromotionsPage = () => {
                 <option value="percentage">Percentage</option>
                 <option value="flat">Flat</option>
               </select>
+              <p className={formStyles.hint}>
+                For wallet top-up this is bonus credit on the amount added.
+              </p>
             </div>
             <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="coupon-value">
@@ -526,7 +666,7 @@ export const PromotionsPage = () => {
             </div>
             <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="coupon-max">
-                Max discount
+                Max discount / bonus
               </label>
               <input
                 id="coupon-max"
@@ -536,6 +676,21 @@ export const PromotionsPage = () => {
                 step="any"
                 value={couponForm.maxDiscount}
                 onChange={(e) => setCouponForm((f) => ({ ...f, maxDiscount: e.target.value }))}
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="coupon-min">
+                Min amount
+              </label>
+              <input
+                id="coupon-min"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                value={couponForm.minAmount}
+                onChange={(e) => setCouponForm((f) => ({ ...f, minAmount: e.target.value }))}
+                placeholder="e.g. 500"
               />
             </div>
             <div className={formStyles.field}>
@@ -550,6 +705,62 @@ export const PromotionsPage = () => {
                 value={couponForm.usageLimit}
                 onChange={(e) => setCouponForm((f) => ({ ...f, usageLimit: e.target.value }))}
               />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="coupon-from">
+                Valid from
+              </label>
+              <input
+                id="coupon-from"
+                className={formStyles.input}
+                type="datetime-local"
+                value={couponForm.validFrom}
+                onChange={(e) => setCouponForm((f) => ({ ...f, validFrom: e.target.value }))}
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="coupon-to">
+                Valid to
+              </label>
+              <input
+                id="coupon-to"
+                className={formStyles.input}
+                type="datetime-local"
+                value={couponForm.validTo}
+                onChange={(e) => setCouponForm((f) => ({ ...f, validTo: e.target.value }))}
+              />
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Communities (optional)</span>
+              <p className={formStyles.hint}>Leave empty for all communities</p>
+              <div className={formStyles.checkGrid}>
+                {communities.map((c) => (
+                  <label key={c.id} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={couponForm.communityIds.includes(c.id)}
+                      onChange={() => toggleCommunity(c.id)}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Cities (optional)</span>
+              <p className={formStyles.hint}>Leave empty for all cities</p>
+              <div className={formStyles.checkGrid}>
+                {cityOptions.map((city) => (
+                  <label key={city} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={couponForm.cities.includes(city)}
+                      onChange={() => toggleCity(city)}
+                    />
+                    {city}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -646,7 +857,6 @@ export const PromotionsPage = () => {
                 className={formStyles.input}
                 value={bannerForm.position}
                 onChange={(e) => setBannerForm((f) => ({ ...f, position: e.target.value }))}
-                placeholder="home"
               />
             </div>
             <div className={formStyles.field}>
@@ -658,26 +868,19 @@ export const PromotionsPage = () => {
                 className={formStyles.input}
                 value={bannerForm.link}
                 onChange={(e) => setBannerForm((f) => ({ ...f, link: e.target.value }))}
-                placeholder="Optional URL or path"
               />
             </div>
             {editingBanner && (
-              <div className={formStyles.field}>
-                <label className={formStyles.label} htmlFor="banner-active">
-                  Active
-                </label>
-                <select
-                  id="banner-active"
-                  className={formStyles.select}
-                  value={bannerForm.isActive ? 'yes' : 'no'}
+              <label className={formStyles.checkLabel}>
+                <input
+                  type="checkbox"
+                  checked={bannerForm.isActive}
                   onChange={(e) =>
-                    setBannerForm((f) => ({ ...f, isActive: e.target.value === 'yes' }))
+                    setBannerForm((f) => ({ ...f, isActive: e.target.checked }))
                   }
-                >
-                  <option value="yes">Yes</option>
-                  <option value="no">No</option>
-                </select>
-              </div>
+                />
+                Active
+              </label>
             )}
           </div>
         )}

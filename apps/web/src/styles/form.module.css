@@ -62,3 +62,30 @@
   gap: var(--ic-spacing-xs);
   justify-content: flex-end;
 }
+
+.checkRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-md);
+}
+
+.checkGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--ic-spacing-sm);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: var(--ic-spacing-sm);
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-md);
+  background: var(--ic-surface-elevated);
+}
+
+.checkLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-xs);
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-primary);
+  cursor: pointer;
+}
