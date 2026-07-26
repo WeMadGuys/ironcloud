@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -25,15 +25,25 @@ import {
 import {
   cancelBooking,
   createBooking,
+  formatHourlySlotLabel,
   getBookedDayOffsets,
   getDeliveryWindowFromPickup,
   getHomeBookingForDay,
   markOrderReadyForRebook,
-  PICKUP_HOURS,
   type ActiveBooking,
-  type SlotKey,
 } from '../../src/features/booking/services/booking.service';
+import {
+  getCommunityPickupSlots,
+  type CommunityPickupSlot,
+} from '../../src/features/booking/services/communitySlots.service';
 import { ActiveOrderCard } from '../../src/features/booking/components/ActiveOrderCard';
+import {
+  EstimateOrderCard,
+  buildEstimateLines,
+  estimateTotals,
+  type EstimateCounts,
+} from '../../src/features/booking/components/EstimateOrderCard';
+import { getGarmentCatalog } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
 import { getWallet } from '../../src/features/wallet/services/wallet.service';
 
@@ -43,11 +53,25 @@ interface DayOption {
   isToday: boolean;
 }
 
-const PICKUP_SLOTS = {
-  morning: { label: 'Morning', time: '8:00 AM - 11:00 AM', icon: 'weather-sunny' as const },
-  afternoon: { label: 'Afternoon', time: '11:00 AM - 3:00 PM', icon: 'weather-sunny' as const },
-  evening: { label: 'Evening', time: '3:00 PM - 7:00 PM', icon: 'weather-night' as const },
-};
+const VISIBLE_SLOT_COUNT = 3;
+
+const SLOT_ICON_THEMES = [
+  {
+    icon: 'white-balance-sunny' as const,
+    color: colors.status.success.foreground,
+    bg: colors.status.success.background,
+  },
+  {
+    icon: 'white-balance-sunny' as const,
+    color: colors.status.warning.foreground,
+    bg: colors.status.warning.background,
+  },
+  {
+    icon: 'weather-sunset' as const,
+    color: colors.brand.accent,
+    bg: colors.brand.accentMuted,
+  },
+];
 
 function getNextDays(count: number): DayOption[] {
   const days: DayOption[] = [];
@@ -66,20 +90,19 @@ function getNextDays(count: number): DayOption[] {
   return days;
 }
 
-function buildPickupWindow(dayOffset: number, slot: SlotKey) {
-  const hours = PICKUP_HOURS[slot];
+function buildPickupWindow(dayOffset: number, startHour: number) {
   const start = new Date();
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() + dayOffset);
-  start.setHours(hours.start, 0, 0, 0);
+  start.setHours(startHour, 0, 0, 0);
 
   const end = new Date(start);
-  end.setHours(hours.end, 0, 0, 0);
+  end.setHours(startHour + 1, 0, 0, 0);
   return { start, end };
 }
 
-function formatDeliveryPreview(dayOffset: number, slot: SlotKey) {
-  const pickup = buildPickupWindow(dayOffset, slot);
+function formatDeliveryPreview(dayOffset: number, startHour: number) {
+  const pickup = buildPickupWindow(dayOffset, startHour);
   const delivery = getDeliveryWindowFromPickup(pickup.start, pickup.end);
 
   const dateLabel = delivery.start.toLocaleDateString('en-US', {
@@ -94,7 +117,13 @@ function formatDeliveryPreview(dayOffset: number, slot: SlotKey) {
   };
   const timeLabel = `${delivery.start.toLocaleTimeString('en-US', timeOpts)} - ${delivery.end.toLocaleTimeString('en-US', timeOpts)}`;
 
-  return { dateLabel, timeLabel };
+  return `${dateLabel} • ${timeLabel}`;
+}
+
+function slotThemeForHour(startHour: number) {
+  if (startHour < 11) return SLOT_ICON_THEMES[0];
+  if (startHour < 15) return SLOT_ICON_THEMES[1];
+  return SLOT_ICON_THEMES[2];
 }
 
 export default function HomeScreen() {
@@ -102,9 +131,14 @@ export default function HomeScreen() {
   const days = getNextDays(7);
 
   const [selectedDay, setSelectedDay] = useState(0);
-  const [selectedPickup, setSelectedPickup] = useState<SlotKey>('morning');
+  const [selectedStartHour, setSelectedStartHour] = useState<number | null>(null);
+  const [pickupSlots, setPickupSlots] = useState<CommunityPickupSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [showAllSlots, setShowAllSlots] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
+  const [estimateCounts, setEstimateCounts] = useState<EstimateCounts>({});
+  const [communityId, setCommunityId] = useState<string | null>(null);
   const [isBooking, setIsBooking] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -117,7 +151,36 @@ export default function HomeScreen() {
     detail: '',
   });
 
-  const deliveryPreview = formatDeliveryPreview(selectedDay, selectedPickup);
+  useEffect(() => {
+    if (!communityId) {
+      setPickupSlots([]);
+      setSelectedStartHour(null);
+      return;
+    }
+    let cancelled = false;
+    setSlotsLoading(true);
+    getCommunityPickupSlots(communityId).then((slots) => {
+      if (cancelled) return;
+      setPickupSlots(slots);
+      setSelectedStartHour((prev) => {
+        if (prev != null && slots.some((s) => s.startHour === prev)) return prev;
+        return slots[0]?.startHour ?? null;
+      });
+      setSlotsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [communityId]);
+
+  const deliveryPreviewLabel = useMemo(() => {
+    if (selectedStartHour == null) return 'Select a pickup time';
+    return formatDeliveryPreview(selectedDay, selectedStartHour);
+  }, [selectedDay, selectedStartHour]);
+
+  const visibleSlots = showAllSlots
+    ? pickupSlots
+    : pickupSlots.slice(0, VISIBLE_SLOT_COUNT);
 
   const loadHomeData = useCallback(async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
     if (mode === 'initial') {
@@ -140,6 +203,7 @@ export default function HomeScreen() {
       const defaultAddress =
         addresses.find((address) => address.isDefault) || addresses[0];
       if (defaultAddress) {
+        setCommunityId(defaultAddress.communityId);
         setHeaderAddress({
           name: defaultAddress.communityName,
           detail: [
@@ -154,6 +218,8 @@ export default function HomeScreen() {
           name: booking.addressName,
           detail: booking.addressDetail,
         });
+      } else {
+        setCommunityId(null);
       }
     } catch (error) {
       console.error('Error loading home data:', error);
@@ -179,15 +245,30 @@ export default function HomeScreen() {
 
   const handleConfirmBooking = async () => {
     if (isBooking) return;
+    if (selectedStartHour == null) {
+      Alert.alert(
+        'No pickup slot',
+        'Your community has no pickup times configured yet. Please try again later.',
+      );
+      return;
+    }
     setIsBooking(true);
     try {
+      const catalog = communityId ? await getGarmentCatalog(communityId) : [];
+      const estimatedGarments = buildEstimateLines(catalog, estimateCounts);
+      const { amount: estimatedAmount } = estimateTotals(estimatedGarments);
+
       await createBooking({
         dayOffset: selectedDay,
-        pickupSlot: selectedPickup,
+        pickupStartHour: selectedStartHour,
         specialInstructions,
+        ...(estimatedGarments.length > 0
+          ? { estimatedGarments, estimatedAmount }
+          : {}),
       });
       setSpecialInstructions('');
       setShowInstructions(false);
+      setEstimateCounts({});
       await loadHomeData(selectedDay);
     } catch (error) {
       const message =
@@ -407,7 +488,6 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-
         {/* Pickup Time Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -418,141 +498,178 @@ export default function HomeScreen() {
                 color={colors.status.success.foreground}
               />
             </View>
-            <View>
+            <View style={styles.sectionHeaderText}>
               <Text style={styles.sectionTitle}>Select Pickup Time</Text>
               <Text style={styles.sectionSubtitle}>We'll pick up your clothes</Text>
             </View>
           </View>
-          <View style={styles.timeSlotsRow}>
-            {(Object.keys(PICKUP_SLOTS) as SlotKey[]).map((slot) => (
-              <Pressable
-                key={slot}
-                style={[
-                  styles.timeSlot,
-                  selectedPickup === slot && styles.timeSlotSelected,
-                ]}
-                onPress={() => setSelectedPickup(slot)}
+
+          {slotsLoading ? (
+            <View style={styles.slotsEmpty}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : pickupSlots.length === 0 ? (
+            <View style={styles.slotsEmpty}>
+              <Text style={styles.slotsEmptyTitle}>No pickup slots yet</Text>
+              <Text style={styles.slotsEmptyHint}>
+                Pickup times for your community are not configured. Please check back
+                soon.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.timeSlotsRow}
               >
-                {selectedPickup === slot && (
-                  <View style={styles.checkMark}>
-                    <MaterialCommunityIcons
-                      name="check"
-                      size={12}
-                      color={colors.brand.onPrimary}
-                    />
-                  </View>
-                )}
-                <View
-                  style={[
-                    styles.slotIconWrap,
-                    selectedPickup === slot && styles.slotIconWrapSelected,
-                    slot === 'morning' && styles.slotIconMorning,
-                    slot === 'afternoon' && styles.slotIconAfternoon,
-                    slot === 'evening' && styles.slotIconEvening,
-                  ]}
+                {visibleSlots.map((slot) => {
+                  const selected = selectedStartHour === slot.startHour;
+                  const theme = slotThemeForHour(slot.startHour);
+                  return (
+                    <Pressable
+                      key={slot.id}
+                      style={[
+                        styles.timeSlot,
+                        selected && styles.timeSlotSelected,
+                      ]}
+                      onPress={() => setSelectedStartHour(slot.startHour)}
+                    >
+                      {selected && (
+                        <View style={styles.checkMark}>
+                          <MaterialCommunityIcons
+                            name="check"
+                            size={12}
+                            color={colors.brand.onPrimary}
+                          />
+                        </View>
+                      )}
+                      <View
+                        style={[
+                          styles.slotIconWrap,
+                          { backgroundColor: theme.bg },
+                          selected && styles.slotIconWrapSelected,
+                        ]}
+                      >
+                        <MaterialCommunityIcons
+                          name={theme.icon}
+                          size={22}
+                          color={theme.color}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.slotTime,
+                          selected && styles.slotTimeSelected,
+                        ]}
+                      >
+                        {formatHourlySlotLabel(slot.startHour)}
+                      </Text>
+                      <Text style={styles.slotPickupLabel}>Pickup</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              {pickupSlots.length > VISIBLE_SLOT_COUNT && (
+                <Pressable
+                  style={styles.moreSlotsLink}
+                  onPress={() => setShowAllSlots((v) => !v)}
                 >
                   <MaterialCommunityIcons
-                    name={slot === 'evening' ? 'weather-night' : 'white-balance-sunny'}
-                    size={24}
-                    color={
-                      slot === 'morning'
-                        ? colors.status.success.foreground
-                        : slot === 'afternoon'
-                        ? colors.status.warning.foreground
-                        : colors.brand.accent
-                    }
+                    name="calendar-clock"
+                    size={16}
+                    color={colors.brand.primary}
                   />
-                </View>
-                <Text
-                  style={[
-                    styles.slotLabel,
-                    selectedPickup === slot && styles.slotLabelSelected,
-                  ]}
-                >
-                  {PICKUP_SLOTS[slot].label}
-                </Text>
-                <Text style={styles.slotTime}>{PICKUP_SLOTS[slot].time}</Text>
-              </Pressable>
-            ))}
-          </View>
+                  <Text style={styles.moreSlotsText}>
+                    {showAllSlots ? 'Show less' : 'More slots'}
+                  </Text>
+                  <MaterialCommunityIcons
+                    name={showAllSlots ? 'chevron-up' : 'chevron-right'}
+                    size={16}
+                    color={colors.brand.primary}
+                  />
+                </Pressable>
+              )}
+            </>
+          )}
         </View>
 
-        {/* Delivery preview — always 24 hours after pickup */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={[styles.sectionIconWrap, styles.sectionIconDelivery]}>
+        {/* Compact summary cards */}
+        <View style={styles.summaryStack}>
+          <View style={styles.summaryCard}>
+            <View style={[styles.summaryIconWrap, styles.summaryIconDelivery]}>
               <MaterialCommunityIcons
-                name="truck-delivery-outline"
+                name="calendar-month-outline"
                 size={20}
                 color={colors.brand.accent}
               />
             </View>
-            <View>
-              <Text style={styles.sectionTitle}>Delivery Time</Text>
-              <Text style={styles.sectionSubtitle}>
-                Automatically scheduled 24 hours after pickup
+            <View style={styles.summaryText}>
+              <Text style={styles.summaryTitle}>Delivery Time</Text>
+              <Text style={styles.summarySubtitle} numberOfLines={2}>
+                {deliveryPreviewLabel}
               </Text>
             </View>
           </View>
-          <View style={styles.deliveryPreviewCard}>
-            <View style={styles.deliveryPreviewRow}>
-              <Text style={styles.deliveryPreviewLabel}>Date</Text>
-              <Text style={styles.deliveryPreviewValue}>
-                {deliveryPreview.dateLabel}
-              </Text>
-            </View>
-            <View style={[styles.deliveryPreviewRow, styles.deliveryPreviewRowLast]}>
-              <Text style={styles.deliveryPreviewLabel}>Time</Text>
-              <Text style={styles.deliveryPreviewValue}>
-                {deliveryPreview.timeLabel}
-              </Text>
-            </View>
-          </View>
-        </View>
 
-        {/* Special Instructions */}
-        <Pressable
-          style={styles.instructionsHeader}
-          onPress={() => setShowInstructions(!showInstructions)}
-        >
-          <View style={styles.instructionsLeft}>
+          <EstimateOrderCard
+            communityId={communityId}
+            counts={estimateCounts}
+            onChangeCounts={setEstimateCounts}
+          />
+
+          <Pressable
+            style={styles.summaryCard}
+            onPress={() => setShowInstructions((v) => !v)}
+          >
+            <View style={[styles.summaryIconWrap, styles.summaryIconNotes]}>
+              <MaterialCommunityIcons
+                name="note-text-outline"
+                size={20}
+                color={colors.status.warning.foreground}
+              />
+            </View>
+            <View style={styles.summaryText}>
+              <Text style={styles.summaryTitle}>Special Instructions</Text>
+              <Text style={styles.summarySubtitle} numberOfLines={1}>
+                {specialInstructions.trim() || 'None added'}
+              </Text>
+            </View>
             <MaterialCommunityIcons
               name="pencil-outline"
-              size={20}
+              size={18}
               color={colors.icon.secondary}
             />
-            <Text style={styles.instructionsTitle}>Special Instructions</Text>
-            <Text style={styles.optionalText}>(Optional)</Text>
-          </View>
-          <MaterialCommunityIcons
-            name={showInstructions ? 'chevron-up' : 'chevron-down'}
-            size={24}
-            color={colors.icon.secondary}
-          />
-        </Pressable>
-        {showInstructions && (
-          <View style={styles.instructionsContainer}>
-            <TextInput
-              style={styles.instructionsInput}
-              placeholder="Add any special instructions for our team..."
-              placeholderTextColor={colors.text.muted}
-              multiline
-              numberOfLines={3}
-              maxLength={200}
-              value={specialInstructions}
-              onChangeText={setSpecialInstructions}
-            />
-            <Text style={styles.charCount}>{specialInstructions.length}/200</Text>
-          </View>
-        )}
+          </Pressable>
+
+          {showInstructions && (
+            <View style={styles.instructionsContainer}>
+              <TextInput
+                style={styles.instructionsInput}
+                placeholder="Add any special instructions for our team..."
+                placeholderTextColor={colors.text.muted}
+                multiline
+                numberOfLines={3}
+                maxLength={200}
+                value={specialInstructions}
+                onChangeText={setSpecialInstructions}
+              />
+              <Text style={styles.charCount}>{specialInstructions.length}/200</Text>
+            </View>
+          )}
+        </View>
       </ScrollView>
 
       {/* Bottom CTA */}
       <View style={styles.bottomCta}>
         <Pressable
-          style={[styles.confirmButton, isBooking && styles.confirmButtonDisabled]}
+          style={[
+            styles.confirmButton,
+            (isBooking || selectedStartHour == null) && styles.confirmButtonDisabled,
+          ]}
           onPress={handleConfirmBooking}
-          disabled={isBooking}
+          disabled={isBooking || selectedStartHour == null}
         >
           {isBooking ? (
             <ActivityIndicator size="small" color={colors.brand.onPrimary} />
@@ -567,6 +684,14 @@ export default function HomeScreen() {
             </>
           )}
         </Pressable>
+        <View style={styles.secureNote}>
+          <MaterialCommunityIcons
+            name="lock-outline"
+            size={14}
+            color={colors.text.muted}
+          />
+          <Text style={styles.secureNoteText}>Your details are 100% secure</Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -740,6 +865,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.md,
   },
+  sectionHeaderText: {
+    flex: 1,
+  },
   sectionIconWrap: {
     width: 40,
     height: 40,
@@ -748,38 +876,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
-  },
-  sectionIconDelivery: {
-    backgroundColor: colors.brand.accentMuted,
-  },
-  deliveryPreviewCard: {
-    backgroundColor: colors.surface.elevated,
-    borderRadius: radius.lg,
-    borderWidth: 1.5,
-    borderColor: colors.brand.accent,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  deliveryPreviewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.divider,
-  },
-  deliveryPreviewRowLast: {
-    borderBottomWidth: 0,
-  },
-  deliveryPreviewLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 13,
-    color: colors.text.muted,
-  },
-  deliveryPreviewValue: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 14,
-    color: colors.text.heading,
   },
   sectionTitle: {
     fontFamily: fonts.poppins.semibold,
@@ -794,16 +890,16 @@ const styles = StyleSheet.create({
   },
   timeSlotsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingRight: spacing.lg,
   },
   timeSlot: {
-    flex: 1,
+    width: 118,
     backgroundColor: colors.surface.elevated,
     borderRadius: radius.lg,
-    paddingVertical: spacing.lg,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     alignItems: 'center',
-    marginHorizontal: spacing.xs,
     borderWidth: 1.5,
     borderColor: colors.border.default,
     position: 'relative',
@@ -822,72 +918,113 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand.accent,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 1,
   },
   slotIconWrap: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.sm,
   },
   slotIconWrapSelected: {},
-  slotIconMorning: {
-    backgroundColor: colors.status.success.background,
-  },
-  slotIconMorningDelivery: {
-    backgroundColor: colors.brand.accentMuted,
-  },
-  slotIconAfternoon: {
-    backgroundColor: colors.status.warning.background,
-  },
-  slotIconEvening: {
-    backgroundColor: colors.brand.accentMuted,
-  },
-  slotLabel: {
+  slotTime: {
     fontFamily: fonts.inter.semibold,
-    fontSize: 13,
+    fontSize: 12,
     color: colors.text.primary,
-    marginBottom: 4,
+    textAlign: 'center',
+    lineHeight: 16,
   },
-  slotLabelSelected: {
+  slotTimeSelected: {
     color: colors.brand.primary,
   },
-  slotTime: {
+  slotPickupLabel: {
     fontFamily: fonts.inter.regular,
     fontSize: 11,
     color: colors.text.secondary,
-    textAlign: 'center',
+    marginTop: 2,
   },
-  instructionsHeader: {
+  moreSlotsLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    marginTop: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border.divider,
+    gap: spacing.xs,
+    marginTop: spacing.md,
   },
-  instructionsLeft: {
-    flexDirection: 'row',
+  moreSlotsText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 13,
+    color: colors.brand.primary,
+  },
+  slotsEmpty: {
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderStyle: 'dashed',
+    padding: spacing.lg,
     alignItems: 'center',
   },
-  instructionsTitle: {
+  slotsEmptyTitle: {
     fontFamily: fonts.inter.semibold,
     fontSize: 14,
-    color: colors.text.primary,
-    marginLeft: spacing.sm,
+    color: colors.text.heading,
   },
-  optionalText: {
+  slotsEmptyHint: {
     fontFamily: fonts.inter.regular,
     fontSize: 12,
-    color: colors.text.muted,
-    marginLeft: spacing.xs,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    lineHeight: 17,
+  },
+  summaryStack: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    gap: spacing.sm,
+  },
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  summaryIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  summaryIconDelivery: {
+    backgroundColor: colors.brand.accentMuted,
+  },
+  summaryIconNotes: {
+    backgroundColor: colors.status.warning.background,
+  },
+  summaryText: {
+    flex: 1,
+    minWidth: 0,
+    marginRight: spacing.sm,
+  },
+  summaryTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 15,
+    color: colors.text.heading,
+  },
+  summarySubtitle: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 2,
   },
   instructionsContainer: {
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xs,
   },
   instructionsInput: {
     backgroundColor: colors.surface.elevated,
@@ -911,7 +1048,8 @@ const styles = StyleSheet.create({
   },
   bottomCta: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     backgroundColor: colors.surface.background,
     borderTopWidth: 1,
     borderTopColor: colors.border.divider,
@@ -926,13 +1064,25 @@ const styles = StyleSheet.create({
     ...shadows.button.native,
   },
   confirmButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.55,
   },
   confirmButtonText: {
     fontFamily: fonts.poppins.semibold,
     fontSize: 16,
     color: colors.brand.onPrimary,
     marginRight: spacing.sm,
+  },
+  secureNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  secureNoteText: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.muted,
   },
   statusScrollContent: {
     paddingHorizontal: spacing.lg,

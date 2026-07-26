@@ -17,6 +17,7 @@ import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 import {
   confirmPickup,
   getGarmentCatalog,
+  getOrderEstimatePrefill,
   type GarmentCatalogItem,
 } from '../../../../src/features/jobs/services/pickup.service';
 
@@ -30,19 +31,46 @@ export default function PickupScreen() {
 
   const [catalog, setCatalog] = useState<GarmentCatalogItem[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [fromCustomerEstimate, setFromCustomerEstimate] = useState(false);
+  const [estimatedAmount, setEstimatedAmount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!communityId) return;
-    getGarmentCatalog(communityId).then((items) => {
+    if (!communityId || !orderId) return;
+
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      const [items, prefill] = await Promise.all([
+        getGarmentCatalog(communityId),
+        getOrderEstimatePrefill(orderId),
+      ]);
+
+      if (cancelled) return;
+
+      const initialCounts = Object.fromEntries(
+        items.map((item) => [item.serviceId, prefill.counts[item.serviceId] || 0]),
+      );
+
       setCatalog(items);
-      setCounts(Object.fromEntries(items.map((i) => [i.serviceId, 0])));
+      setCounts(initialCounts);
+      setFromCustomerEstimate(prefill.hasEstimate);
+      setEstimatedAmount(prefill.estimatedAmount);
       setLoading(false);
-    });
-  }, [communityId]);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [communityId, orderId]);
 
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
+  const runningTotal = catalog.reduce(
+    (sum, item) => sum + (counts[item.serviceId] || 0) * item.unitPrice,
+    0,
+  );
 
   const adjust = (serviceId: string, delta: number) => {
     setCounts((prev) => ({
@@ -88,6 +116,21 @@ export default function PickupScreen() {
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.list}>
+            {fromCustomerEstimate && (
+              <View style={styles.estimateBanner}>
+                <MaterialCommunityIcons
+                  name="information-outline"
+                  size={18}
+                  color={colors.status.info.foreground}
+                />
+                <Text style={styles.estimateBannerText}>
+                  Pre-filled from customer estimate
+                  {estimatedAmount != null ? ` (₹${estimatedAmount})` : ''}.
+                  Adjust counts if needed, then confirm.
+                </Text>
+              </View>
+            )}
+
             {catalog.map((item) => (
               <View key={item.serviceId} style={styles.row}>
                 <View style={styles.rowLeft}>
@@ -111,7 +154,10 @@ export default function PickupScreen() {
           </ScrollView>
 
           <View style={styles.footer}>
-            <Text style={styles.totalLabel}>Total items: {total}</Text>
+            <Text style={styles.totalLabel}>
+              Total items: {total}
+              {total > 0 ? `  ·  ₹${runningTotal}` : ''}
+            </Text>
             <Pressable
               style={[styles.confirmBtn, (total === 0 || submitting) && styles.confirmDisabled]}
               onPress={handleConfirm}
@@ -147,6 +193,22 @@ const styles = StyleSheet.create({
   title: { flex: 1, textAlign: 'center', fontFamily: fonts.poppins.semibold, fontSize: 16, color: colors.text.heading },
   loader: { marginTop: spacing['2xl'] },
   list: { padding: spacing.lg, paddingBottom: 120 },
+  estimateBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.status.info.background,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  estimateBannerText: {
+    flex: 1,
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.status.info.text,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

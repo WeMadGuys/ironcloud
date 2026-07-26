@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -66,11 +67,19 @@ export function ActiveOrderCard({
   onCancel,
   isCancelling = false,
 }: Props) {
+  const router = useRouter();
   const isAwaiting = booking.phase === 'awaiting_pickup';
   const isDelivered = booking.phase === 'delivered';
   const showGarments = booking.isPickupComplete;
   const hasGarments = booking.items.length > 0;
   const canCancel = isAwaiting && !!onCancel;
+  const needsPayment =
+    booking.isPickupComplete && booking.paymentStatus === 'insufficient_funds';
+  const showEstimateCompare =
+    booking.isPickupComplete &&
+    booking.estimatedAmount != null &&
+    booking.totalAmount > 0 &&
+    Number(booking.estimatedAmount) !== Number(booking.totalAmount);
 
   const [showDetails, setShowDetails] = useState(false);
 
@@ -112,6 +121,48 @@ export function ActiveOrderCard({
           {booking.statusLabel}
         </Text>
       </View>
+
+      {needsPayment && (
+        <Pressable
+          style={styles.paymentRequired}
+          onPress={() => router.push('/(tabs)/wallet')}
+        >
+          <MaterialCommunityIcons
+            name="wallet-outline"
+            size={18}
+            color={colors.status.warning.foreground}
+          />
+          <View style={styles.paymentRequiredText}>
+            <Text style={styles.paymentRequiredTitle}>Payment required</Text>
+            <Text style={styles.paymentRequiredBody}>
+              Add ₹{booking.totalAmount} to your wallet to complete payment.
+            </Text>
+          </View>
+          <MaterialCommunityIcons
+            name="chevron-right"
+            size={20}
+            color={colors.status.warning.foreground}
+          />
+        </Pressable>
+      )}
+
+      {showEstimateCompare && (
+        <View style={styles.estimateCompare}>
+          <Text style={styles.estimateCompareTitle}>Pickup Confirmed</Text>
+          <Text style={styles.estimateCompareLine}>
+            Estimated Amount : ₹{booking.estimatedAmount}
+          </Text>
+          <Text style={styles.estimateCompareLine}>
+            Final Amount : ₹{booking.totalAmount}
+          </Text>
+          <Text style={styles.estimateCompareLine}>
+            Difference :{' '}
+            {Number(booking.totalAmount) - Number(booking.estimatedAmount) > 0
+              ? `+₹${Number(booking.totalAmount) - Number(booking.estimatedAmount)}`
+              : `-₹${Math.abs(Number(booking.totalAmount) - Number(booking.estimatedAmount))}`}
+          </Text>
+        </View>
+      )}
 
       {/* Pickup / Delivery */}
       <View style={styles.scheduleRow}>
@@ -321,6 +372,47 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: fonts.poppins.bold,
     fontSize: 18,
+  },
+  paymentRequired: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.status.warning.background,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  paymentRequiredText: {
+    flex: 1,
+  },
+  paymentRequiredTitle: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.status.warning.foreground,
+  },
+  paymentRequiredBody: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.status.warning.text,
+    marginTop: 2,
+  },
+  estimateCompare: {
+    backgroundColor: colors.status.info.background,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    gap: 4,
+  },
+  estimateCompareTitle: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.status.info.foreground,
+    marginBottom: 4,
+  },
+  estimateCompareLine: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.status.info.text,
   },
   scheduleRow: {
     flexDirection: 'row',

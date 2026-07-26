@@ -52,7 +52,7 @@ function activityCopy(status: string): { title: string; description: string } {
       description: 'Your pickup partner is heading to your address.',
     },
     picked_up: {
-      title: 'Clothes Picked Up',
+      title: 'Pickup Confirmed',
       description: 'Your clothes were picked up successfully.',
     },
     ironing: {
@@ -105,7 +105,7 @@ export async function getActivityFeed(limit = 30): Promise<ActivityItem[]> {
 
   const { data: events, error } = await (supabase
     .from('order_events') as ReturnType<typeof supabase.from>)
-    .select('id, order_id, status, note, created_at')
+    .select('id, order_id, status, note, metadata, created_at')
     .in('order_id', orderIds)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -120,13 +120,43 @@ export async function getActivityFeed(limit = 30): Promise<ActivityItem[]> {
     order_id: string;
     status: string;
     note: string | null;
+    metadata: {
+      estimated_amount?: number;
+      final_amount?: number;
+      difference?: number;
+      reason_lines?: string[];
+    } | null;
     created_at: string;
   }>) || []).map((event) => {
     const copy = activityCopy(event.status);
+    let description = event.note || copy.description;
+
+    if (event.status === 'picked_up' && !event.note && event.metadata?.final_amount != null) {
+      const finalAmount = Number(event.metadata.final_amount);
+      const estimated = event.metadata.estimated_amount;
+      if (estimated != null && Number(estimated) !== finalAmount) {
+        const diff = Number(event.metadata.difference ?? finalAmount - Number(estimated));
+        const diffLabel = diff > 0 ? `+₹${diff}` : `-₹${Math.abs(diff)}`;
+        const reasons = (event.metadata.reason_lines || [])
+          .map((line, i) => `${i + 1}. ${line}`)
+          .join('\n');
+        description = [
+          `Estimated Amount : ₹${estimated}`,
+          `Final Amount : ₹${finalAmount}`,
+          `Difference : ${diffLabel}`,
+          reasons ? `Reason:\n${reasons}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+      } else {
+        description = `Final Amount\n₹${finalAmount}`;
+      }
+    }
+
     return {
       id: event.id,
-      title: copy.title,
-      description: event.note || copy.description,
+      title: event.status === 'picked_up' ? 'Pickup Confirmed' : copy.title,
+      description,
       orderNumber: orderMap[event.order_id] || '',
       status: event.status,
       createdAt: event.created_at,

@@ -34,6 +34,7 @@ export const CommunityDetailPage = () => {
   const [data, setData] = useState<Awaited<ReturnType<typeof fetchCommunityById>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedRiderId, setSelectedRiderId] = useState('');
+  const [selectedStartHour, setSelectedStartHour] = useState(8);
 
   const assignedQuery = trpc.riders.listByCommunity.useQuery(
     { communityId: id },
@@ -42,6 +43,10 @@ export const CommunityDetailPage = () => {
   const optionsQuery = trpc.riders.listOptions.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
+  const slotsQuery = trpc.communities.listPickupSlots.useQuery(
+    { communityId: id },
+    { enabled: Boolean(id), refetchOnWindowFocus: false },
+  );
 
   const assignMutation = trpc.riders.assignCommunity.useMutation({
     onSuccess: async () => {
@@ -55,6 +60,29 @@ export const CommunityDetailPage = () => {
     onSuccess: async () => {
       toast('Rider removed', 'success');
       await utils.riders.listByCommunity.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const addSlotMutation = trpc.communities.addPickupSlot.useMutation({
+    onSuccess: async () => {
+      toast('Pickup slot added', 'success');
+      await utils.communities.listPickupSlots.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const setSlotActiveMutation = trpc.communities.setPickupSlotActive.useMutation({
+    onSuccess: async () => {
+      await utils.communities.listPickupSlots.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const removeSlotMutation = trpc.communities.removePickupSlot.useMutation({
+    onSuccess: async () => {
+      toast('Pickup slot removed', 'success');
+      await utils.communities.listPickupSlots.invalidate({ communityId: id });
     },
     onError: (err) => toast(err.message, 'error'),
   });
@@ -88,6 +116,17 @@ export const CommunityDetailPage = () => {
     }
   }, [availableRiders, selectedRiderId]);
 
+  useEffect(() => {
+    const taken = new Set((slotsQuery.data ?? []).map((slot) => slot.start_hour));
+    const available = Array.from({ length: 24 }, (_, hour) => hour).filter(
+      (hour) => !taken.has(hour),
+    );
+    if (available.length === 0) return;
+    if (!available.includes(selectedStartHour)) {
+      setSelectedStartHour(available[0]);
+    }
+  }, [slotsQuery.data, selectedStartHour]);
+
   const handleAssign = () => {
     if (!selectedRiderId) return;
     assignMutation.mutate({ riderId: selectedRiderId, communityId: id });
@@ -95,6 +134,23 @@ export const CommunityDetailPage = () => {
 
   const handleUnassign = (riderId: string) => {
     unassignMutation.mutate({ riderId, communityId: id });
+  };
+
+  const formatHourLabel = (startHour: number) => {
+    const start = new Date();
+    start.setHours(startHour, 0, 0, 0);
+    const end = new Date(start);
+    end.setHours(startHour + 1, 0, 0, 0);
+    const opts: Intl.DateTimeFormatOptions = {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    };
+    return `${start.toLocaleTimeString('en-US', opts)} – ${end.toLocaleTimeString('en-US', opts)}`;
+  };
+
+  const handleAddSlot = () => {
+    addSlotMutation.mutate({ communityId: id, startHour: selectedStartHour });
   };
 
   if (loading) return <Loader fullPage />;
@@ -106,7 +162,16 @@ export const CommunityDetailPage = () => {
     revenue: row.revenue,
   }));
   const isMutating = assignMutation.isPending || unassignMutation.isPending;
+  const isSlotMutating =
+    addSlotMutation.isPending ||
+    setSlotActiveMutation.isPending ||
+    removeSlotMutation.isPending;
   const ridersLoading = assignedQuery.isLoading || assignedQuery.isFetching;
+  const pickupSlots = slotsQuery.data ?? [];
+  const takenHours = new Set(pickupSlots.map((slot) => slot.start_hour));
+  const availableHours = Array.from({ length: 24 }, (_, hour) => hour).filter(
+    (hour) => !takenHours.has(hour),
+  );
 
   return (
     <div>
@@ -250,6 +315,108 @@ export const CommunityDetailPage = () => {
               {assignedQuery.isError && (
                 <p className={assignStyles.statusLine}>
                   Could not load assignments: {assignedQuery.error.message}
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          title="Pickup Slots"
+          subtitle={
+            slotsQuery.isLoading
+              ? 'Loading…'
+              : `${pickupSlots.length} hourly slot${pickupSlots.length === 1 ? '' : 's'} · customers only see active ones`
+          }
+        >
+          <div className={assignStyles.assignPanel}>
+            {slotsQuery.isLoading && pickupSlots.length === 0 ? (
+              <p className={assignStyles.statusLine}>Loading pickup slots…</p>
+            ) : pickupSlots.length === 0 ? (
+              <div className={assignStyles.emptyBox}>
+                <p className={assignStyles.emptyTitle}>No pickup slots yet</p>
+                <p className={assignStyles.emptyHint}>
+                  Add hourly windows below. Each community can have its own schedule.
+                </p>
+              </div>
+            ) : (
+              <ul className={assignStyles.assignedList}>
+                {pickupSlots.map((slot) => (
+                  <li key={slot.id} className={assignStyles.assignedItem}>
+                    <div className={assignStyles.assignedMeta}>
+                      <span className={assignStyles.assignedName}>
+                        {formatHourLabel(slot.start_hour)}
+                      </span>
+                      <span className={assignStyles.assignedPhone}>
+                        Capacity {slot.capacity}
+                        {slot.is_active ? '' : ' · Inactive'}
+                      </span>
+                    </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={isSlotMutating}
+                      onClick={() =>
+                        setSlotActiveMutation.mutate({
+                          id: slot.id,
+                          communityId: id,
+                          isActive: !slot.is_active,
+                        })
+                      }
+                    >
+                      {slot.is_active ? 'Disable' : 'Enable'}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      disabled={isSlotMutating}
+                      onClick={() =>
+                        removeSlotMutation.mutate({ id: slot.id, communityId: id })
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className={assignStyles.assignBox}>
+              <label className={assignStyles.assignLabel} htmlFor="add-pickup-slot">
+                Add hourly slot
+              </label>
+              <div className={assignStyles.assignControls}>
+                <select
+                  id="add-pickup-slot"
+                  className={assignStyles.assignSelect}
+                  value={availableHours.includes(selectedStartHour) ? selectedStartHour : availableHours[0] ?? ''}
+                  onChange={(e) => setSelectedStartHour(Number(e.target.value))}
+                  disabled={availableHours.length === 0 || isSlotMutating}
+                >
+                  {availableHours.length === 0 ? (
+                    <option value="">All hours already added</option>
+                  ) : (
+                    availableHours.map((hour) => (
+                      <option key={hour} value={hour}>
+                        {formatHourLabel(hour)}
+                      </option>
+                    ))
+                  )}
+                </select>
+                <Button
+                  onClick={handleAddSlot}
+                  disabled={
+                    availableHours.length === 0 ||
+                    isSlotMutating ||
+                    !Number.isInteger(selectedStartHour)
+                  }
+                >
+                  {addSlotMutation.isPending ? 'Adding…' : 'Add slot'}
+                </Button>
+              </div>
+              {slotsQuery.isError && (
+                <p className={assignStyles.statusLine}>
+                  Could not load slots: {slotsQuery.error.message}
                 </p>
               )}
             </div>

@@ -7,13 +7,39 @@ const MOCK_RIDER_ID = '00000000-0000-0000-0000-000000000002';
 
 const RESOLVE_RIDER_TIMEOUT_MS = 15000;
 
-export type SlotKey = 'morning' | 'afternoon' | 'evening';
-
-const PICKUP_HOURS: Record<SlotKey, { start: number; end: number; label: string }> = {
-  morning: { start: 8, end: 11, label: '8:00 AM - 11:00 AM' },
-  afternoon: { start: 11, end: 15, label: '11:00 AM - 3:00 PM' },
-  evening: { start: 15, end: 19, label: '3:00 PM - 7:00 PM' },
+export type HourlyPickupSlot = {
+  startHour: number;
+  endHour: number;
+  label: string;
 };
+
+export type CreateBookingInput = {
+  dayOffset: number;
+  /** Hourly window start (0–23). End is always startHour + 1. */
+  pickupStartHour: number;
+  specialInstructions?: string;
+  estimatedGarments?: {
+    serviceId: string;
+    name: string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+  estimatedAmount?: number;
+};
+
+/** Format an hourly window label, e.g. "8:00 AM - 9:00 AM". */
+export function formatHourlySlotLabel(startHour: number): string {
+  const start = new Date();
+  start.setHours(startHour, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(startHour + 1, 0, 0, 0);
+  const opts: Intl.DateTimeFormatOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  };
+  return `${start.toLocaleTimeString('en-US', opts)} - ${end.toLocaleTimeString('en-US', opts)}`;
+}
 
 const AWAITING_STATUSES = ['booked', 'pickup_assigned', 'pickup_in_progress'] as const;
 
@@ -66,16 +92,13 @@ export type ActiveBooking = {
   items: BookingGarment[];
   totalItemCount: number;
   totalAmount: number;
+  estimatedAmount: number | null;
+  paymentStatus: 'unpaid' | 'paid' | 'insufficient_funds';
+  pickupConfirmNote: string | null;
 };
 
 /** @deprecated Use ActiveBooking */
 export type AwaitingBooking = ActiveBooking;
-
-export type CreateBookingInput = {
-  dayOffset: number;
-  pickupSlot: SlotKey;
-  specialInstructions?: string;
-};
 
 /** Delivery is always 24 hours after pickup. */
 export function getDeliveryWindowFromPickup(pickupStart: Date, pickupEnd: Date) {
@@ -473,6 +496,8 @@ type OrderRow = {
   status: string;
   special_instructions: string | null;
   total_amount: number;
+  estimated_amount: number | null;
+  payment_status: 'unpaid' | 'paid' | 'insufficient_funds' | null;
   pickup_slot: { window_start: string; window_end: string } | null;
   delivery_slot: { window_start: string; window_end: string } | null;
   address: {
@@ -483,7 +508,14 @@ type OrderRow = {
   order_events:
     | {
         status: string;
-        metadata: { rider_name?: string; rider_phone?: string } | null;
+        metadata: {
+          rider_name?: string;
+          rider_phone?: string;
+          estimated_amount?: number;
+          final_amount?: number;
+          difference?: number;
+          reason_lines?: string[];
+        } | null;
         note: string | null;
         created_at: string;
       }[]
@@ -504,6 +536,8 @@ const ORDER_SELECT = `
   status,
   special_instructions,
   total_amount,
+  estimated_amount,
+  payment_status,
   pickup_slot:pickup_slot_id (window_start, window_end),
   delivery_slot:delivery_slot_id (window_start, window_end),
   address:address_id (tower, flat_number, community:community_id (name)),
@@ -701,6 +735,10 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     totalAmount:
       Number(row.total_amount || 0) ||
       items.reduce((sum, item) => sum + item.lineTotal, 0),
+    estimatedAmount:
+      row.estimated_amount != null ? Number(row.estimated_amount) : null,
+    paymentStatus: row.payment_status ?? 'unpaid',
+    pickupConfirmNote: pickedUpEvent?.note ?? null,
   };
 }
 
@@ -802,12 +840,27 @@ export async function createBooking(input: CreateBookingInput): Promise<{
   }
 
   const addressRow = address as { id: string; community_id: string };
-  const pickupHours = PICKUP_HOURS[input.pickupSlot];
-  const pickupWindow = buildWindow(
-    input.dayOffset,
-    pickupHours.start,
-    pickupHours.end,
-  );
+  const startHour = input.pickupStartHour;
+  if (!Number.isInteger(startHour) || startHour < 0 || startHour > 23) {
+    throw new Error('Invalid pickup time slot');
+  }
+
+  const { data: slotTemplate, error: slotTemplateError } = await (supabase
+    .from('community_pickup_slots') as ReturnType<typeof supabase.from>)
+    .select('id')
+    .eq('community_id', addressRow.community_id)
+    .eq('start_hour', startHour)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (slotTemplateError) {
+    console.warn('[Booking] slot template check failed:', slotTemplateError.message);
+  }
+  if (!slotTemplate) {
+    throw new Error('Selected pickup slot is not available for your community');
+  }
+
+  const pickupWindow = buildWindow(input.dayOffset, startHour, startHour + 1);
   // Delivery is always 24 hours after pickup
   const deliveryWindow = getDeliveryWindowFromPickup(
     pickupWindow.start,
@@ -831,22 +884,66 @@ export async function createBooking(input: CreateBookingInput): Promise<{
   const orderNumber = generateOrderNumber();
   const assignedRider = await resolvePickupRider(addressRow.community_id);
 
-  const { data: order, error: orderError } = await (supabase
+  const estimateLines = (input.estimatedGarments || []).filter(
+    (line) => line.quantity > 0,
+  );
+  const estimatedAmount =
+    typeof input.estimatedAmount === 'number' && estimateLines.length > 0
+      ? input.estimatedAmount
+      : estimateLines.reduce(
+          (sum, line) => sum + line.quantity * line.unitPrice,
+          0,
+        );
+
+  const baseOrderPayload = {
+    order_number: orderNumber,
+    customer_id: userId,
+    address_id: addressRow.id,
+    community_id: addressRow.community_id,
+    status: 'pickup_assigned' as const,
+    pickup_slot_id: pickupSlotId,
+    delivery_slot_id: deliverySlotId,
+    special_instructions: input.specialInstructions?.trim() || null,
+    subtotal: 0,
+    total_amount: 0,
+  };
+
+  const estimatePayload =
+    estimateLines.length > 0
+      ? {
+          payment_status: 'unpaid',
+          estimated_amount: estimatedAmount,
+          estimated_garments: estimateLines.map((line) => ({
+            service_id: line.serviceId,
+            name: line.name,
+            quantity: line.quantity,
+            unit_price: line.unitPrice,
+          })),
+        }
+      : { payment_status: 'unpaid' };
+
+  let { data: order, error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
-    .insert({
-      order_number: orderNumber,
-      customer_id: userId,
-      address_id: addressRow.id,
-      community_id: addressRow.community_id,
-      status: 'pickup_assigned',
-      pickup_slot_id: pickupSlotId,
-      delivery_slot_id: deliverySlotId,
-      special_instructions: input.specialInstructions?.trim() || null,
-      subtotal: 0,
-      total_amount: 0,
-    })
+    .insert({ ...baseOrderPayload, ...estimatePayload })
     .select('id, order_number')
     .single();
+
+  // Migration 010 not applied yet — book without estimate columns
+  if (
+    orderError &&
+    /estimated_|payment_status/i.test(orderError.message || '')
+  ) {
+    console.warn(
+      '[Booking] Estimate columns missing; booking without estimate. Apply migration 010.',
+    );
+    const retry = await (supabase
+      .from('orders') as ReturnType<typeof supabase.from>)
+      .insert(baseOrderPayload)
+      .select('id, order_number')
+      .single();
+    order = retry.data;
+    orderError = retry.error;
+  }
 
   if (orderError || !order) {
     console.error('[Booking] Order create error:', orderError);
@@ -1110,5 +1207,3 @@ async function cancelBookingClientSide(orderId: string): Promise<void> {
     .eq('order_id', orderId)
     .in('status', ['assigned', 'in_progress']);
 }
-
-export { PICKUP_HOURS };

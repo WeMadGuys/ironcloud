@@ -142,6 +142,36 @@ export interface Database {
           status?: string;
           created_at?: string;
         };
+          Relationships: [];
+      };
+      community_pickup_slots: {
+        Row: {
+          id: string;
+          community_id: string;
+          start_hour: number;
+          capacity: number;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          start_hour: number;
+          capacity?: number;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          community_id?: string;
+          start_hour?: number;
+          capacity?: number;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
         Relationships: [];
       };
       addresses: {
@@ -357,9 +387,12 @@ export interface Database {
           total_amount: number;
           coupon_id: string | null;
           payment_method: PaymentMethod;
+          payment_status: 'unpaid' | 'paid' | 'insufficient_funds';
           qr_code: string | null;
           partner_id: string | null;
           admin_notes: string | null;
+          estimated_amount: number | null;
+          estimated_garments: Json | null;
           created_at: string;
           updated_at: string;
         };
@@ -380,9 +413,12 @@ export interface Database {
           total_amount?: number;
           coupon_id?: string | null;
           payment_method?: PaymentMethod;
+          payment_status?: 'unpaid' | 'paid' | 'insufficient_funds';
           qr_code?: string | null;
           partner_id?: string | null;
           admin_notes?: string | null;
+          estimated_amount?: number | null;
+          estimated_garments?: Json | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -403,9 +439,12 @@ export interface Database {
           total_amount?: number;
           coupon_id?: string | null;
           payment_method?: PaymentMethod;
+          payment_status?: 'unpaid' | 'paid' | 'insufficient_funds';
           qr_code?: string | null;
           partner_id?: string | null;
           admin_notes?: string | null;
+          estimated_amount?: number | null;
+          estimated_garments?: Json | null;
           created_at?: string;
           updated_at?: string;
         };

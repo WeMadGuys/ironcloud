@@ -96,4 +96,115 @@ export const communitiesRouter = router({
 
       return { success: true };
     }),
+
+  listPickupSlots: adminProcedure
+    .input(z.object({ communityId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from('community_pickup_slots')
+        .select('id, community_id, start_hour, capacity, sort_order, is_active, created_at')
+        .eq('community_id', input.communityId)
+        .order('sort_order', { ascending: true })
+        .order('start_hour', { ascending: true });
+
+      if (error) throw new Error(error.message);
+      return data ?? [];
+    }),
+
+  addPickupSlot: adminProcedure
+    .input(
+      z.object({
+        communityId: z.string().uuid(),
+        startHour: z.number().int().min(0).max(23),
+        capacity: z.number().int().min(1).max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from('community_pickup_slots')
+        .insert({
+          community_id: input.communityId,
+          start_hour: input.startHour,
+          capacity: input.capacity ?? 50,
+          sort_order: input.startHour,
+          is_active: true,
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error(`A ${input.startHour}:00 slot already exists for this community`);
+        }
+        throw new Error(error.message);
+      }
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.pickup_slot.add',
+        entityType: 'community',
+        entityId: input.communityId,
+        after: { startHour: input.startHour, slotId: data.id },
+      });
+
+      return { id: data.id };
+    }),
+
+  setPickupSlotActive: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        communityId: z.string().uuid(),
+        isActive: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.supabase
+        .from('community_pickup_slots')
+        .update({ is_active: input.isActive })
+        .eq('id', input.id)
+        .eq('community_id', input.communityId);
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.pickup_slot.set_active',
+        entityType: 'community',
+        entityId: input.communityId,
+        after: { slotId: input.id, isActive: input.isActive },
+      });
+
+      return { success: true };
+    }),
+
+  removePickupSlot: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        communityId: z.string().uuid(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.supabase
+        .from('community_pickup_slots')
+        .delete()
+        .eq('id', input.id)
+        .eq('community_id', input.communityId);
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.pickup_slot.remove',
+        entityType: 'community',
+        entityId: input.communityId,
+        after: { slotId: input.id },
+      });
+
+      return { success: true };
+    }),
 });
