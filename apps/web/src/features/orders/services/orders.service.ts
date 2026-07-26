@@ -1,4 +1,4 @@
-import type { OrderStatus } from '@ironcloud/db';
+import type { OrderStatus, PaymentMethod } from '@ironcloud/db';
 import { getSupabase } from '@/lib/supabase';
 import { endOfDay, startOfDay } from '@/utils/format';
 
@@ -7,6 +7,8 @@ export type OrderListParams = {
   pageSize: number;
   search?: string;
   status?: OrderStatus;
+  communityId?: string;
+  paymentMethod?: PaymentMethod;
   /** Filter by pickup slot day (not booking created_at). */
   date?: Date;
   sortKey?: string;
@@ -15,7 +17,17 @@ export type OrderListParams = {
 
 export const fetchOrders = async (params: OrderListParams) => {
   const supabase = getSupabase();
-  const { page, pageSize, search, status, date, sortKey = 'created_at', sortAsc = false } = params;
+  const {
+    page,
+    pageSize,
+    search,
+    status,
+    communityId,
+    paymentMethod,
+    date,
+    sortKey = 'created_at',
+    sortAsc = false,
+  } = params;
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -39,7 +51,7 @@ export const fetchOrders = async (params: OrderListParams) => {
   let query = supabase
     .from('orders')
     .select(`
-      id, order_number, status, total_amount, created_at, payment_method, pickup_slot_id,
+      id, order_number, status, total_amount, created_at, payment_method, pickup_slot_id, community_id,
       profiles!orders_customer_id_fkey(full_name, phone),
       communities(name),
       addresses(flat_number, tower),
@@ -47,6 +59,8 @@ export const fetchOrders = async (params: OrderListParams) => {
     `, { count: 'exact' });
 
   if (status) query = query.eq('status', status);
+  if (communityId) query = query.eq('community_id', communityId);
+  if (paymentMethod) query = query.eq('payment_method', paymentMethod);
   if (search) query = query.ilike('order_number', `%${search}%`);
   if (pickupSlotIds) query = query.in('pickup_slot_id', pickupSlotIds);
 

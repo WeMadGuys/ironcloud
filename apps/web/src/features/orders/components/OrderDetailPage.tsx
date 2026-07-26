@@ -3,7 +3,8 @@
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, Loader } from '@/components';
+import { Badge, Button, Card, DetailBackLink, Loader } from '@/components';
+import { ADMIN_ROUTES } from '@/constants/routes';
 import { trpc } from '@/lib/trpc';
 import type { OrderStatus } from '@ironcloud/db';
 import { formatCurrency, formatOrderStatus, formatRelativeTime, getOrderStatusBadge } from '@/utils/format';
@@ -61,7 +62,14 @@ export const OrderDetailPage = () => {
   useEffect(() => { load(); }, [orderId]);
 
   if (loading) return <Loader fullPage />;
-  if (!order) return <div>Order not found</div>;
+  if (!order) {
+    return (
+      <div>
+        <DetailBackLink href={ADMIN_ROUTES.orders} label="Back to Orders" />
+        <div>Order not found</div>
+      </div>
+    );
+  }
 
   const customer = order.profiles as { full_name: string; phone: string } | null;
   const community = order.communities as { name: string; city: string } | null;
@@ -88,85 +96,88 @@ export const OrderDetailPage = () => {
   };
 
   return (
-    <div className={pageStyles.detailGrid}>
-      <div>
-        <Card title={`Order ${order.order_number}`}>
-          <div className={detailStyles.statusRow}>
-            <Badge variant={getOrderStatusBadge(order.status)}>{formatOrderStatus(order.status)}</Badge>
-            <span>{formatCurrency(Number(order.total_amount))}</span>
-          </div>
-          <p><strong>Customer:</strong> {customer?.full_name} ({customer?.phone})</p>
-          <p><strong>Community:</strong> {community?.name}, {community?.city}</p>
-          <p><strong>Address:</strong> {address?.tower} - {address?.flat_number}</p>
-          <p><strong>Payment:</strong> {order.payment_method}</p>
-          {order.special_instructions && <p><strong>Instructions:</strong> {order.special_instructions}</p>}
-          {order.admin_notes && <p><strong>Admin Notes:</strong> {order.admin_notes}</p>}
-        </Card>
+    <div>
+      <DetailBackLink href={ADMIN_ROUTES.orders} label="Back to Orders" />
+      <div className={pageStyles.detailGrid}>
+        <div>
+          <Card title={`Order ${order.order_number}`}>
+            <div className={detailStyles.statusRow}>
+              <Badge variant={getOrderStatusBadge(order.status)}>{formatOrderStatus(order.status)}</Badge>
+              <span>{formatCurrency(Number(order.total_amount))}</span>
+            </div>
+            <p><strong>Customer:</strong> {customer?.full_name} ({customer?.phone})</p>
+            <p><strong>Community:</strong> {community?.name}, {community?.city}</p>
+            <p><strong>Address:</strong> {address?.tower} - {address?.flat_number}</p>
+            <p><strong>Payment:</strong> {order.payment_method}</p>
+            {order.special_instructions && <p><strong>Instructions:</strong> {order.special_instructions}</p>}
+            {order.admin_notes && <p><strong>Admin Notes:</strong> {order.admin_notes}</p>}
+          </Card>
 
-        <Card title="Timeline">
-          <ul className={pageStyles.timeline}>
-            {events.map((e) => (
-              <li key={e.id} className={pageStyles.timelineItem}>
-                <Badge variant={getOrderStatusBadge(e.status)}>{formatOrderStatus(e.status)}</Badge>
-                {e.note && <p>{e.note}</p>}
-                <div className={pageStyles.timelineTime}>{formatRelativeTime(e.created_at)}</div>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      </div>
+          <Card title="Timeline">
+            <ul className={pageStyles.timeline}>
+              {events.map((e) => (
+                <li key={e.id} className={pageStyles.timelineItem}>
+                  <Badge variant={getOrderStatusBadge(e.status)}>{formatOrderStatus(e.status)}</Badge>
+                  {e.note && <p>{e.note}</p>}
+                  <div className={pageStyles.timelineTime}>{formatRelativeTime(e.created_at)}</div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </div>
 
-      <div>
-        <Card title="Actions">
-          <div className={detailStyles.actions}>
-            <div className={detailStyles.statusControl}>
-              <label htmlFor="order-status" className={detailStyles.statusLabel}>
-                Update status
-              </label>
-              <select
-                id="order-status"
-                className={pageStyles.select}
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value as OrderStatus)}
-                aria-label="Select order status"
-              >
-                {STATUS_OPTIONS.map((status) => (
-                  <option key={status} value={status}>
-                    {formatOrderStatus(status)}
-                  </option>
-                ))}
-              </select>
+        <div>
+          <Card title="Actions">
+            <div className={detailStyles.actions}>
+              <div className={detailStyles.statusControl}>
+                <label htmlFor="order-status" className={detailStyles.statusLabel}>
+                  Update status
+                </label>
+                <select
+                  id="order-status"
+                  className={pageStyles.select}
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value as OrderStatus)}
+                  aria-label="Select order status"
+                >
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {formatOrderStatus(status)}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="secondary"
+                  onClick={handleUpdateStatus}
+                  disabled={statusUnchanged || statusUpdating}
+                >
+                  {statusUpdating ? 'Updating…' : 'Update Status'}
+                </Button>
+              </div>
+
+              <textarea
+                className={detailStyles.noteInput}
+                rows={3}
+                placeholder="Add admin note (optional for status update)..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
               <Button
-                variant="secondary"
-                onClick={handleUpdateStatus}
-                disabled={statusUnchanged || statusUpdating}
+                onClick={() => addNoteMutation.mutate({ orderId, note }, { onSuccess: () => { setNote(''); load(); } })}
+                disabled={!note || addNoteMutation.isPending}
               >
-                {statusUpdating ? 'Updating…' : 'Update Status'}
+                Add Note
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => cancelMutation.mutate({ orderId, reason: 'Admin cancelled' }, { onSuccess: load })}
+                disabled={cancelMutation.isPending || order.status === 'cancelled'}
+              >
+                Cancel Order
               </Button>
             </div>
-
-            <textarea
-              className={detailStyles.noteInput}
-              rows={3}
-              placeholder="Add admin note (optional for status update)..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            <Button
-              onClick={() => addNoteMutation.mutate({ orderId, note }, { onSuccess: () => { setNote(''); load(); } })}
-              disabled={!note || addNoteMutation.isPending}
-            >
-              Add Note
-            </Button>
-            <Button
-              variant="danger"
-              onClick={() => cancelMutation.mutate({ orderId, reason: 'Admin cancelled' }, { onSuccess: load })}
-              disabled={cancelMutation.isPending || order.status === 'cancelled'}
-            >
-              Cancel Order
-            </Button>
-          </div>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   );

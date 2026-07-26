@@ -51,6 +51,41 @@ export const ordersRouter = router({
       return { success: true };
     }),
 
+  bulkUpdateStatus: adminProcedure
+    .input(z.object({
+      orderIds: z.array(z.string().uuid()).min(1).max(50),
+      status: orderStatusSchema,
+      note: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.supabase
+        .from('orders')
+        .update({ status: input.status })
+        .in('id', input.orderIds);
+
+      if (error) throw new Error(error.message);
+
+      await ctx.supabase.from('order_events').insert(
+        input.orderIds.map((orderId) => ({
+          order_id: orderId,
+          status: input.status,
+          actor_id: ctx.userId,
+          note: input.note ?? 'Bulk status update',
+        })),
+      );
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'order.bulk_status_update',
+        entityType: 'order',
+        entityId: input.orderIds[0],
+        after: { status: input.status, orderIds: input.orderIds, count: input.orderIds.length },
+      });
+
+      return { success: true, count: input.orderIds.length };
+    }),
+
   assignPartner: adminProcedure
     .input(z.object({
       orderId: z.string().uuid(),

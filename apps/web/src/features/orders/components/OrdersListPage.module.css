@@ -1,0 +1,17 @@
+.bulkBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  margin-bottom: var(--ic-spacing-lg);
+  padding: var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-input);
+  background: var(--ic-surface-section);
+}
+
+.bulkCount {
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+  color: var(--ic-text-primary);
+}

@@ -4,7 +4,7 @@ import styles from './Table.module.css';
 
 type Column<T> = {
   key: string;
-  header: string;
+  header: ReactNode;
   render: (row: T) => ReactNode;
   sortable?: boolean;
 };
