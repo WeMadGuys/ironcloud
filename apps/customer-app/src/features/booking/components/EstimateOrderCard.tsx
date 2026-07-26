@@ -1,14 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  UIManager,
   View,
 } from 'react-native';
 
@@ -25,13 +23,6 @@ import {
   type GarmentCatalogItem,
 } from '../services/catalog.service';
 
-if (
-  Platform.OS === 'android' &&
-  UIManager.setLayoutAnimationEnabledExperimental
-) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 export type EstimateCounts = Record<string, number>;
 
 export type EstimatedGarmentLine = {
@@ -46,21 +37,6 @@ type Props = {
   counts: EstimateCounts;
   onChangeCounts: (next: EstimateCounts) => void;
 };
-
-function animateExpand() {
-  LayoutAnimation.configureNext({
-    duration: 280,
-    create: {
-      type: LayoutAnimation.Types.easeInEaseOut,
-      property: LayoutAnimation.Properties.opacity,
-    },
-    update: { type: LayoutAnimation.Types.easeInEaseOut },
-    delete: {
-      type: LayoutAnimation.Types.easeInEaseOut,
-      property: LayoutAnimation.Properties.opacity,
-    },
-  });
-}
 
 function CounterRow({
   item,
@@ -114,8 +90,8 @@ export function EstimateOrderCard({
   counts,
   onChangeCounts,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [showMore, setShowMore] = useState(false);
   const [catalog, setCatalog] = useState<GarmentCatalogItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -155,9 +131,9 @@ export function EstimateOrderCard({
     onChangeCounts({ ...counts, [serviceId]: Math.max(0, current + delta) });
   };
 
-  const toggleExpanded = () => {
-    animateExpand();
-    setExpanded((v) => !v);
+  const closeSheet = () => {
+    setSheetOpen(false);
+    setShowMore(false);
   };
 
   const summaryLabel =
@@ -165,13 +141,14 @@ export function EstimateOrderCard({
       ? `${totalQty} garment${totalQty === 1 ? '' : 's'} • ₹${totalAmount}`
       : 'Add garments (optional)';
 
+  const visibleItems = showMore ? [...primary, ...more] : primary;
+
   return (
     <View style={styles.wrap}>
       <Pressable
-        style={[styles.summaryCard, expanded && styles.summaryCardExpanded]}
-        onPress={toggleExpanded}
+        style={[styles.summaryCard, totalQty > 0 && styles.summaryCardActive]}
+        onPress={() => setSheetOpen(true)}
         accessibilityRole="button"
-        accessibilityState={{ expanded }}
       >
         <View style={[styles.cardIconWrap, styles.estimateIcon]}>
           <MaterialCommunityIcons
@@ -196,68 +173,16 @@ export function EstimateOrderCard({
         />
       </Pressable>
 
-      {expanded && (
-        <View style={styles.expandedCard}>
-          {loading ? (
-            <Text style={styles.loadingText}>Loading categories…</Text>
-          ) : catalog.length === 0 ? (
-            <Text style={styles.loadingText}>No garment categories available.</Text>
-          ) : (
-            <>
-              {primary.map((item, index) => (
-                <CounterRow
-                  key={item.serviceId}
-                  item={item}
-                  count={counts[item.serviceId] || 0}
-                  onAdjust={(delta) => adjust(item.serviceId, delta)}
-                  isLast={index === primary.length - 1 && more.length === 0}
-                />
-              ))}
-
-              {more.length > 0 && (
-                <Pressable style={styles.moreRow} onPress={() => setMoreOpen(true)}>
-                  <View style={styles.moreLeft}>
-                    <MaterialCommunityIcons
-                      name="plus-circle-outline"
-                      size={20}
-                      color={colors.brand.primary}
-                    />
-                    <Text style={styles.moreLabel}>More categories</Text>
-                  </View>
-                  <MaterialCommunityIcons
-                    name="chevron-right"
-                    size={20}
-                    color={colors.icon.secondary}
-                  />
-                </Pressable>
-              )}
-
-              <View style={styles.infoBox}>
-                <MaterialCommunityIcons
-                  name="information-outline"
-                  size={16}
-                  color={colors.status.info.text}
-                  style={styles.infoIcon}
-                />
-                <Text style={styles.infoText}>
-                  Final count and amount are confirmed by the pickup executive.
-                </Text>
-              </View>
-            </>
-          )}
-        </View>
-      )}
-
       <Modal
-        visible={moreOpen}
+        visible={sheetOpen}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setMoreOpen(false)}
+        onRequestClose={closeSheet}
       >
         <View style={styles.sheet}>
           <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>More categories</Text>
-            <Pressable onPress={() => setMoreOpen(false)} hitSlop={12}>
+            <Text style={styles.sheetTitle}>Estimate Bill</Text>
+            <Pressable onPress={closeSheet} hitSlop={12}>
               <MaterialCommunityIcons
                 name="close"
                 size={24}
@@ -265,17 +190,77 @@ export function EstimateOrderCard({
               />
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.sheetList}>
-            {more.map((item, index) => (
-              <CounterRow
-                key={item.serviceId}
-                item={item}
-                count={counts[item.serviceId] || 0}
-                onAdjust={(delta) => adjust(item.serviceId, delta)}
-                isLast={index === more.length - 1}
-              />
-            ))}
+
+          <ScrollView
+            style={styles.sheetScroll}
+            contentContainerStyle={styles.sheetList}
+          >
+            {loading ? (
+              <Text style={styles.loadingText}>Loading categories…</Text>
+            ) : catalog.length === 0 ? (
+              <Text style={styles.loadingText}>No garment categories available.</Text>
+            ) : (
+              <>
+                {visibleItems.map((item, index) => (
+                  <CounterRow
+                    key={item.serviceId}
+                    item={item}
+                    count={counts[item.serviceId] || 0}
+                    onAdjust={(delta) => adjust(item.serviceId, delta)}
+                    isLast={
+                      index === visibleItems.length - 1 &&
+                      (showMore || more.length === 0)
+                    }
+                  />
+                ))}
+
+                {more.length > 0 && (
+                  <Pressable
+                    style={styles.moreRow}
+                    onPress={() => setShowMore((v) => !v)}
+                  >
+                    <View style={styles.moreLeft}>
+                      <MaterialCommunityIcons
+                        name={showMore ? 'minus-circle-outline' : 'plus-circle-outline'}
+                        size={20}
+                        color={colors.brand.primary}
+                      />
+                      <Text style={styles.moreLabel}>
+                        {showMore ? 'Show less' : 'More categories'}
+                      </Text>
+                    </View>
+                    <MaterialCommunityIcons
+                      name={showMore ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color={colors.icon.secondary}
+                    />
+                  </Pressable>
+                )}
+
+                <View style={styles.infoBox}>
+                  <MaterialCommunityIcons
+                    name="information-outline"
+                    size={16}
+                    color={colors.status.info.text}
+                    style={styles.infoIcon}
+                  />
+                  <Text style={styles.infoText}>
+                    Final count and amount are confirmed by the pickup executive.
+                  </Text>
+                </View>
+              </>
+            )}
           </ScrollView>
+
+          <View style={styles.totalBar}>
+            <View>
+              <Text style={styles.totalLabel}>Estimated total</Text>
+              <Text style={styles.totalQty}>
+                {totalQty} garment{totalQty === 1 ? '' : 's'}
+              </Text>
+            </View>
+            <Text style={styles.totalAmount}>₹{totalAmount}</Text>
+          </View>
         </View>
       </Modal>
     </View>
@@ -336,7 +321,7 @@ const styles = StyleSheet.create({
       default: {},
     }),
   },
-  summaryCardExpanded: {
+  summaryCardActive: {
     borderColor: colors.brand.primary,
   },
   cardIconWrap: {
@@ -369,14 +354,6 @@ const styles = StyleSheet.create({
   cardSubtitleActive: {
     color: colors.text.heading,
     fontFamily: fonts.inter.medium,
-  },
-  expandedCard: {
-    backgroundColor: colors.surface.elevated,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.md,
   },
   loadingText: {
     fontFamily: fonts.inter.regular,
@@ -495,8 +472,37 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.text.heading,
   },
+  sheetScroll: {
+    flex: 1,
+  },
   sheetList: {
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.lg,
+  },
+  totalBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.divider,
+    backgroundColor: colors.surface.elevated,
+  },
+  totalLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
+  totalQty: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.muted,
+    marginTop: 2,
+  },
+  totalAmount: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 22,
+    color: colors.text.heading,
   },
 });

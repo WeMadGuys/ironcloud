@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -620,8 +623,11 @@ export default function HomeScreen() {
           />
 
           <Pressable
-            style={styles.summaryCard}
-            onPress={() => setShowInstructions((v) => !v)}
+            style={[
+              styles.summaryCard,
+              specialInstructions.trim().length > 0 && styles.summaryCardActive,
+            ]}
+            onPress={() => setShowInstructions(true)}
           >
             <View style={[styles.summaryIconWrap, styles.summaryIconNotes]}>
               <MaterialCommunityIcons
@@ -642,24 +648,45 @@ export default function HomeScreen() {
               color={colors.icon.secondary}
             />
           </Pressable>
-
-          {showInstructions && (
-            <View style={styles.instructionsContainer}>
-              <TextInput
-                style={styles.instructionsInput}
-                placeholder="Add any special instructions for our team..."
-                placeholderTextColor={colors.text.muted}
-                multiline
-                numberOfLines={3}
-                maxLength={200}
-                value={specialInstructions}
-                onChangeText={setSpecialInstructions}
-              />
-              <Text style={styles.charCount}>{specialInstructions.length}/200</Text>
-            </View>
-          )}
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showInstructions}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowInstructions(false)}
+      >
+        <KeyboardAvoidingView
+          style={styles.instructionsSheet}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={styles.instructionsSheetHeader}>
+            <Text style={styles.instructionsSheetTitle}>Special Instructions</Text>
+            <Pressable onPress={() => setShowInstructions(false)} hitSlop={12}>
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={colors.icon.primary}
+              />
+            </Pressable>
+          </View>
+          <View style={styles.instructionsSheetBody}>
+            <TextInput
+              style={styles.instructionsInput}
+              placeholder="Add any special instructions for our team..."
+              placeholderTextColor={colors.text.muted}
+              multiline
+              numberOfLines={6}
+              maxLength={200}
+              value={specialInstructions}
+              onChangeText={setSpecialInstructions}
+              autoFocus
+            />
+            <Text style={styles.charCount}>{specialInstructions.length}/200</Text>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Bottom CTA */}
       <View style={styles.bottomCta}>
@@ -993,6 +1020,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
   },
+  summaryCardActive: {
+    borderColor: colors.brand.primary,
+  },
   summaryIconWrap: {
     width: 40,
     height: 40,
@@ -1023,8 +1053,28 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: 2,
   },
-  instructionsContainer: {
-    paddingBottom: spacing.xs,
+  instructionsSheet: {
+    flex: 1,
+    backgroundColor: colors.surface.background,
+    paddingTop: spacing.lg,
+  },
+  instructionsSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  instructionsSheetTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 18,
+    color: colors.text.heading,
+  },
+  instructionsSheetBody: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
   },
   instructionsInput: {
     backgroundColor: colors.surface.elevated,
@@ -1036,7 +1086,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.regular,
     fontSize: 14,
     color: colors.text.primary,
-    minHeight: 80,
+    minHeight: 160,
     textAlignVertical: 'top',
   },
   charCount: {
