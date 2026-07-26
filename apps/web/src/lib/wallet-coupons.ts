@@ -29,13 +29,30 @@ export function calcWalletBonus(coupon: WalletCouponRow, amount: number): number
   return Math.max(0, Math.round(capped * 100) / 100);
 }
 
-export function bonusLabel(coupon: WalletCouponRow): string {
+/** Static offer copy for listing (no amount needed). */
+export function offerLabel(coupon: WalletCouponRow): string {
+  const min = coupon.min_amount != null ? Number(coupon.min_amount) : null;
+
   if (coupon.discount_type === 'flat') {
-    return `Get ₹${Number(coupon.discount_value)} extra`;
+    const bonus = Number(coupon.discount_value) || 0;
+    if (min != null && min > 0) {
+      const total = Math.round((min + bonus) * 100) / 100;
+      return `Recharge ₹${min} get ₹${total}`;
+    }
+    return `Get ₹${bonus} extra`;
   }
+
+  const pct = Number(coupon.discount_value);
   const max =
     coupon.max_discount != null ? ` (max ₹${Number(coupon.max_discount)})` : '';
-  return `Get ${Number(coupon.discount_value)}% extra${max}`;
+  if (min != null && min > 0) {
+    return `Recharge ₹${min}+ · Get ${pct}% extra${max}`;
+  }
+  return `Get ${pct}% extra${max}`;
+}
+
+export function bonusLabel(coupon: WalletCouponRow): string {
+  return offerLabel(coupon);
 }
 
 export function isCouponGenerallyValid(
@@ -59,7 +76,7 @@ export function matchesWalletTopupScope(coupon: WalletCouponRow): boolean {
 }
 
 export function matchesAmount(coupon: WalletCouponRow, amount: number): boolean {
-  if (coupon.min_amount == null) return true;
+  if (coupon.min_amount == null) return amount > 0;
   return amount >= Number(coupon.min_amount);
 }
 
@@ -81,16 +98,26 @@ export function matchesTarget(
   return true;
 }
 
-export function isEligibleWalletCoupon(
+/** Visible in Add Money list (ignore amount). */
+export function isListedWalletCoupon(
   coupon: WalletCouponRow,
-  amount: number,
   ctx: CustomerTargetContext,
   alreadyRedeemed: boolean,
 ): boolean {
   if (alreadyRedeemed) return false;
   if (!matchesWalletTopupScope(coupon)) return false;
   if (!isCouponGenerallyValid(coupon)) return false;
-  if (!matchesAmount(coupon, amount)) return false;
   if (!matchesTarget(coupon, ctx)) return false;
+  return true;
+}
+
+export function isEligibleWalletCoupon(
+  coupon: WalletCouponRow,
+  amount: number,
+  ctx: CustomerTargetContext,
+  alreadyRedeemed: boolean,
+): boolean {
+  if (!isListedWalletCoupon(coupon, ctx, alreadyRedeemed)) return false;
+  if (!matchesAmount(coupon, amount)) return false;
   return true;
 }

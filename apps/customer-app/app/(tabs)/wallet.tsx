@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,6 +24,8 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  calcClientWalletBonus,
+  canApplyWalletCoupon,
   formatTransactionDate,
   getWallet,
   getWalletTransactions,
@@ -46,7 +48,6 @@ export default function WalletScreen() {
   const [couponsLoading, setCouponsLoading] = useState(false);
   const [selectedCouponCode, setSelectedCouponCode] = useState<string | null>(null);
   const [isToppingUp, setIsToppingUp] = useState(false);
-  const couponFetchRef = useRef(0);
 
   useEffect(() => {
     loadWalletData();
@@ -55,37 +56,39 @@ export default function WalletScreen() {
   useEffect(() => {
     if (!showAddMoney) return;
 
-    const amount = parseInt(addAmount, 10);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setApplicableCoupons([]);
+    let cancelled = false;
+    setCouponsLoading(true);
+    listApplicableWalletCoupons()
+      .then((coupons) => {
+        if (cancelled) return;
+        setApplicableCoupons(coupons);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setApplicableCoupons([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setCouponsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddMoney]);
+
+  useEffect(() => {
+    if (!selectedCouponCode) return;
+    const coupon = applicableCoupons.find((c) => c.code === selectedCouponCode);
+    if (!coupon) {
       setSelectedCouponCode(null);
-      setCouponsLoading(false);
       return;
     }
-
-    const requestId = ++couponFetchRef.current;
-    setCouponsLoading(true);
-    const timer = setTimeout(() => {
-      listApplicableWalletCoupons(amount)
-        .then((coupons) => {
-          if (requestId !== couponFetchRef.current) return;
-          setApplicableCoupons(coupons);
-          setSelectedCouponCode((prev) =>
-            prev && coupons.some((c) => c.code === prev) ? prev : null,
-          );
-        })
-        .catch(() => {
-          if (requestId !== couponFetchRef.current) return;
-          setApplicableCoupons([]);
-        })
-        .finally(() => {
-          if (requestId !== couponFetchRef.current) return;
-          setCouponsLoading(false);
-        });
-    }, 350);
-
-    return () => clearTimeout(timer);
-  }, [addAmount, showAddMoney]);
+    const amount = parseInt(addAmount, 10) || 0;
+    if (!canApplyWalletCoupon(coupon, amount)) {
+      setSelectedCouponCode(null);
+    }
+  }, [addAmount, applicableCoupons, selectedCouponCode]);
 
   async function loadWalletData() {
     try {
@@ -160,10 +163,11 @@ export default function WalletScreen() {
     applicableCoupons.find((c) => c.code === selectedCouponCode) ?? null;
   const parsedAmount = parseInt(addAmount, 10);
   const validAmount = Number.isFinite(parsedAmount) && parsedAmount > 0 ? parsedAmount : 0;
-  const creditTotal = selectedCoupon
-    ? selectedCoupon.creditTotal
-    : validAmount;
-  const bonusAmount = selectedCoupon?.bonus ?? 0;
+  const bonusAmount =
+    selectedCoupon && canApplyWalletCoupon(selectedCoupon, validAmount)
+      ? calcClientWalletBonus(selectedCoupon, validAmount)
+      : 0;
+  const creditTotal = Math.round((validAmount + bonusAmount) * 100) / 100;
 
   const closeAddMoney = () => {
     setShowAddMoney(false);
@@ -421,54 +425,68 @@ export default function WalletScreen() {
               ))}
             </View>
 
-            {validAmount > 0 && (
-              <View style={styles.couponsSection}>
-                <Text style={styles.couponsTitle}>Applicable coupons</Text>
-                {couponsLoading ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={colors.brand.primary}
-                    style={styles.couponsLoader}
-                  />
-                ) : applicableCoupons.length === 0 ? (
-                  <Text style={styles.couponsEmpty}>
-                    No coupons available for this amount
-                  </Text>
-                ) : (
-                  applicableCoupons.map((coupon) => {
-                    const selected = selectedCouponCode === coupon.code;
-                    return (
+            <View style={styles.couponsSection}>
+              <Text style={styles.couponsTitle}>Available coupons</Text>
+              {couponsLoading ? (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.brand.primary}
+                  style={styles.couponsLoader}
+                />
+              ) : applicableCoupons.length === 0 ? (
+                <Text style={styles.couponsEmpty}>No coupons available right now</Text>
+              ) : (
+                applicableCoupons.map((coupon) => {
+                  const selected = selectedCouponCode === coupon.code;
+                  const canApply = canApplyWalletCoupon(coupon, validAmount);
+                  const needMore =
+                    coupon.minAmount != null && validAmount < Number(coupon.minAmount);
+                  return (
+                    <View
+                      key={coupon.id}
+                      style={[
+                        styles.couponRow,
+                        selected && styles.couponRowSelected,
+                        !canApply && styles.couponRowDisabled,
+                      ]}
+                    >
+                      <View style={styles.couponText}>
+                        <Text style={styles.couponCode}>{coupon.code}</Text>
+                        <Text style={styles.couponLabel}>{coupon.label}</Text>
+                        {needMore ? (
+                          <Text style={styles.couponHint}>
+                            Enter ₹{coupon.minAmount} or more to apply
+                          </Text>
+                        ) : null}
+                      </View>
                       <Pressable
-                        key={coupon.id}
                         style={[
-                          styles.couponRow,
-                          selected && styles.couponRowSelected,
+                          styles.couponApplyBtn,
+                          selected && styles.couponApplyBtnSelected,
+                          !canApply && styles.couponApplyBtnDisabled,
                         ]}
+                        disabled={!canApply}
                         onPress={() =>
                           setSelectedCouponCode((prev) =>
                             prev === coupon.code ? null : coupon.code,
                           )
                         }
                       >
-                        <View style={styles.couponText}>
-                          <Text style={styles.couponCode}>{coupon.code}</Text>
-                          <Text style={styles.couponLabel}>{coupon.label}</Text>
-                        </View>
-                        <MaterialCommunityIcons
-                          name={selected ? 'check-circle' : 'circle-outline'}
-                          size={22}
-                          color={
-                            selected
-                              ? colors.brand.primary
-                              : colors.icon.secondary
-                          }
-                        />
+                        <Text
+                          style={[
+                            styles.couponApplyText,
+                            selected && styles.couponApplyTextSelected,
+                            !canApply && styles.couponApplyTextDisabled,
+                          ]}
+                        >
+                          {selected ? 'Applied' : 'Apply'}
+                        </Text>
                       </Pressable>
-                    );
-                  })
-                )}
-              </View>
-            )}
+                    </View>
+                  );
+                })
+              )}
+            </View>
 
             {validAmount > 0 && (
               <View style={styles.creditSummary}>
@@ -855,6 +873,9 @@ const styles = StyleSheet.create({
     borderColor: colors.brand.primary,
     backgroundColor: colors.brand.accentMuted,
   },
+  couponRowDisabled: {
+    opacity: 0.85,
+  },
   couponText: {
     flex: 1,
     marginRight: spacing.sm,
@@ -869,6 +890,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.secondary,
     marginTop: 2,
+  },
+  couponHint: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 11,
+    color: colors.status.warning.foreground,
+    marginTop: 4,
+  },
+  couponApplyBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.brand.primary,
+    backgroundColor: colors.surface.elevated,
+  },
+  couponApplyBtnSelected: {
+    backgroundColor: colors.brand.primary,
+  },
+  couponApplyBtnDisabled: {
+    borderColor: colors.border.default,
+    backgroundColor: colors.surface.background,
+  },
+  couponApplyText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 13,
+    color: colors.brand.primary,
+  },
+  couponApplyTextSelected: {
+    color: colors.brand.onPrimary,
+  },
+  couponApplyTextDisabled: {
+    color: colors.text.muted,
   },
   creditSummary: {
     marginTop: spacing.lg,

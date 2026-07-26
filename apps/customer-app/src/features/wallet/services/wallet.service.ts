@@ -26,10 +26,30 @@ export type ApplicableWalletCoupon = {
   discountValue: number;
   maxDiscount: number | null;
   minAmount: number | null;
-  bonus: number;
   label: string;
-  creditTotal: number;
 };
+
+export function calcClientWalletBonus(
+  coupon: ApplicableWalletCoupon,
+  amount: number,
+): number {
+  if (coupon.discountType === 'flat') {
+    return Math.max(0, Number(coupon.discountValue) || 0);
+  }
+  const raw = (amount * Number(coupon.discountValue)) / 100;
+  const capped =
+    coupon.maxDiscount != null ? Math.min(raw, Number(coupon.maxDiscount)) : raw;
+  return Math.max(0, Math.round(capped * 100) / 100);
+}
+
+export function canApplyWalletCoupon(
+  coupon: ApplicableWalletCoupon,
+  amount: number,
+): boolean {
+  if (!Number.isFinite(amount) || amount <= 0) return false;
+  if (coupon.minAmount == null) return true;
+  return amount >= Number(coupon.minAmount);
+}
 
 async function getCurrentUserId(): Promise<string | null> {
   if (IS_MOCK_AUTH) return MOCK_USER_ID;
@@ -119,22 +139,17 @@ export async function getWalletTransactions(limit = 20): Promise<WalletTransacti
   }));
 }
 
-export async function listApplicableWalletCoupons(
-  amount: number,
-): Promise<ApplicableWalletCoupon[]> {
+export async function listApplicableWalletCoupons(): Promise<ApplicableWalletCoupon[]> {
   const token = await getAccessToken();
   if (!token) {
     throw new Error('Please sign in to view coupons.');
   }
 
   const apiBase = getApiBaseUrl();
-  const response = await fetch(
-    `${apiBase}/api/wallet/applicable-coupons?amount=${encodeURIComponent(String(amount))}`,
-    {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    },
-  );
+  const response = await fetch(`${apiBase}/api/wallet/applicable-coupons`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}` },
+  });
 
   const payload = (await response.json().catch(() => ({}))) as {
     coupons?: ApplicableWalletCoupon[];

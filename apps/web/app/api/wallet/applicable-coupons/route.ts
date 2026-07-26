@@ -3,9 +3,8 @@ import { NextResponse } from 'next/server';
 
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 import {
-  bonusLabel,
-  calcWalletBonus,
-  isEligibleWalletCoupon,
+  isListedWalletCoupon,
+  offerLabel,
   type CustomerTargetContext,
   type WalletCouponRow,
 } from '@/lib/wallet-coupons';
@@ -69,17 +68,13 @@ async function resolveCustomerTarget(
   };
 }
 
+/** List wallet coupons for the user (community/city/validity). Amount is not required. */
 export async function GET(req: Request) {
   ensureServerEnv();
 
   try {
     const token = bearerToken(req);
     if (!token) return json({ error: 'Missing Authorization bearer token.' }, 401);
-
-    const amount = Number(new URL(req.url).searchParams.get('amount') ?? '0');
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return json({ error: 'amount must be a positive number.' }, 400);
-    }
 
     const { url, anonKey, serviceRoleKey, missing } = getServerSupabaseEnv();
     if (missing.length) {
@@ -131,26 +126,19 @@ export async function GET(req: Request) {
       }
     }
 
-    const applicable = rows
-      .filter((c) =>
-        isEligibleWalletCoupon(c, amount, target, redeemed.has(c.id)),
-      )
-      .map((c) => {
-        const bonus = calcWalletBonus(c, amount);
-        return {
-          id: c.id,
-          code: c.code,
-          discountType: c.discount_type,
-          discountValue: Number(c.discount_value),
-          maxDiscount: c.max_discount != null ? Number(c.max_discount) : null,
-          minAmount: c.min_amount != null ? Number(c.min_amount) : null,
-          bonus,
-          label: bonusLabel(c),
-          creditTotal: Math.round((amount + bonus) * 100) / 100,
-        };
-      });
+    const listed = rows
+      .filter((c) => isListedWalletCoupon(c, target, redeemed.has(c.id)))
+      .map((c) => ({
+        id: c.id,
+        code: c.code,
+        discountType: c.discount_type,
+        discountValue: Number(c.discount_value),
+        maxDiscount: c.max_discount != null ? Number(c.max_discount) : null,
+        minAmount: c.min_amount != null ? Number(c.min_amount) : null,
+        label: offerLabel(c),
+      }));
 
-    return json({ coupons: applicable, amount, target });
+    return json({ coupons: listed, target });
   } catch (err) {
     console.error('[wallet/applicable-coupons]', err);
     return json({ error: 'Unexpected server error.' }, 500);
