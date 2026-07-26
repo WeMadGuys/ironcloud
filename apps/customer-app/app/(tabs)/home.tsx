@@ -58,24 +58,6 @@ interface DayOption {
 
 const VISIBLE_SLOT_COUNT = 3;
 
-const SLOT_ICON_THEMES = [
-  {
-    icon: 'white-balance-sunny' as const,
-    color: colors.status.success.foreground,
-    bg: colors.status.success.background,
-  },
-  {
-    icon: 'white-balance-sunny' as const,
-    color: colors.status.warning.foreground,
-    bg: colors.status.warning.background,
-  },
-  {
-    icon: 'weather-sunset' as const,
-    color: colors.brand.accent,
-    bg: colors.brand.accentMuted,
-  },
-];
-
 function getNextDays(count: number): DayOption[] {
   const days: DayOption[] = [];
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -123,10 +105,25 @@ function formatDeliveryPreview(dayOffset: number, startHour: number) {
   return `${dateLabel} • ${timeLabel}`;
 }
 
-function slotThemeForHour(startHour: number) {
-  if (startHour < 11) return SLOT_ICON_THEMES[0];
-  if (startHour < 15) return SLOT_ICON_THEMES[1];
-  return SLOT_ICON_THEMES[2];
+/** Compact chip parts: "9:00 – 10:00" + "AM" when same period. */
+function getSlotChipParts(startHour: number) {
+  const clock = (hour: number) => {
+    const period = hour % 24 >= 12 ? 'PM' : 'AM';
+    const h12 = hour % 12 === 0 ? 12 : hour % 12;
+    return { time: `${h12}:00`, period, label: `${h12}:00 ${period}` };
+  };
+
+  const start = clock(startHour);
+  const end = clock(startHour + 1);
+  const samePeriod = start.period === end.period;
+
+  return {
+    samePeriod,
+    range: `${start.time} – ${end.time}`,
+    period: start.period,
+    startLabel: start.label,
+    endLabel: end.label,
+  };
 }
 
 export default function HomeScreen() {
@@ -528,7 +525,7 @@ export default function HomeScreen() {
               >
                 {visibleSlots.map((slot) => {
                   const selected = selectedStartHour === slot.startHour;
-                  const theme = slotThemeForHour(slot.startHour);
+                  const chip = getSlotChipParts(slot.startHour);
                   return (
                     <Pressable
                       key={slot.id}
@@ -537,38 +534,52 @@ export default function HomeScreen() {
                         selected && styles.timeSlotSelected,
                       ]}
                       onPress={() => setSelectedStartHour(slot.startHour)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={formatHourlySlotLabel(slot.startHour)}
                     >
-                      {selected && (
-                        <View style={styles.checkMark}>
-                          <MaterialCommunityIcons
-                            name="check"
-                            size={12}
-                            color={colors.brand.onPrimary}
-                          />
-                        </View>
+                      {chip.samePeriod ? (
+                        <>
+                          <Text
+                            style={[
+                              styles.slotRange,
+                              selected && styles.slotRangeSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {chip.range}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.slotPeriod,
+                              selected && styles.slotPeriodSelected,
+                            ]}
+                          >
+                            {chip.period}
+                          </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text
+                            style={[
+                              styles.slotRange,
+                              selected && styles.slotRangeSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {chip.startLabel}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.slotPeriod,
+                              selected && styles.slotPeriodSelected,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {chip.endLabel}
+                          </Text>
+                        </>
                       )}
-                      <View
-                        style={[
-                          styles.slotIconWrap,
-                          { backgroundColor: theme.bg },
-                          selected && styles.slotIconWrapSelected,
-                        ]}
-                      >
-                        <MaterialCommunityIcons
-                          name={theme.icon}
-                          size={22}
-                          color={theme.color}
-                        />
-                      </View>
-                      <Text
-                        style={[
-                          styles.slotTime,
-                          selected && styles.slotTimeSelected,
-                        ]}
-                      >
-                        {formatHourlySlotLabel(slot.startHour)}
-                      </Text>
-                      <Text style={styles.slotPickupLabel}>Pickup</Text>
                     </Pressable>
                   );
                 })}
@@ -921,56 +932,39 @@ const styles = StyleSheet.create({
     paddingRight: spacing.lg,
   },
   timeSlot: {
-    width: 118,
+    minWidth: 108,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
     backgroundColor: colors.surface.elevated,
     borderRadius: radius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1.5,
     borderColor: colors.border.default,
-    position: 'relative',
   },
   timeSlotSelected: {
     borderColor: colors.brand.primary,
-    backgroundColor: colors.surface.background,
+    backgroundColor: colors.brand.primary,
   },
-  checkMark: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.brand.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1,
-  },
-  slotIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.sm,
-  },
-  slotIconWrapSelected: {},
-  slotTime: {
+  slotRange: {
     fontFamily: fonts.inter.semibold,
-    fontSize: 12,
-    color: colors.text.primary,
-    textAlign: 'center',
-    lineHeight: 16,
+    fontSize: 14,
+    color: colors.text.heading,
+    letterSpacing: -0.2,
   },
-  slotTimeSelected: {
-    color: colors.brand.primary,
+  slotRangeSelected: {
+    color: colors.brand.onPrimary,
   },
-  slotPickupLabel: {
-    fontFamily: fonts.inter.regular,
+  slotPeriod: {
+    fontFamily: fonts.inter.medium,
     fontSize: 11,
     color: colors.text.secondary,
-    marginTop: 2,
+    marginTop: 3,
+    letterSpacing: 0.8,
+  },
+  slotPeriodSelected: {
+    color: colors.brand.onPrimary,
+    opacity: 0.85,
   },
   moreSlotsLink: {
     flexDirection: 'row',

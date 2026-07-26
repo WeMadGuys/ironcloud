@@ -178,7 +178,7 @@ export default function ProfileScreen() {
       icon: 'help-circle-outline',
       label: 'Help & Support',
       subtitle: 'Get help with your orders',
-      onPress: () => {},
+      onPress: () => router.push('/support'),
       showArrow: true,
     },
     {

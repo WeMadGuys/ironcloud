@@ -19,6 +19,7 @@ const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
   [ADMIN_ROUTES.finance]: { title: 'Finance', subtitle: 'Revenue, settlements, and invoices' },
   [ADMIN_ROUTES.promotions]: { title: 'Promotions', subtitle: 'Coupons, campaigns, and banners' },
   [ADMIN_ROUTES.analytics]: { title: 'Analytics', subtitle: 'Business intelligence and metrics' },
+  [ADMIN_ROUTES.support]: { title: 'Customer Support', subtitle: 'Open and resolved customer requests' },
   [ADMIN_ROUTES.settings]: { title: 'Settings', subtitle: 'System configuration and audit logs' },
 };
 

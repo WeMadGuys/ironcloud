@@ -6,6 +6,7 @@ import {
   mdiClipboardList,
   mdiCog,
   mdiHandshake,
+  mdiHeadset,
   mdiHomeGroup,
   mdiTag,
   mdiViewDashboard,
@@ -25,6 +26,7 @@ const ICON_MAP: Record<string, IconPathData> = {
   chartLine: mdiChartLine,
   tag: mdiTag,
   chartBar: mdiChartBar,
+  headset: mdiHeadset,
   cog: mdiCog,
 };
 

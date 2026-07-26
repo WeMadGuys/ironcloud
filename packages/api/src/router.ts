@@ -7,6 +7,7 @@ import { settingsRouter } from './routers/admin/settings';
 import { financeRouter } from './routers/admin/finance';
 import { communitiesRouter } from './routers/admin/communities';
 import { customersRouter } from './routers/admin/customers';
+import { supportRouter } from './routers/admin/support';
 import { router } from './trpc/init';
 
 export const appRouter = router({
@@ -19,6 +20,7 @@ export const appRouter = router({
   finance: financeRouter,
   communities: communitiesRouter,
   customers: customersRouter,
+  support: supportRouter,
 });
 
 export type AppRouter = typeof appRouter;

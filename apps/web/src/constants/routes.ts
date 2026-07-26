@@ -9,6 +9,7 @@ export const ADMIN_ROUTES = {
   finance: '/admin/finance',
   promotions: '/admin/promotions',
   analytics: '/admin/analytics',
+  support: '/admin/support',
   settings: '/admin/settings',
   login: '/admin/login',
 } as const;
@@ -24,5 +25,6 @@ export const NAV_ITEMS = [
   { label: 'Finance', href: ADMIN_ROUTES.finance, icon: 'chartLine' },
   { label: 'Promotions', href: ADMIN_ROUTES.promotions, icon: 'tag' },
   { label: 'Analytics', href: ADMIN_ROUTES.analytics, icon: 'chartBar' },
+  { label: 'Customer Support', href: ADMIN_ROUTES.support, icon: 'headset' },
   { label: 'Settings', href: ADMIN_ROUTES.settings, icon: 'cog' },
 ] as const;
