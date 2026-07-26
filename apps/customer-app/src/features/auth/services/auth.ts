@@ -113,7 +113,7 @@ const exchangeMsg91Session = async (
 
 /**
  * Send OTP to phone number.
- * mock → local code; msg91 → MSG91 SMS; otherwise Supabase Auth.
+ * mock → local code; msg91 → MSG91 SMS.
  */
 export const sendOtp = async (
   phone: string,
@@ -156,21 +156,9 @@ export const sendOtp = async (
       };
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: formattedPhone,
-      options: { channel: 'sms' },
-    });
-
-    if (error) {
-      return {
-        data: null,
-        error: { message: error.message, code: error.code },
-      };
-    }
-
     return {
-      data: { success: true, message: 'OTP sent successfully.' },
-      error: null,
+      data: null,
+      error: { message: `Unsupported auth provider: ${AUTH_PROVIDER}` },
     };
   } catch {
     return {
@@ -237,33 +225,9 @@ export const verifyOtp = async (
       return exchangeMsg91Session(verified.accessToken, phone);
     }
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: formattedPhone,
-      token: otp,
-      type: 'sms',
-    });
-
-    if (error) {
-      return {
-        data: null,
-        error: { message: error.message, code: error.code },
-      };
-    }
-
-    if (!data.user) {
-      return {
-        data: null,
-        error: { message: 'Verification failed. Please try again.' },
-      };
-    }
-
     return {
-      data: {
-        success: true,
-        userId: data.user.id,
-        isNewUser: !data.user.last_sign_in_at,
-      },
-      error: null,
+      data: null,
+      error: { message: `Unsupported auth provider: ${AUTH_PROVIDER}` },
     };
   } catch {
     return {

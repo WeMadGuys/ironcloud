@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 
+import { Providers } from '@/components/Providers';
 import { useAdminRole } from '@/features/auth/hooks/useAdminRole';
 import { AdminLayout } from '@/layouts/AdminLayout';
 import { Loader } from '@/components/Loader/Loader';
@@ -33,6 +34,14 @@ export default function AdminRootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  return (
+    <Providers>
+      <AdminShell>{children}</AdminShell>
+    </Providers>
+  );
+}
+
+function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isLoading } = useAdminRole();
 

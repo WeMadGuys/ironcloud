@@ -4,11 +4,11 @@
  * Determines which auth provider to use and dev mode settings.
  */
 
-export type AuthProviderType = 'mock' | 'msg91' | 'twilio' | 'firebase';
+export type AuthProviderType = 'mock' | 'msg91';
 
 /**
  * Current auth provider type.
- * Set via AUTH_PROVIDER env var, defaults to 'mock' for development.
+ * Set via EXPO_PUBLIC_AUTH_PROVIDER env var, defaults to 'mock' for development.
  */
 export const AUTH_PROVIDER: AuthProviderType =
   (process.env.EXPO_PUBLIC_AUTH_PROVIDER as AuthProviderType) || 'mock';

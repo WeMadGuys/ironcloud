@@ -1,7 +1,5 @@
 import { Inter, Poppins } from 'next/font/google';
 
-import { Providers } from '@/components/Providers';
-
 import '@/styles/globals.css';
 
 const poppins = Poppins({
@@ -30,9 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" data-theme="light" className={`${poppins.variable} ${inter.variable}`}>
-      <body>
-        <Providers>{children}</Providers>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

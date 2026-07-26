@@ -13,12 +13,8 @@ export const ensureServerEnv = (): void => {
   loadEnvConfig(monorepoRoot);
   loadEnvConfig(webDir);
 
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_URL) {
-    process.env.NEXT_PUBLIC_SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
-  }
-  if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) {
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-  }
+  // Do not assign to process.env.NEXT_PUBLIC_* — Next inlines those as literals at build time.
+  // Fallbacks are applied in getServerSupabaseEnv() when reading.
 
   loaded = true;
 };

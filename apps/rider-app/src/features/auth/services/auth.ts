@@ -262,21 +262,9 @@ export const sendOtp = async (
       };
     }
 
-    const { error } = await supabase.auth.signInWithOtp({
-      phone: formattedPhone,
-      options: { channel: 'sms' },
-    });
-
-    if (error) {
-      return {
-        data: null,
-        error: { message: error.message, code: error.code },
-      };
-    }
-
     return {
-      data: { success: true, message: 'OTP sent successfully.' },
-      error: null,
+      data: null,
+      error: { message: `Unsupported auth provider: ${AUTH_PROVIDER}` },
     };
   } catch {
     return {
@@ -339,29 +327,9 @@ export const verifyOtp = async (
       return exchangeMsg91Session(verified.accessToken, phone);
     }
 
-    const { data, error } = await supabase.auth.verifyOtp({
-      phone: formattedPhone,
-      token: otp,
-      type: 'sms',
-    });
-    if (error) {
-      return { data: null, error: { message: error.message, code: error.code } };
-    }
-    if (!data.user) {
-      return { data: null, error: { message: 'Verification failed.' } };
-    }
-
-    await setRiderSession(formattedPhone);
-    const { isActive } = await getRiderActivation(data.user.id);
-
     return {
-      data: {
-        success: true,
-        userId: data.user.id,
-        isNewUser: !data.user.last_sign_in_at,
-        isActive,
-      },
-      error: null,
+      data: null,
+      error: { message: `Unsupported auth provider: ${AUTH_PROVIDER}` },
     };
   } catch {
     return {

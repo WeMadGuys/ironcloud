@@ -2,7 +2,7 @@
  * Auth Configuration — Rider app
  */
 
-export type AuthProviderType = 'mock' | 'msg91' | 'twilio' | 'firebase';
+export type AuthProviderType = 'mock' | 'msg91';
 
 export const AUTH_PROVIDER: AuthProviderType =
   (process.env.EXPO_PUBLIC_AUTH_PROVIDER as AuthProviderType) || 'mock';
