@@ -24,6 +24,7 @@ import {
   formatOrderDate,
   formatOrderDateTime,
   formatSlotRange,
+  getCachedCustomerOrders,
   getCustomerOrders,
   getProgressStepIndex,
   getStatusDescription,
@@ -39,13 +40,22 @@ const PROGRESS_STEPS = [
 
 export default function OrdersScreen() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = useState(true);
-  const [activeOrders, setActiveOrders] = useState<Order[]>([]);
-  const [previousOrders, setPreviousOrders] = useState<Order[]>([]);
+  const cached = getCachedCustomerOrders();
+  const [isLoading, setIsLoading] = useState(() => !cached);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [activeOrders, setActiveOrders] = useState<Order[]>(
+    () => cached?.activeOrders ?? [],
+  );
+  const [previousOrders, setPreviousOrders] = useState<Order[]>(
+    () => cached?.previousOrders ?? [],
+  );
 
   const loadOrders = useCallback(async () => {
+    const hasCache = Boolean(getCachedCustomerOrders());
+    if (hasCache) setIsRefreshing(true);
+    else setIsLoading(true);
+
     try {
-      setIsLoading(true);
       const result = await getCustomerOrders();
       setActiveOrders(result.activeOrders);
       setPreviousOrders(result.previousOrders);
@@ -53,11 +63,17 @@ export default function OrdersScreen() {
       console.error('Error loading orders:', error);
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      const warm = getCachedCustomerOrders();
+      if (warm) {
+        setActiveOrders(warm.activeOrders);
+        setPreviousOrders(warm.previousOrders);
+      }
       loadOrders();
     }, [loadOrders]),
   );
@@ -254,7 +270,7 @@ export default function OrdersScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {isLoading ? (
+      {isLoading && activeOrders.length === 0 && previousOrders.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.brand.primary} />
           <Text style={styles.loadingText}>Loading orders...</Text>
@@ -265,6 +281,11 @@ export default function OrdersScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {isRefreshing ? (
+            <View style={styles.refreshRow}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : null}
           {activeOrders.length === 0 && (
             <Pressable
               style={styles.requestCard}
@@ -420,6 +441,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text.muted,
     marginTop: spacing.md,
+  },
+  refreshRow: {
+    alignItems: 'center',
+    paddingBottom: spacing.sm,
   },
   scrollView: {
     flex: 1,

@@ -73,7 +73,8 @@ export async function getActiveReferralProgram(
       'id, name, is_active, referrer_reward_amount, referee_reward_amount, min_referee_topup_amount, valid_from, valid_to, community_ids, cities, max_referrals_per_referrer, share_message_template',
     )
     .eq('is_active', true)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(10);
 
   if (error || !data?.length) return null;
 
@@ -119,25 +120,20 @@ export async function ensureReferralCode(
         ? buildReferralCode(fullName, userId)
         : `${buildReferralCode(fullName, userId)}${attempt}`;
 
-    const { error } = await admin
+    const { data: updated, error } = await admin
       .from('profiles')
       .update({
         referral_code: code,
         updated_at: new Date().toISOString(),
       })
       .eq('id', userId)
-      .is('referral_code', null);
+      .is('referral_code', null)
+      .select('referral_code')
+      .maybeSingle();
 
-    if (!error) {
-      const { data: again } = await admin
-        .from('profiles')
-        .select('referral_code')
-        .eq('id', userId)
-        .maybeSingle();
-      const saved = (again as { referral_code: string | null } | null)
-        ?.referral_code;
-      if (saved) return saved.toUpperCase();
-    }
+    const saved = (updated as { referral_code: string | null } | null)
+      ?.referral_code;
+    if (!error && saved) return saved.toUpperCase();
 
     // Race: another request may have set it.
     const { data: raced } = await admin

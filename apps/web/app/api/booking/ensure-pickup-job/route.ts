@@ -41,6 +41,7 @@ export async function POST(req: Request) {
 
     let body: {
       orderId?: string;
+      riderId?: string;
       scheduledStart?: string;
       scheduledEnd?: string;
     };
@@ -54,6 +55,8 @@ export async function POST(req: Request) {
     if (!orderId) {
       return json({ error: 'orderId is required.' }, 400);
     }
+
+    const preferredRiderId = body.riderId?.trim() || null;
 
     const { url, anonKey, serviceRoleKey, missing } = getServerSupabaseEnv();
     if (missing.length > 0) {
@@ -116,7 +119,28 @@ export async function POST(req: Request) {
       });
     }
 
-    const resolved = await resolvePickupRiderForCommunity(admin, order.community_id);
+    const resolved = preferredRiderId
+      ? await (async () => {
+          const { data: link } = await admin
+            .from('rider_communities')
+            .select('rider_id')
+            .eq('community_id', order.community_id)
+            .eq('rider_id', preferredRiderId)
+            .maybeSingle();
+
+          if (!link) {
+            // Stale/invalid preferred rider — fall back to full resolve.
+            return resolvePickupRiderForCommunity(admin, order.community_id);
+          }
+
+          return {
+            riderId: preferredRiderId,
+            riderName: 'Pickup Partner',
+            riderPhone: null as string | null,
+          };
+        })()
+      : await resolvePickupRiderForCommunity(admin, order.community_id);
+
     if ('error' in resolved) {
       return json({ error: resolved.error }, resolved.status);
     }

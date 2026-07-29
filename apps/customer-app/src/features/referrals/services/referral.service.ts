@@ -3,6 +3,9 @@ import { supabase } from '../../../lib/supabase';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 
+/** Keep warm for a short time so reopen feels instant without stale admin config. */
+const CACHE_TTL_MS = 60_000;
+
 export type ReferralProgramSummary = {
   id: string;
   name: string;
@@ -33,6 +36,19 @@ export type ReferralMeResponse = {
   referrals: ReferralListItem[];
 };
 
+let cachedReferral: { data: ReferralMeResponse; at: number } | null = null;
+let inflight: Promise<ReferralMeResponse> | null = null;
+
+export function getCachedReferral(): ReferralMeResponse | null {
+  if (!cachedReferral) return null;
+  if (Date.now() - cachedReferral.at > CACHE_TTL_MS) return null;
+  return cachedReferral.data;
+}
+
+export function clearReferralCache(): void {
+  cachedReferral = null;
+}
+
 async function getAccessToken(): Promise<string | null> {
   if (IS_MOCK_AUTH) {
     const { data } = await supabase.auth.getSession();
@@ -42,36 +58,63 @@ async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-export async function getMyReferral(): Promise<ReferralMeResponse> {
-  const token = await getAccessToken();
-  if (!token) {
-    throw new Error('Please sign in to view referrals.');
-  }
+export async function getMyReferral(options?: {
+  force?: boolean;
+}): Promise<ReferralMeResponse> {
+  const force = options?.force === true;
+  const cached = getCachedReferral();
+  if (!force && cached) return cached;
 
-  const response = await fetch(`${getApiBaseUrl()}/api/referrals/me`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
+  if (!force && inflight) return inflight;
+
+  inflight = (async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Please sign in to view referrals.');
+    }
+
+    const response = await fetch(`${getApiBaseUrl()}/api/referrals/me`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as ReferralMeResponse & {
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'Could not load referral details.');
+    }
+
+    const data: ReferralMeResponse = {
+      code: payload.code,
+      program: payload.program ?? null,
+      stats: payload.stats ?? {
+        totalReferred: 0,
+        pending: 0,
+        rewarded: 0,
+        earnedAmount: 0,
+      },
+      referrals: payload.referrals ?? [],
+    };
+
+    cachedReferral = { data, at: Date.now() };
+    return data;
+  })();
+
+  try {
+    return await inflight;
+  } finally {
+    inflight = null;
+  }
+}
+
+/** Fire-and-forget warm so Refer & Earn opens instantly after Profile. */
+export function prefetchMyReferral(): void {
+  if (getCachedReferral() || inflight) return;
+  void getMyReferral().catch(() => {
+    // Prefetch is best-effort.
   });
-
-  const payload = (await response.json().catch(() => ({}))) as ReferralMeResponse & {
-    error?: string;
-  };
-
-  if (!response.ok) {
-    throw new Error(payload.error || 'Could not load referral details.');
-  }
-
-  return {
-    code: payload.code,
-    program: payload.program ?? null,
-    stats: payload.stats ?? {
-      totalReferred: 0,
-      pending: 0,
-      rewarded: 0,
-      earnedAmount: 0,
-    },
-    referrals: payload.referrals ?? [],
-  };
 }
 
 export async function validateReferralCode(
@@ -153,4 +196,6 @@ export async function applyReferralCode(
   if (!response.ok || !payload.success) {
     throw new Error(payload.error || 'Could not apply referral code.');
   }
+
+  clearReferralCache();
 }

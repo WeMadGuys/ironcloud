@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
 
 import { Badge, Button, EmptyState, Loader, Pagination, SearchInput, Table } from '@/components';
 import type { OrderStatus, PaymentMethod } from '@ironcloud/db';
@@ -68,14 +69,9 @@ export const OrdersListPage = () => {
   const [communityId, setCommunityId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
-  const [data, setData] = useState<OrderRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<OrderStatus | ''>('');
   const [reloadKey, setReloadKey] = useState(0);
-  const hasLoadedRef = useRef(false);
   const pageSize = 25;
 
   const bulkUpdateMutation = trpc.orders.bulkUpdateStatus.useMutation();
@@ -83,7 +79,7 @@ export const OrdersListPage = () => {
   const hasActiveFilters = Boolean(search || status || communityId || paymentMethod);
 
   useEffect(() => {
-    fetchCommunityOptions().then(setCommunities);
+    void fetchCommunityOptions().then(setCommunities);
   }, []);
 
   useEffect(() => {
@@ -91,26 +87,35 @@ export const OrdersListPage = () => {
     setSelectedIds(new Set());
   }, [selectedDateKey, debouncedSearch, status, communityId, paymentMethod]);
 
-  useEffect(() => {
-    if (hasLoadedRef.current) setRefreshing(true);
-    else setLoading(true);
-
-    fetchOrders({
+  const { data: result, isLoading, isFetching } = useQuery({
+    queryKey: [
+      'admin-orders',
       page,
       pageSize,
-      search: debouncedSearch || undefined,
-      status: status || undefined,
-      communityId: communityId || undefined,
-      paymentMethod: paymentMethod || undefined,
-      date: selectedDate,
-    }).then((res) => {
-      setData(res.data);
-      setTotal(res.total);
-      hasLoadedRef.current = true;
-      setLoading(false);
-      setRefreshing(false);
-    });
-  }, [page, debouncedSearch, status, communityId, paymentMethod, selectedDateKey, selectedDate, reloadKey]);
+      debouncedSearch,
+      status,
+      communityId,
+      paymentMethod,
+      selectedDateKey,
+      reloadKey,
+    ],
+    queryFn: () =>
+      fetchOrders({
+        page,
+        pageSize,
+        search: debouncedSearch || undefined,
+        status: status || undefined,
+        communityId: communityId || undefined,
+        paymentMethod: paymentMethod || undefined,
+        date: selectedDate,
+      }),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  });
+
+  const data = result?.data ?? [];
+  const total = result?.total ?? 0;
+  const refreshing = isFetching && !isLoading;
 
   const pageIds = useMemo(() => data.map((o) => o.id), [data]);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
@@ -160,10 +165,10 @@ export const OrdersListPage = () => {
     );
   };
 
-  if (loading) return <Loader fullPage />;
+  if (isLoading && !result) return <Loader />;
 
   return (
-    <div>
+    <div style={{ opacity: refreshing ? 0.85 : 1 }}>
       <div className={pageStyles.filters}>
         <SearchInput
           placeholder="Search by order number..."

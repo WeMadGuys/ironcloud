@@ -1,9 +1,12 @@
 import { supabase } from '../../../lib/supabase';
 import { getApiBaseUrl } from '../../../lib/api';
+import { createTtlCache } from '../../../lib/ttl-cache';
+import { clearOrdersCache } from '../../orders/services/orders.service';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 const MOCK_RIDER_ID = '00000000-0000-0000-0000-000000000002';
+const ACTIVE_ORDERS_CACHE_TTL_MS = 15_000;
 
 const RESOLVE_RIDER_TIMEOUT_MS = 15000;
 
@@ -111,6 +114,11 @@ export function getDeliveryWindowFromPickup(pickupStart: Date, pickupEnd: Date) 
 
 async function getCurrentUserId(): Promise<string | null> {
   if (IS_MOCK_AUTH) return MOCK_USER_ID;
+
+  // Prefer local session — getUser() hits the network on every call.
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.user?.id) return sessionData.session.user.id;
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -550,23 +558,34 @@ const ORDER_SELECT = `
   )
 `;
 
-async function fetchActiveOrderRows(): Promise<OrderRow[]> {
-  const userId = await getCurrentUserId();
-  if (!userId) return [];
+const activeOrdersCache = createTtlCache<OrderRow[]>(ACTIVE_ORDERS_CACHE_TTL_MS);
 
-  const { data, error } = await (supabase
-    .from('orders') as ReturnType<typeof supabase.from>)
-    .select(ORDER_SELECT)
-    .eq('customer_id', userId)
-    .in('status', [...ACTIVE_HOME_STATUSES])
-    .order('created_at', { ascending: false });
+export function clearActiveBookingCache(): void {
+  activeOrdersCache.clear();
+}
 
-  if (error) {
-    console.error('[Booking] Fetch active bookings error:', error);
-    return [];
-  }
+async function fetchActiveOrderRows(options?: {
+  force?: boolean;
+}): Promise<OrderRow[]> {
+  return activeOrdersCache.getOrFetch(async () => {
+    const userId = await getCurrentUserId();
+    if (!userId) return [];
 
-  return (data as OrderRow[]) || [];
+    const { data, error } = await (supabase
+      .from('orders') as ReturnType<typeof supabase.from>)
+      .select(ORDER_SELECT)
+      .eq('customer_id', userId)
+      .in('status', [...ACTIVE_HOME_STATUSES])
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error('[Booking] Fetch active bookings error:', error);
+      return [];
+    }
+
+    return (data as OrderRow[]) || [];
+  }, options?.force === true);
 }
 
 async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
@@ -765,8 +784,9 @@ export async function getAwaitingPickupBooking(): Promise<ActiveBooking | null> 
  */
 export async function getHomeBookingForDay(
   dayOffset: number,
+  options?: { force?: boolean },
 ): Promise<ActiveBooking | null> {
-  const rows = await fetchActiveOrderRows();
+  const rows = await fetchActiveOrderRows(options);
   const match = rows.find((row) => {
     const pickupStart = row.pickup_slot
       ? new Date(row.pickup_slot.window_start)
@@ -782,8 +802,11 @@ export async function getHomeBookingForDay(
  * Day offsets (0 = today) that already have an active pickup booking.
  * Used for indicators on the date strip.
  */
-export async function getBookedDayOffsets(dayCount = 7): Promise<number[]> {
-  const rows = await fetchActiveOrderRows();
+export async function getBookedDayOffsets(
+  dayCount = 7,
+  options?: { force?: boolean },
+): Promise<number[]> {
+  const rows = await fetchActiveOrderRows(options);
   const offsets = new Set<number>();
 
   for (const row of rows) {
@@ -816,25 +839,56 @@ export async function createBooking(input: CreateBookingInput): Promise<{
     throw new Error('User not authenticated');
   }
 
-  // Only block if this day already has an active (non-delivered) booking
-  const existingForDay = await getHomeBookingForDay(input.dayOffset);
+  // Lightweight day conflict check — avoid the full nested home-order select.
+  const [{ data: existingRows }, addressResult] = await Promise.all([
+    (supabase.from('orders') as ReturnType<typeof supabase.from>)
+      .select(
+        `
+        id,
+        order_number,
+        status,
+        pickup_slot:pickup_slot_id (window_start)
+      `,
+      )
+      .eq('customer_id', userId)
+      .in('status', [...ACTIVE_HOME_STATUSES])
+      .order('created_at', { ascending: false })
+      .limit(20),
+    (supabase.from('addresses') as ReturnType<typeof supabase.from>)
+      .select('id, community_id')
+      .eq('customer_id', userId)
+      .eq('is_default', true)
+      .single(),
+  ]);
+
+  const existingForDay = (
+    (existingRows as
+      | {
+          id: string;
+          order_number: string;
+          status: string;
+          pickup_slot: { window_start: string } | null;
+        }[]
+      | null) || []
+  ).find((row) => {
+    const pickupStart = row.pickup_slot
+      ? new Date(row.pickup_slot.window_start)
+      : null;
+    return isPickupOnDay(pickupStart, input.dayOffset);
+  });
+
   if (existingForDay) {
-    if (existingForDay.phase !== 'delivered') {
+    const phase = getHomeOrderPhase(existingForDay.status);
+    if (phase !== 'delivered') {
       return {
-        orderId: existingForDay.orderId,
-        orderNumber: existingForDay.orderNumber,
+        orderId: existingForDay.id,
+        orderNumber: existingForDay.order_number,
       };
     }
-    await markOrderReadyForRebook(existingForDay.orderId);
+    await markOrderReadyForRebook(existingForDay.id);
   }
 
-  const { data: address, error: addressError } = await (supabase
-    .from('addresses') as ReturnType<typeof supabase.from>)
-    .select('id, community_id')
-    .eq('customer_id', userId)
-    .eq('is_default', true)
-    .single();
-
+  const { data: address, error: addressError } = addressResult;
   if (addressError || !address) {
     throw new Error('Please add your address before booking');
   }
@@ -867,22 +921,22 @@ export async function createBooking(input: CreateBookingInput): Promise<{
     pickupWindow.end,
   );
 
-  const pickupSlotId = await ensureServiceSlot({
-    communityId: addressRow.community_id,
-    slotType: 'pickup',
-    windowStart: pickupWindow.start,
-    windowEnd: pickupWindow.end,
-  });
-
-  const deliverySlotId = await ensureServiceSlot({
-    communityId: addressRow.community_id,
-    slotType: 'delivery',
-    windowStart: deliveryWindow.start,
-    windowEnd: deliveryWindow.end,
-  });
-
-  const orderNumber = generateOrderNumber();
-  const assignedRider = await resolvePickupRider(addressRow.community_id);
+  // Slots + rider are independent — run together (was 3 sequential round-trips).
+  const [pickupSlotId, deliverySlotId, assignedRider] = await Promise.all([
+    ensureServiceSlot({
+      communityId: addressRow.community_id,
+      slotType: 'pickup',
+      windowStart: pickupWindow.start,
+      windowEnd: pickupWindow.end,
+    }),
+    ensureServiceSlot({
+      communityId: addressRow.community_id,
+      slotType: 'delivery',
+      windowStart: deliveryWindow.start,
+      windowEnd: deliveryWindow.end,
+    }),
+    resolvePickupRider(addressRow.community_id),
+  ]);
 
   const estimateLines = (input.estimatedGarments || []).filter(
     (line) => line.quantity > 0,
@@ -896,7 +950,7 @@ export async function createBooking(input: CreateBookingInput): Promise<{
         );
 
   const baseOrderPayload = {
-    order_number: orderNumber,
+    order_number: generateOrderNumber(),
     customer_id: userId,
     address_id: addressRow.id,
     community_id: addressRow.community_id,
@@ -952,31 +1006,36 @@ export async function createBooking(input: CreateBookingInput): Promise<{
 
   const orderRow = order as { id: string; order_number: string };
 
-  await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert([
-    {
-      order_id: orderRow.id,
-      status: 'booked',
-      note: 'Order booked by customer',
-      metadata: {},
-    },
-    {
-      order_id: orderRow.id,
-      status: 'pickup_assigned',
-      note: 'Pickup partner assigned',
-      metadata: {
-        rider_id: assignedRider.riderId,
-        rider_name: assignedRider.riderName,
-        rider_phone: assignedRider.riderPhone,
+  // Events + rider job can run together; job API reuses the already-resolved rider.
+  await Promise.all([
+    (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert([
+      {
+        order_id: orderRow.id,
+        status: 'booked',
+        note: 'Order booked by customer',
+        metadata: {},
       },
-    },
+      {
+        order_id: orderRow.id,
+        status: 'pickup_assigned',
+        note: 'Pickup partner assigned',
+        metadata: {
+          rider_id: assignedRider.riderId,
+          rider_name: assignedRider.riderName,
+          rider_phone: assignedRider.riderPhone,
+        },
+      },
+    ]),
+    ensurePickupJob({
+      orderId: orderRow.id,
+      riderId: assignedRider.riderId,
+      scheduledStart: pickupWindow.start.toISOString(),
+      scheduledEnd: pickupWindow.end.toISOString(),
+    }),
   ]);
 
-  await ensurePickupJob({
-    orderId: orderRow.id,
-    riderId: assignedRider.riderId,
-    scheduledStart: pickupWindow.start.toISOString(),
-    scheduledEnd: pickupWindow.end.toISOString(),
-  });
+  clearActiveBookingCache();
+  clearOrdersCache();
 
   return {
     orderId: orderRow.id,
@@ -1012,6 +1071,7 @@ async function ensurePickupJob(params: {
 
 async function ensurePickupJobViaApi(params: {
   orderId: string;
+  riderId: string;
   scheduledStart: string;
   scheduledEnd: string;
 }): Promise<void> {
@@ -1038,6 +1098,7 @@ async function ensurePickupJobViaApi(params: {
       },
       body: JSON.stringify({
         orderId: params.orderId,
+        riderId: params.riderId,
         scheduledStart: params.scheduledStart,
         scheduledEnd: params.scheduledEnd,
       }),
@@ -1088,6 +1149,9 @@ export async function markOrderReadyForRebook(orderId: string): Promise<void> {
     note: 'Order closed — customer ready to book again',
     metadata: {},
   });
+
+  clearActiveBookingCache();
+  clearOrdersCache();
 }
 
 const CANCEL_TIMEOUT_MS = 15000;
@@ -1159,6 +1223,9 @@ async function cancelBookingViaApi(orderId: string): Promise<void> {
   if (!response.ok || !payload.success) {
     throw new Error(payload.error || 'Failed to cancel booking.');
   }
+
+  clearActiveBookingCache();
+  clearOrdersCache();
 }
 
 async function cancelBookingClientSide(orderId: string): Promise<void> {
@@ -1206,4 +1273,7 @@ async function cancelBookingClientSide(orderId: string): Promise<void> {
     })
     .eq('order_id', orderId)
     .in('status', ['assigned', 'in_progress']);
+
+  clearActiveBookingCache();
+  clearOrdersCache();
 }

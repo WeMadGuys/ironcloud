@@ -24,6 +24,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  getCachedReferral,
   getMyReferral,
   type ReferralListItem,
   type ReferralMeResponse,
@@ -44,24 +45,40 @@ function statusColor(status: string): string {
 
 export default function ReferralsScreen() {
   const router = useRouter();
-  const [data, setData] = useState<ReferralMeResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [data, setData] = useState<ReferralMeResponse | null>(
+    () => getCachedReferral(),
+  );
+  const [isLoading, setIsLoading] = useState(() => !getCachedReferral());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
-    try {
+  const load = useCallback(async (opts?: { force?: boolean }) => {
+    const hasCache = Boolean(getCachedReferral());
+    if (hasCache && !opts?.force) {
+      setIsRefreshing(true);
+    } else if (!hasCache) {
       setIsLoading(true);
-      setError('');
-      setData(await getMyReferral());
+    }
+    setError('');
+
+    try {
+      const next = await getMyReferral({ force: opts?.force });
+      setData(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load referrals');
+      if (!getCachedReferral()) {
+        setError(err instanceof Error ? err.message : 'Failed to load referrals');
+      }
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      // Show cached data immediately; refresh in background.
+      const cached = getCachedReferral();
+      if (cached) setData(cached);
       load();
     }, [load]),
   );
@@ -100,14 +117,14 @@ export default function ReferralsScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {isLoading ? (
+      {isLoading && !data ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.brand.primary} />
         </View>
-      ) : error ? (
+      ) : error && !data ? (
         <View style={styles.centered}>
           <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={load}>
+          <Pressable style={styles.retryButton} onPress={() => load({ force: true })}>
             <Text style={styles.retryText}>Retry</Text>
           </Pressable>
         </View>
@@ -116,6 +133,11 @@ export default function ReferralsScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          {isRefreshing ? (
+            <View style={styles.refreshRow}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : null}
           <View style={styles.heroCard}>
             <View style={styles.heroIconWrap}>
               <MaterialCommunityIcons
@@ -517,5 +539,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.semibold,
     fontSize: 14,
     color: colors.brand.onPrimary,
+  },
+  refreshRow: {
+    alignItems: 'center',
+    marginBottom: spacing.sm,
   },
 });

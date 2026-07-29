@@ -27,6 +27,7 @@ import {
   calcClientWalletBonus,
   canApplyWalletCoupon,
   formatTransactionDate,
+  getCachedWallet,
   getWallet,
   getWalletTransactions,
   listApplicableWalletCoupons,
@@ -40,9 +41,10 @@ const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
 export default function WalletScreen() {
   const router = useRouter();
-  const [balance, setBalance] = useState(0);
+  const cachedWallet = getCachedWallet();
+  const [balance, setBalance] = useState(cachedWallet?.balance ?? 0);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !cachedWallet);
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [addAmount, setAddAmount] = useState('');
   const [applicableCoupons, setApplicableCoupons] = useState<ApplicableWalletCoupon[]>([]);
@@ -93,12 +95,12 @@ export default function WalletScreen() {
 
   async function loadWalletData() {
     try {
-      setIsLoading(true);
-      const [walletInfo, txns] = await Promise.all([
-        getWallet(),
-        getWalletTransactions(20),
-      ]);
-      
+      if (!getCachedWallet()) setIsLoading(true);
+      const walletInfo = await getWallet();
+      const txns = await getWalletTransactions(20, {
+        walletId: walletInfo?.id,
+      });
+
       if (walletInfo) {
         setBalance(walletInfo.balance);
       }

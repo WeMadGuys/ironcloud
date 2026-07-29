@@ -21,6 +21,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  getCachedNotificationPrefs,
   getNotificationPrefs,
   saveNotificationPrefs,
   type NotificationPrefs,
@@ -28,12 +29,14 @@ import {
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(
+    () => getCachedNotificationPrefs(),
+  );
+  const [isLoading, setIsLoading] = useState(() => !getCachedNotificationPrefs());
 
   const loadData = useCallback(async () => {
     try {
-      setIsLoading(true);
+      if (!getCachedNotificationPrefs()) setIsLoading(true);
       setPrefs(await getNotificationPrefs());
     } catch (error) {
       console.error('Error loading notifications:', error);

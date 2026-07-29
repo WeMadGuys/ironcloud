@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDateFilter } from '@/contexts/DateFilterContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdminRole } from '@/features/auth/hooks/useAdminRole';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import { signOut } from '@/features/auth/services/auth.service';
 import { ADMIN_ROUTES } from '@/constants/routes';
 import { getSupabase } from '@/lib/supabase';
@@ -24,6 +25,7 @@ type TopNavProps = {
 export const TopNav = ({ title, subtitle }: TopNavProps) => {
   const { selectedDate, setSelectedDate } = useDateFilter();
   const { toggleTheme } = useTheme();
+  const { user } = useAuth();
   const { profile } = useAdminRole();
   const [notifCount, setNotifCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -32,17 +34,15 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!user?.id) return;
     const supabase = getSupabase();
-    supabase.auth.getUser().then(({ data }) => {
-      if (!data.user) return;
-      supabase
-        .from('admin_notifications')
-        .select('id', { count: 'exact', head: true })
-        .is('read_at', null)
-        .eq('recipient_id', data.user.id)
-        .then(({ count }) => setNotifCount(count ?? 0));
-    });
-  }, []);
+    void supabase
+      .from('admin_notifications')
+      .select('id', { count: 'exact', head: true })
+      .is('read_at', null)
+      .eq('recipient_id', user.id)
+      .then(({ count }) => setNotifCount(count ?? 0));
+  }, [user?.id]);
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

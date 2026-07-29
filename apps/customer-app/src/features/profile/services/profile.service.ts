@@ -1,7 +1,9 @@
 import { supabase } from '../../../lib/supabase';
+import { createTtlCache } from '../../../lib/ttl-cache';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
+const PROFILE_CACHE_TTL_MS = 60_000;
 
 export type UpdateProfileData = {
   fullName: string;
@@ -51,64 +53,86 @@ export type UserProfileData = {
 
 const AVATAR_BUCKET = 'avatars';
 
-let cachedProfile: UserProfileData | null = null;
+const profileCache = createTtlCache<UserProfileData>(PROFILE_CACHE_TTL_MS);
+let profileInflight: Promise<UserProfileData | null> | null = null;
 
 export function getCachedProfile(): UserProfileData | null {
-  return cachedProfile;
+  return profileCache.get();
 }
 
 export function clearProfileCache(): void {
-  cachedProfile = null;
+  profileCache.clear();
+  profileInflight = null;
 }
 
 /**
  * Loads the current user's profile and default address.
  * Results are cached so profile screens can render immediately after home prefetch.
  */
-export async function fetchUserProfile(): Promise<UserProfileData | null> {
-  const userId = await getCurrentUserId();
+export async function fetchUserProfile(options?: {
+  force?: boolean;
+}): Promise<UserProfileData | null> {
+  if (!options?.force) {
+    const cached = profileCache.get();
+    if (cached) return cached;
+    if (profileInflight) return profileInflight;
+  }
 
-  const { data: profileData } = await (supabase
-    .from('profiles') as ReturnType<typeof supabase.from>)
-    .select('full_name, phone, email, avatar_url')
-    .eq('id', userId)
-    .maybeSingle();
+  profileInflight = (async () => {
+    const userId = await getCurrentUserId();
 
-  const { data: addressData } = await (supabase
-    .from('addresses') as ReturnType<typeof supabase.from>)
-    .select(`
+    const [profileResult, addressResult] = await Promise.all([
+      (supabase.from('profiles') as ReturnType<typeof supabase.from>)
+        .select('full_name, phone, email, avatar_url')
+        .eq('id', userId)
+        .maybeSingle(),
+      (supabase.from('addresses') as ReturnType<typeof supabase.from>)
+        .select(
+          `
       tower,
       flat_number,
       community:community_id (name)
-    `)
-    .eq('customer_id', userId)
-    .eq('is_default', true)
-    .maybeSingle();
+    `,
+        )
+        .eq('customer_id', userId)
+        .eq('is_default', true)
+        .maybeSingle(),
+    ]);
 
-  const communityName =
-    (addressData as { community: { name: string } | null } | null)?.community
-      ?.name || 'Not set';
+    const profileData = profileResult.data;
+    const addressData = addressResult.data;
 
-  const row = profileData as {
-    full_name: string | null;
-    phone: string | null;
-    email: string | null;
-    avatar_url: string | null;
-  } | null;
+    const communityName =
+      (addressData as { community: { name: string } | null } | null)?.community
+        ?.name || 'Not set';
 
-  const profile: UserProfileData = {
-    fullName: row?.full_name?.trim() || 'User',
-    phone: row?.phone?.trim() || '',
-    email: row?.email ?? null,
-    avatarUrl: row?.avatar_url?.trim() || null,
-    apartment: communityName,
-    tower: (addressData as { tower: string | null } | null)?.tower || null,
-    flatNumber:
-      (addressData as { flat_number: string } | null)?.flat_number || '',
-  };
+    const row = profileData as {
+      full_name: string | null;
+      phone: string | null;
+      email: string | null;
+      avatar_url: string | null;
+    } | null;
 
-  cachedProfile = profile;
-  return profile;
+    const profile: UserProfileData = {
+      fullName: row?.full_name?.trim() || 'User',
+      phone: row?.phone?.trim() || '',
+      email: row?.email ?? null,
+      avatarUrl: row?.avatar_url?.trim() || null,
+      apartment: communityName,
+      tower: (addressData as { tower: string | null } | null)?.tower || null,
+      flatNumber:
+        (addressData as { flat_number: string } | null)?.flat_number || '',
+    };
+
+    profileCache.set(profile);
+    return profile;
+  })();
+
+  try {
+    return await profileInflight;
+  } finally {
+    profileInflight = null;
+  }
 }
 
 /**
@@ -153,6 +177,7 @@ export async function updateProfile(data: UpdateProfileData) {
     throw new Error(error.message);
   }
 
+  profileCache.clear();
   return { success: true };
 }
 
@@ -208,8 +233,9 @@ export async function uploadProfileAvatar(
     throw new Error(updateError.message);
   }
 
-  if (cachedProfile) {
-    cachedProfile = { ...cachedProfile, avatarUrl };
+  const cached = profileCache.get();
+  if (cached) {
+    profileCache.set({ ...cached, avatarUrl });
   }
 
   return avatarUrl;
@@ -255,8 +281,9 @@ export async function removeProfileAvatar(): Promise<void> {
     throw new Error(updateError.message);
   }
 
-  if (cachedProfile) {
-    cachedProfile = { ...cachedProfile, avatarUrl: null };
+  const cached = profileCache.get();
+  if (cached) {
+    profileCache.set({ ...cached, avatarUrl: null });
   }
 }
 

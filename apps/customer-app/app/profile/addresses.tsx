@@ -30,6 +30,7 @@ import {
   type Community,
 } from '../../src/features/communities/services/communities.service';
 import {
+  getCachedCustomerAddress,
   getCustomerAddress,
   saveCustomerAddress,
   type CustomerAddress,
@@ -37,8 +38,10 @@ import {
 
 export default function AddressesScreen() {
   const router = useRouter();
-  const [address, setAddress] = useState<CustomerAddress | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [address, setAddress] = useState<CustomerAddress | null>(
+    () => getCachedCustomerAddress(),
+  );
+  const [isLoading, setIsLoading] = useState(() => !getCachedCustomerAddress());
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCommunityPicker, setShowCommunityPicker] = useState(false);
 
@@ -54,7 +57,7 @@ export default function AddressesScreen() {
 
   const loadAddress = useCallback(async () => {
     try {
-      setIsLoading(true);
+      if (!getCachedCustomerAddress()) setIsLoading(true);
       setAddress(await getCustomerAddress());
     } catch (err) {
       console.error('Error loading address:', err);
@@ -65,6 +68,8 @@ export default function AddressesScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const cached = getCachedCustomerAddress();
+      if (cached) setAddress(cached);
       loadAddress();
     }, [loadAddress]),
   );

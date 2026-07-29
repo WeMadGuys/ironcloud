@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -200,10 +200,13 @@ export default function HomeScreen() {
     ? pickupSlots
     : pickupSlots.slice(0, VISIBLE_SLOT_COUNT);
 
+  const hasLoadedOnceRef = useRef(false);
+
   const loadHomeData = useCallback(async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
+    // Soft refresh: keep existing content visible after the first successful load.
     if (mode === 'initial') {
       setInitialLoading(true);
-    } else {
+    } else if (!hasLoadedOnceRef.current) {
       setContentLoading(true);
     }
     try {
@@ -244,11 +247,25 @@ export default function HomeScreen() {
       } else {
         setCommunityId(null);
       }
+      hasLoadedOnceRef.current = true;
     } catch (error) {
       console.error('Error loading home data:', error);
     } finally {
       setInitialLoading(false);
       setContentLoading(false);
+    }
+  }, []);
+
+  const refreshBookingState = useCallback(async (dayOffset: number) => {
+    try {
+      const [booking, bookedOffsets] = await Promise.all([
+        getHomeBookingForDay(dayOffset, { force: true }),
+        getBookedDayOffsets(7, { force: true }),
+      ]);
+      setDayBooking(booking);
+      setBookedDays(bookedOffsets);
+    } catch (error) {
+      console.error('Error refreshing booking state:', error);
     }
   }, []);
 
@@ -277,8 +294,11 @@ export default function HomeScreen() {
     }
     setIsBooking(true);
     try {
-      const catalog = communityId ? await getGarmentCatalog(communityId) : [];
-      const estimatedGarments = buildEstimateLines(catalog, estimateCounts);
+      const hasEstimates = Object.values(estimateCounts).some((count) => count > 0);
+      const estimatedGarments =
+        hasEstimates && communityId
+          ? buildEstimateLines(await getGarmentCatalog(communityId), estimateCounts)
+          : [];
       const { amount: estimatedAmount } = estimateTotals(estimatedGarments);
 
       await createBooking({
@@ -292,7 +312,8 @@ export default function HomeScreen() {
       setSpecialInstructions('');
       setShowInstructions(false);
       setEstimateCounts({});
-      await loadHomeData(selectedDay);
+      // Only refresh booking strip — skip wallet/profile/address refetch.
+      await refreshBookingState(selectedDay);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to create booking';
@@ -306,7 +327,7 @@ export default function HomeScreen() {
     if (!dayBooking) return;
     try {
       await markOrderReadyForRebook(dayBooking.orderId);
-      await loadHomeData(selectedDay);
+      await refreshBookingState(selectedDay);
     } catch (error) {
       Alert.alert(
         'Error',
@@ -328,10 +349,13 @@ export default function HomeScreen() {
           style: 'destructive',
           onPress: async () => {
             setIsCancelling(true);
+            const cancelledDay = selectedDay;
             try {
               await cancelBooking(dayBooking.orderId);
+              // Optimistic UI — don't wait on a full home reload.
               setDayBooking(null);
-              await loadHomeData(selectedDay);
+              setBookedDays((prev) => prev.filter((d) => d !== cancelledDay));
+              void refreshBookingState(cancelledDay);
             } catch (error) {
               Alert.alert(
                 'Cancel failed',
@@ -339,6 +363,7 @@ export default function HomeScreen() {
                   ? error.message
                   : 'Could not cancel this booking',
               );
+              await refreshBookingState(cancelledDay);
             } finally {
               setIsCancelling(false);
             }

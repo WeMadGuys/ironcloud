@@ -16,18 +16,32 @@ const DEFAULT_PREFS: NotificationPrefs = {
   smsEnabled: false,
 };
 
+let memoryPrefs: NotificationPrefs | null = null;
+
+export function getCachedNotificationPrefs(): NotificationPrefs | null {
+  return memoryPrefs;
+}
+
 export async function getNotificationPrefs(): Promise<NotificationPrefs> {
+  if (memoryPrefs) return memoryPrefs;
+
   try {
     const raw = await SecureStore.getItemAsync(PREFS_KEY);
-    if (!raw) return DEFAULT_PREFS;
-    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+    if (!raw) {
+      memoryPrefs = DEFAULT_PREFS;
+      return memoryPrefs;
+    }
+    memoryPrefs = { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+    return memoryPrefs;
   } catch {
-    return DEFAULT_PREFS;
+    memoryPrefs = DEFAULT_PREFS;
+    return memoryPrefs;
   }
 }
 
 export async function saveNotificationPrefs(
   prefs: NotificationPrefs,
 ): Promise<void> {
+  memoryPrefs = prefs;
   await SecureStore.setItemAsync(PREFS_KEY, JSON.stringify(prefs));
 }

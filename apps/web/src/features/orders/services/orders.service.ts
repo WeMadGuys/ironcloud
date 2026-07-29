@@ -31,23 +31,6 @@ export const fetchOrders = async (params: OrderListParams) => {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let pickupSlotIds: string[] | null = null;
-  if (date) {
-    const dayStart = startOfDay(date).toISOString();
-    const dayEnd = endOfDay(date).toISOString();
-    const { data: slots, error: slotsError } = await supabase
-      .from('service_slots')
-      .select('id')
-      .gte('window_start', dayStart)
-      .lte('window_start', dayEnd);
-
-    if (slotsError) return { data: [], total: 0, error: slotsError };
-    pickupSlotIds = (slots ?? []).map((s) => s.id);
-    if (pickupSlotIds.length === 0) {
-      return { data: [], total: 0, error: null };
-    }
-  }
-
   let query = supabase
     .from('orders')
     .select(`
@@ -62,7 +45,15 @@ export const fetchOrders = async (params: OrderListParams) => {
   if (communityId) query = query.eq('community_id', communityId);
   if (paymentMethod) query = query.eq('payment_method', paymentMethod);
   if (search) query = query.ilike('order_number', `%${search}%`);
-  if (pickupSlotIds) query = query.in('pickup_slot_id', pickupSlotIds);
+
+  // Filter by pickup day in one round-trip (avoids slots → orders waterfall).
+  if (date) {
+    const dayStart = startOfDay(date).toISOString();
+    const dayEnd = endOfDay(date).toISOString();
+    query = query
+      .gte('pickup_slot.window_start', dayStart)
+      .lte('pickup_slot.window_start', dayEnd);
+  }
 
   const { data, count, error } = await query
     .order(sortKey, { ascending: sortAsc })

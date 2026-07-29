@@ -1,7 +1,10 @@
 import { supabase } from '../../../lib/supabase';
+import { createTtlCache } from '../../../lib/ttl-cache';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
+const ORDERS_CACHE_TTL_MS = 45_000;
+const ORDERS_LIST_LIMIT = 40;
 
 export type OrderStatus =
   | 'draft'
@@ -77,6 +80,10 @@ const PREVIOUS_STATUSES: OrderStatus[] = [
 
 async function getCurrentUserId(): Promise<string | null> {
   if (IS_MOCK_AUTH) return MOCK_USER_ID;
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.user?.id) return sessionData.session.user.id;
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -139,56 +146,78 @@ function mapOrder(row: {
   };
 }
 
-export async function getCustomerOrders(): Promise<{
+export async function getCustomerOrders(options?: {
+  force?: boolean;
+}): Promise<{
   activeOrders: Order[];
   previousOrders: Order[];
 }> {
-  const userId = await getCurrentUserId();
-  if (!userId) {
-    return { activeOrders: [], previousOrders: [] };
-  }
+  return ordersCache.getOrFetch(async () => {
+    const userId = await getCurrentUserId();
+    if (!userId) {
+      return { activeOrders: [], previousOrders: [] };
+    }
 
-  const { data, error } = await (supabase
-    .from('orders') as ReturnType<typeof supabase.from>)
-    .select(
-      `
-      id,
-      order_number,
-      status,
-      special_instructions,
-      total_amount,
-      created_at,
-      updated_at,
-      pickup_slot:pickup_slot_id (window_start, window_end),
-      delivery_slot:delivery_slot_id (window_start, window_end),
-      order_items (
+    const { data, error } = await (supabase
+      .from('orders') as ReturnType<typeof supabase.from>)
+      .select(
+        `
         id,
-        quantity,
-        unit_price,
-        service:service_id (name)
-      ),
-      order_events (status, created_at)
-    `,
-    )
-    .eq('customer_id', userId)
-    .order('created_at', { ascending: false });
+        order_number,
+        status,
+        special_instructions,
+        total_amount,
+        created_at,
+        updated_at,
+        pickup_slot:pickup_slot_id (window_start, window_end),
+        delivery_slot:delivery_slot_id (window_start, window_end),
+        order_items (
+          id,
+          quantity,
+          unit_price,
+          service:service_id (name)
+        ),
+        order_events (status, created_at)
+      `,
+      )
+      .eq('customer_id', userId)
+      .neq('status', 'draft')
+      .order('created_at', { ascending: false })
+      .limit(ORDERS_LIST_LIMIT);
 
-  if (error) {
-    console.error('Error fetching orders:', error);
-    return { activeOrders: [], previousOrders: [] };
-  }
+    if (error) {
+      console.error('Error fetching orders:', error);
+      return { activeOrders: [], previousOrders: [] };
+    }
 
-  const orders = ((data as Parameters<typeof mapOrder>[0][]) || []).map(mapOrder);
+    const orders = ((data as Parameters<typeof mapOrder>[0][]) || []).map(mapOrder);
 
-  // Active = not yet delivered. Previous = delivered and beyond (plus cancelled).
-  const activeOrders = orders.filter((order) =>
-    ACTIVE_STATUSES.includes(order.status),
-  );
-  const previousOrders = orders.filter((order) =>
-    PREVIOUS_STATUSES.includes(order.status),
-  );
+    // Active = not yet delivered. Previous = delivered and beyond (plus cancelled).
+    const activeOrders = orders.filter((order) =>
+      ACTIVE_STATUSES.includes(order.status),
+    );
+    const previousOrders = orders.filter((order) =>
+      PREVIOUS_STATUSES.includes(order.status),
+    );
 
-  return { activeOrders, previousOrders };
+    return { activeOrders, previousOrders };
+  }, options?.force === true);
+}
+
+const ordersCache = createTtlCache<{
+  activeOrders: Order[];
+  previousOrders: Order[];
+}>(ORDERS_CACHE_TTL_MS);
+
+export function getCachedCustomerOrders(): {
+  activeOrders: Order[];
+  previousOrders: Order[];
+} | null {
+  return ordersCache.get();
+}
+
+export function clearOrdersCache(): void {
+  ordersCache.clear();
 }
 
 export function getStatusLabel(status: OrderStatus): string {

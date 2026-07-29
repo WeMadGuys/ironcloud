@@ -5,12 +5,19 @@ export const fetchFinanceOverview = async (date: Date) => {
   const supabase = getSupabase();
   const dayStart = startOfDay(date).toISOString();
   const dayEnd = endOfDay(date).toISOString();
+  const refundSince = new Date(date);
+  refundSince.setDate(refundSince.getDate() - 30);
+  refundSince.setHours(0, 0, 0, 0);
 
   const [orders, settlements, invoices, refunds] = await Promise.all([
     supabase.from('orders').select('total_amount, subtotal').gte('created_at', dayStart).lte('created_at', dayEnd),
-    supabase.from('settlements').select('*').order('created_at', { ascending: false }).limit(20),
-    supabase.from('invoices').select('*').order('issued_at', { ascending: false }).limit(20),
-    supabase.from('orders').select('total_amount').in('status', ['refund_initiated', 'refund_completed']),
+    supabase.from('settlements').select('id, partner_id, rider_id, period_start, period_end, amount, status, paid_at, created_at').order('created_at', { ascending: false }).limit(20),
+    supabase.from('invoices').select('id, order_id, invoice_number, subtotal, gst_amount, total, pdf_url, issued_at').order('issued_at', { ascending: false }).limit(20),
+    supabase
+      .from('orders')
+      .select('total_amount')
+      .in('status', ['refund_initiated', 'refund_completed'])
+      .gte('created_at', refundSince.toISOString()),
   ]);
 
   const revenue = (orders.data ?? []).reduce((s, o) => s + Number(o.total_amount ?? 0), 0);

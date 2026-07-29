@@ -1,11 +1,13 @@
 import { getApiBaseUrl } from '../../../lib/api';
 import { isExpoGo } from '../../../lib/expo-go';
 import { supabase } from '../../../lib/supabase';
+import { createTtlCache } from '../../../lib/ttl-cache';
 import { fetchUserProfile } from '../../profile/services/profile.service';
 import { openRazorpayCheckout } from './razorpay-checkout';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
+const WALLET_CACHE_TTL_MS = 30_000;
 
 export type WalletTransaction = {
   id: string;
@@ -31,6 +33,18 @@ export type ApplicableWalletCoupon = {
   minAmount: number | null;
   label: string;
 };
+
+const walletCache = createTtlCache<WalletInfo>(WALLET_CACHE_TTL_MS);
+let walletInflight: Promise<WalletInfo | null> | null = null;
+
+export function getCachedWallet(): WalletInfo | null {
+  return walletCache.get();
+}
+
+export function clearWalletCache(): void {
+  walletCache.clear();
+  walletInflight = null;
+}
 
 export function calcClientWalletBonus(
   coupon: ApplicableWalletCoupon,
@@ -76,7 +90,7 @@ async function getAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
-export async function getWallet(): Promise<WalletInfo | null> {
+async function fetchWalletUncached(): Promise<WalletInfo | null> {
   const userId = await getCurrentUserId();
   if (!userId) return null;
 
@@ -97,19 +111,38 @@ export async function getWallet(): Promise<WalletInfo | null> {
   };
 }
 
-export async function getWalletTransactions(limit = 20): Promise<WalletTransaction[]> {
-  const userId = await getCurrentUserId();
-  if (!userId) return [];
+export async function getWallet(options?: {
+  force?: boolean;
+}): Promise<WalletInfo | null> {
+  if (!options?.force) {
+    const cached = walletCache.get();
+    if (cached) return cached;
+    if (walletInflight) return walletInflight;
+  }
 
-  const { data: wallet } = await (supabase
-    .from('wallets') as ReturnType<typeof supabase.from>)
-    .select('id')
-    .eq('customer_id', userId)
-    .single();
+  walletInflight = (async () => {
+    const wallet = await fetchWalletUncached();
+    if (wallet) walletCache.set(wallet);
+    return wallet;
+  })();
 
-  if (!wallet) return [];
+  try {
+    return await walletInflight;
+  } finally {
+    walletInflight = null;
+  }
+}
 
-  const walletId = (wallet as { id: string }).id;
+export async function getWalletTransactions(
+  limit = 20,
+  options?: { walletId?: string },
+): Promise<WalletTransaction[]> {
+  let walletId = options?.walletId;
+  if (!walletId) {
+    const wallet = await getWallet();
+    walletId = wallet?.id;
+  }
+  if (!walletId) return [];
 
   const { data, error } = await (supabase
     .from('wallet_transactions') as ReturnType<typeof supabase.from>)
@@ -202,6 +235,7 @@ export async function topUpWallet(params: {
       throw new Error(payload.error || 'Top-up failed.');
     }
 
+    clearWalletCache();
     return {
       balance: Number(payload.balance ?? 0),
       bonus: Number(payload.bonus ?? 0),
@@ -287,6 +321,7 @@ export async function topUpWallet(params: {
     throw new Error(verifyPayload.error || 'Payment verification failed.');
   }
 
+  clearWalletCache();
   return {
     balance: Number(verifyPayload.balance ?? 0),
     bonus: Number(verifyPayload.bonus ?? 0),

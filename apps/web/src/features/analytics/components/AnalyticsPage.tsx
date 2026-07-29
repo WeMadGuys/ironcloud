@@ -1,45 +1,69 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { Card, Loader, RevenueBarChart, TrendLineChart } from '@/components';
 import { useDateFilter } from '@/contexts/DateFilterContext';
-import { formatCurrency } from '@/utils/format';
+import { formatCurrency, toISODate } from '@/utils/format';
 
-import { fetchAnalyticsOverview, fetchCommunityPerformance } from '../services/analytics.service';
+import { fetchAnalyticsBundle } from '../services/analytics.service';
 
 import pageStyles from '@/styles/pages.module.css';
 
 export const AnalyticsPage = () => {
   const { selectedDate } = useDateFilter();
-  const [overview, setOverview] = useState<Awaited<ReturnType<typeof fetchAnalyticsOverview>> | null>(null);
-  const [communities, setCommunities] = useState<Awaited<ReturnType<typeof fetchCommunityPerformance>>>([]);
-  const [loading, setLoading] = useState(true);
+  const dateKey = toISODate(selectedDate);
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([fetchAnalyticsOverview(selectedDate), fetchCommunityPerformance()]).then(([o, c]) => {
-      setOverview(o);
-      setCommunities(c);
-      setLoading(false);
-    });
-  }, [selectedDate]);
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['admin-analytics', dateKey],
+    queryFn: () => fetchAnalyticsBundle(selectedDate),
+    staleTime: 45_000,
+  });
 
-  if (loading || !overview) return <Loader fullPage />;
+  if (isLoading && !data) return <Loader />;
 
-  const communityChart = communities.slice(0, 8).map((c) => ({ name: c.name, revenue: c.revenue }));
+  const overview = data!.overview;
+  const communities = data!.communities;
+  const communityChart = communities.slice(0, 8).map((c) => ({
+    name: c.name,
+    revenue: c.revenue,
+  }));
 
   return (
-    <div>
+    <div style={{ opacity: isFetching && !isLoading ? 0.85 : 1 }}>
       <div className={pageStyles.statsGrid}>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{overview.dau}</div><div className={pageStyles.statLabel}>DAU</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{overview.wau}</div><div className={pageStyles.statLabel}>WAU</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{overview.mau}</div><div className={pageStyles.statLabel}>MAU</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{formatCurrency(overview.revenue)}</div><div className={pageStyles.statLabel}>30d Revenue</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{overview.totalOrders}</div><div className={pageStyles.statLabel}>30d Orders</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{overview.cancellationRate.toFixed(1)}%</div><div className={pageStyles.statLabel}>Cancellation</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{overview.refundRate.toFixed(1)}%</div><div className={pageStyles.statLabel}>Refund Rate</div></div>
-        <div className={pageStyles.statBox}><div className={pageStyles.statValue}>{formatCurrency(overview.aov)}</div><div className={pageStyles.statLabel}>AOV</div></div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{overview.dau}</div>
+          <div className={pageStyles.statLabel}>DAU</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{overview.wau}</div>
+          <div className={pageStyles.statLabel}>WAU</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{overview.mau}</div>
+          <div className={pageStyles.statLabel}>MAU</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{formatCurrency(overview.revenue)}</div>
+          <div className={pageStyles.statLabel}>30d Revenue</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{overview.totalOrders}</div>
+          <div className={pageStyles.statLabel}>30d Orders</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{overview.cancellationRate.toFixed(1)}%</div>
+          <div className={pageStyles.statLabel}>Cancellation</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{overview.refundRate.toFixed(1)}%</div>
+          <div className={pageStyles.statLabel}>Refund Rate</div>
+        </div>
+        <div className={pageStyles.statBox}>
+          <div className={pageStyles.statValue}>{formatCurrency(overview.aov)}</div>
+          <div className={pageStyles.statLabel}>AOV</div>
+        </div>
       </div>
       <div className={pageStyles.chartsRow}>
         <Card title="Revenue Trend">

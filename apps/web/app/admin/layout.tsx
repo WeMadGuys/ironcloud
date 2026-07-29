@@ -50,7 +50,7 @@ function AdminShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  if (isLoading) return <Loader fullPage />;
+  if (isLoading) return <Loader />;
 
   const meta = getPageMeta(pathname);
 

@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 
 import {
   Button,
@@ -32,14 +33,10 @@ const emptyForm = () => ({
 
 export const CustomersListPage = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
-  const [data, setData] = useState<CustomerRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const hasLoadedRef = useRef(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerRow | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -50,22 +47,20 @@ export const CustomersListPage = () => {
   const updateMutation = trpc.customers.update.useMutation();
   const deleteMutation = trpc.customers.delete.useMutation();
 
-  const load = useCallback(() => {
-    if (hasLoadedRef.current) setRefreshing(true);
-    else setLoading(true);
+  const { data: result, isLoading, isFetching } = useQuery({
+    queryKey: ['admin-customers', page, pageSize, debouncedSearch],
+    queryFn: () =>
+      fetchCustomers({ page, pageSize, search: debouncedSearch || undefined }),
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  });
 
-    fetchCustomers({ page, pageSize, search: debouncedSearch || undefined }).then((res) => {
-      setData(res.data);
-      setTotal(res.total);
-      hasLoadedRef.current = true;
-      setLoading(false);
-      setRefreshing(false);
-    });
-  }, [page, debouncedSearch]);
+  const data = result?.data ?? [];
+  const total = result?.total ?? 0;
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const invalidate = () => {
+    void queryClient.invalidateQueries({ queryKey: ['admin-customers'] });
+  };
 
   const closeModal = () => {
     setModalOpen(false);
@@ -109,7 +104,7 @@ export const CustomersListPage = () => {
           onSuccess: () => {
             toast('Customer updated', 'success');
             closeModal();
-            load();
+            invalidate();
           },
           onError: (err) => toast(err.message, 'error'),
         },
@@ -121,7 +116,7 @@ export const CustomersListPage = () => {
       onSuccess: () => {
         toast('Customer created', 'success');
         closeModal();
-        load();
+        invalidate();
       },
       onError: (err) => toast(err.message, 'error'),
     });
@@ -135,7 +130,7 @@ export const CustomersListPage = () => {
         onSuccess: () => {
           toast('Customer deleted', 'success');
           setDeleteId(null);
-          load();
+          invalidate();
         },
         onError: (err) => toast(err.message, 'error'),
       },
@@ -143,11 +138,12 @@ export const CustomersListPage = () => {
   };
 
   const saving = createMutation.isPending || updateMutation.isPending;
+  const refreshing = isFetching && !isLoading;
 
-  if (loading) return <Loader fullPage />;
+  if (isLoading && !result) return <Loader />;
 
   return (
-    <div>
+    <div style={{ opacity: refreshing ? 0.85 : 1 }}>
       <div className={pageStyles.filters}>
         <SearchInput
           placeholder="Search customers..."

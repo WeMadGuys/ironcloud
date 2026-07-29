@@ -1,7 +1,9 @@
 import { supabase } from '../../../lib/supabase';
+import { createTtlCache } from '../../../lib/ttl-cache';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
+const ADDRESS_CACHE_TTL_MS = 60_000;
 
 export type CustomerAddress = {
   id: string;
@@ -12,6 +14,22 @@ export type CustomerAddress = {
   flatNumber: string;
   isDefault: boolean;
 };
+
+const addressListCache = createTtlCache<CustomerAddress[]>(ADDRESS_CACHE_TTL_MS);
+
+export function getCachedAddresses(): CustomerAddress[] | null {
+  return addressListCache.get();
+}
+
+export function getCachedCustomerAddress(): CustomerAddress | null {
+  const list = addressListCache.get();
+  if (!list || list.length === 0) return null;
+  return list.find((a) => a.isDefault) ?? list[0];
+}
+
+export function clearAddressCache(): void {
+  addressListCache.clear();
+}
 
 async function getCurrentUserId(): Promise<string> {
   if (IS_MOCK_AUTH) return MOCK_USER_ID;
@@ -56,34 +74,40 @@ const ADDRESS_SELECT = `
 `;
 
 /** All addresses for the customer (prefer default first). */
-export async function listAddresses(): Promise<CustomerAddress[]> {
-  const userId = await getCurrentUserId();
+export async function listAddresses(options?: {
+  force?: boolean;
+}): Promise<CustomerAddress[]> {
+  return addressListCache.getOrFetch(async () => {
+    const userId = await getCurrentUserId();
 
-  const { data, error } = await (supabase
-    .from('addresses') as ReturnType<typeof supabase.from>)
-    .select(ADDRESS_SELECT)
-    .eq('customer_id', userId)
-    .order('is_default', { ascending: false })
-    .order('created_at', { ascending: false });
+    const { data, error } = await (supabase
+      .from('addresses') as ReturnType<typeof supabase.from>)
+      .select(ADDRESS_SELECT)
+      .eq('customer_id', userId)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('[Address] List error:', error);
-    return [];
-  }
+    if (error) {
+      console.error('[Address] List error:', error);
+      return [];
+    }
 
-  return ((data as Array<{
-    id: string;
-    community_id: string;
-    tower: string | null;
-    flat_number: string;
-    is_default: boolean;
-    community: { name: string; city: string } | null;
-  }>) || []).map(mapAddressRow);
+    return ((data as Array<{
+      id: string;
+      community_id: string;
+      tower: string | null;
+      flat_number: string;
+      is_default: boolean;
+      community: { name: string; city: string } | null;
+    }>) || []).map(mapAddressRow);
+  }, options?.force === true);
 }
 
 /** Single address for the customer (default, else most recent). */
-export async function getCustomerAddress(): Promise<CustomerAddress | null> {
-  const addresses = await listAddresses();
+export async function getCustomerAddress(options?: {
+  force?: boolean;
+}): Promise<CustomerAddress | null> {
+  const addresses = await listAddresses(options);
   if (addresses.length === 0) return null;
   return addresses.find((a) => a.isDefault) ?? addresses[0];
 }
@@ -120,7 +144,7 @@ export async function saveCustomerAddress(input: {
       throw new Error(error?.message || 'Failed to update address');
     }
 
-    return mapAddressRow(
+    const mapped = mapAddressRow(
       data as {
         id: string;
         community_id: string;
@@ -130,6 +154,8 @@ export async function saveCustomerAddress(input: {
         community: { name: string; city: string } | null;
       },
     );
+    addressListCache.clear();
+    return mapped;
   }
 
   const { data, error } = await (supabase
@@ -145,6 +171,7 @@ export async function saveCustomerAddress(input: {
     throw new Error(error?.message || 'Failed to save address');
   }
 
+  addressListCache.clear();
   return mapAddressRow(
     data as {
       id: string;

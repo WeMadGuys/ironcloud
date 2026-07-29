@@ -31,7 +31,7 @@ export const FinancePage = () => {
     URL.revokeObjectURL(url);
   };
 
-  if (loading || !data) return <Loader fullPage />;
+  if (loading || !data) return <Loader />;
 
   return (
     <div>

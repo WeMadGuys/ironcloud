@@ -5,6 +5,7 @@ import {
   buildShareMessage,
   ensureReferralCode,
   getActiveReferralProgram,
+  type ReferralProgramRow,
 } from '@/lib/referrals';
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 import type { CustomerTargetContext } from '@/lib/wallet-coupons';
@@ -31,42 +32,44 @@ const bearerToken = (req: Request): string | null => {
   return match?.[1]?.trim() || null;
 };
 
+/** One round-trip for default address + community city. */
 async function resolveCustomerTarget(
   admin: AdminClient,
   customerId: string,
 ): Promise<CustomerTargetContext> {
   const { data: address } = await admin
     .from('addresses')
-    .select('community_id')
+    .select('community_id, community:community_id (city)')
     .eq('customer_id', customerId)
     .eq('is_default', true)
     .maybeSingle();
 
-  let communityId =
-    (address as { community_id: string } | null)?.community_id ?? null;
+  type AddrRow = {
+    community_id: string | null;
+    community: { city: string } | { city: string }[] | null;
+  };
 
-  if (!communityId) {
+  let row = address as AddrRow | null;
+
+  if (!row?.community_id) {
     const { data: anyAddress } = await admin
       .from('addresses')
-      .select('community_id')
+      .select('community_id, community:community_id (city)')
       .eq('customer_id', customerId)
       .limit(1)
       .maybeSingle();
-    communityId =
-      (anyAddress as { community_id: string } | null)?.community_id ?? null;
+    row = anyAddress as AddrRow | null;
   }
 
-  if (!communityId) return { communityId: null, city: null };
+  if (!row?.community_id) return { communityId: null, city: null };
 
-  const { data: community } = await admin
-    .from('communities')
-    .select('city')
-    .eq('id', communityId)
-    .maybeSingle();
+  const community = Array.isArray(row.community)
+    ? row.community[0]
+    : row.community;
 
   return {
-    communityId,
-    city: (community as { city: string } | null)?.city ?? null,
+    communityId: row.community_id,
+    city: community?.city ?? null,
   };
 }
 
@@ -76,6 +79,21 @@ function maskName(fullName: string | null): string {
   const parts = name.split(/\s+/);
   if (parts.length === 1) return `${parts[0].slice(0, 1)}***`;
   return `${parts[0]} ${parts[parts.length - 1].slice(0, 1)}.`;
+}
+
+type NestedOne<T> = T | T[] | null;
+
+const asOne = <T,>(value: NestedOne<T>): T | null => {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+};
+
+async function loadProgramForUser(
+  admin: AdminClient,
+  userId: string,
+): Promise<ReferralProgramRow | null> {
+  const target = await resolveCustomerTarget(admin, userId);
+  return getActiveReferralProgram(admin, target);
 }
 
 /** Current user's referral code, program summary, and referral history. */
@@ -107,46 +125,37 @@ export async function GET(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     }) as AdminClient;
 
-    const target = await resolveCustomerTarget(admin, user.id);
-    const program = await getActiveReferralProgram(admin, target);
-    const code = await ensureReferralCode(admin, user.id);
+    // Parallelize independent work — biggest latency win for production.
+    const [program, code, attributionsResult] = await Promise.all([
+      loadProgramForUser(admin, user.id),
+      ensureReferralCode(admin, user.id),
+      admin
+        .from('referral_attributions')
+        .select(
+          `
+          id,
+          status,
+          referral_code,
+          qualifying_topup_amount,
+          rewarded_at,
+          created_at,
+          program:program_id (referrer_reward_amount),
+          referee:referee_id (full_name)
+        `,
+        )
+        .eq('referrer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(20),
+    ]);
 
-    const { data: attributions } = await admin
-      .from('referral_attributions')
-      .select(
-        `
-        id,
-        status,
-        referral_code,
-        qualifying_topup_amount,
-        rewarded_at,
-        created_at,
-        program:program_id (referrer_reward_amount, referee_reward_amount),
-        referee:referee_id (full_name)
-      `,
-      )
-      .eq('referrer_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    type NestedOne<T> = T | T[] | null;
-
-    const asOne = <T,>(value: NestedOne<T>): T | null => {
-      if (value == null) return null;
-      return Array.isArray(value) ? (value[0] ?? null) : value;
-    };
-
-    const rows = (attributions ?? []) as unknown as Array<{
+    const rows = (attributionsResult.data ?? []) as unknown as Array<{
       id: string;
       status: string;
       referral_code: string;
       qualifying_topup_amount: number | null;
       rewarded_at: string | null;
       created_at: string;
-      program: NestedOne<{
-        referrer_reward_amount: number;
-        referee_reward_amount: number;
-      }>;
+      program: NestedOne<{ referrer_reward_amount: number }>;
       referee: NestedOne<{ full_name: string | null }>;
     }>;
 
@@ -173,26 +182,29 @@ export async function GET(req: Request) {
       };
     });
 
-    return json({
-      code,
-      program: program
-        ? {
-            id: program.id,
-            name: program.name,
-            referrerReward: Number(program.referrer_reward_amount),
-            refereeReward: Number(program.referee_reward_amount),
-            minTopup: Number(program.min_referee_topup_amount),
-            shareMessage: buildShareMessage(program, code),
-          }
-        : null,
-      stats: {
-        totalReferred: referrals.length,
-        pending: pendingCount,
-        rewarded: rewardedCount,
-        earnedAmount: Math.round(earnedAmount * 100) / 100,
+    return json(
+      {
+        code,
+        program: program
+          ? {
+              id: program.id,
+              name: program.name,
+              referrerReward: Number(program.referrer_reward_amount),
+              refereeReward: Number(program.referee_reward_amount),
+              minTopup: Number(program.min_referee_topup_amount),
+              shareMessage: buildShareMessage(program, code),
+            }
+          : null,
+        stats: {
+          totalReferred: referrals.length,
+          pending: pendingCount,
+          rewarded: rewardedCount,
+          earnedAmount: Math.round(earnedAmount * 100) / 100,
+        },
+        referrals,
       },
-      referrals,
-    });
+      200,
+    );
   } catch (err) {
     console.error('[referrals/me]', err);
     return json({ error: 'Unexpected server error.' }, 500);

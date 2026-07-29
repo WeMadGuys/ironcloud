@@ -1,4 +1,4 @@
-import { castRows, fromTable } from '@/lib/query';
+import { castRows } from '@/lib/query';
 import { getSupabase } from '@/lib/supabase';
 import { endOfDay, startOfDay } from '@/utils/format';
 
@@ -21,6 +21,9 @@ const IN_PROGRESS_STATUSES = ['picked_up', 'warehouse_received', 'sorting', 'iro
 const OUT_FOR_DELIVERY_STATUSES = ['delivery_assigned', 'out_for_delivery'];
 const DELIVERED_STATUSES = ['delivered', 'completed', 'rated'];
 
+/** Rankings use a recent window — all-time full-table scans are wrong past PostgREST row caps. */
+const RANKING_LOOKBACK_DAYS = 30;
+
 export const fetchDashboardKPIs = async (date: Date): Promise<DashboardKPIs> => {
   const supabase = getSupabase();
   const dayStart = startOfDay(date).toISOString();
@@ -31,30 +34,39 @@ export const fetchDashboardKPIs = async (date: Date): Promise<DashboardKPIs> => 
   const prevStart = startOfDay(prevDate).toISOString();
   const prevEnd = endOfDay(prevDate).toISOString();
 
-  const [
-    ordersToday,
-    ordersYesterday,
-    wallets,
-    partners,
-    riders,
-    customersToday,
-  ] = await Promise.all([
-    supabase.from('orders').select('status, total_amount, customer_id, created_at').gte('created_at', dayStart).lte('created_at', dayEnd),
-    supabase.from('orders').select('id', { count: 'exact', head: true }).gte('created_at', prevStart).lte('created_at', prevEnd),
+  const [ordersToday, ordersYesterday, wallets, partners, riders] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('status, total_amount, customer_id')
+      .gte('created_at', dayStart)
+      .lte('created_at', dayEnd),
+    supabase
+      .from('orders')
+      .select('id', { count: 'exact', head: true })
+      .gte('created_at', prevStart)
+      .lte('created_at', prevEnd),
+    // ~1k wallet rows is fine for 5 admins; prefer sum RPC later if this grows.
     supabase.from('wallets').select('balance'),
     supabase.from('partners').select('id', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('riders').select('id', { count: 'exact', head: true }),
-    supabase.from('orders').select('customer_id').gte('created_at', dayStart).lte('created_at', dayEnd),
   ]);
 
-  const orders = castRows<{ status: string; total_amount: number; customer_id: string; created_at: string }>(ordersToday.data);
-  const uniqueCustomers = new Set(castRows<{ customer_id: string }>(customersToday.data).map((o) => o.customer_id));
+  const orders = castRows<{
+    status: string;
+    total_amount: number;
+    customer_id: string;
+  }>(ordersToday.data);
+
+  const uniqueCustomers = new Set(orders.map((o) => o.customer_id));
 
   const countByStatus = (statuses: string[]) =>
     orders.filter((o) => statuses.includes(o.status)).length;
 
   const revenueToday = orders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-  const walletBalance = castRows<{ balance: number }>(wallets.data).reduce((s, w) => s + Number(w.balance ?? 0), 0);
+  const walletBalance = castRows<{ balance: number }>(wallets.data).reduce(
+    (s, w) => s + Number(w.balance ?? 0),
+    0,
+  );
 
   const totalToday = orders.length;
   const totalYesterday = ordersYesterday.count ?? 0;
@@ -122,10 +134,15 @@ export const fetchOrderStatusDistribution = async (date: Date) => {
 
 export const fetchTopCommunities = async (limit = 5) => {
   const supabase = getSupabase();
+  const since = new Date();
+  since.setDate(since.getDate() - RANKING_LOOKBACK_DAYS);
+  since.setHours(0, 0, 0, 0);
+
   const { data } = await supabase
     .from('orders')
     .select('community_id, communities(name)')
-    .not('community_id', 'is', null);
+    .not('community_id', 'is', null)
+    .gte('created_at', since.toISOString());
 
   const counts: Record<string, { id: string; name: string; count: number }> = {};
   (data ?? []).forEach((o) => {
@@ -158,19 +175,36 @@ export const fetchRecentOrders = async (limit = 8) => {
 
 export const fetchTopPartners = async (limit = 5) => {
   const supabase = getSupabase();
+  const since = new Date();
+  since.setDate(since.getDate() - RANKING_LOOKBACK_DAYS);
+  since.setHours(0, 0, 0, 0);
+
   const { data } = await supabase
     .from('partner_orders')
-    .select('partner_id, partners(name, rating_avg)');
+    .select('partner_id, assigned_at, partners(name, rating_avg)')
+    .gte('assigned_at', since.toISOString());
 
-  const counts: Record<string, { id: string; name: string; count: number; rating: number }> = {};
+  const counts: Record<
+    string,
+    { id: string; name: string; count: number; rating: number }
+  > = {};
   (data ?? []).forEach((po) => {
     const id = po.partner_id;
     const partner = po.partners as { name: string; rating_avg: number } | null;
-    if (!counts[id]) counts[id] = { id, name: partner?.name ?? 'Unknown', count: 0, rating: partner?.rating_avg ?? 0 };
+    if (!counts[id]) {
+      counts[id] = {
+        id,
+        name: partner?.name ?? 'Unknown',
+        count: 0,
+        rating: partner?.rating_avg ?? 0,
+      };
+    }
     counts[id].count++;
   });
 
-  return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, limit);
+  return Object.values(counts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
 };
 
 export const fetchLowWalletUsers = async (threshold = 100, limit = 5) => {
@@ -183,4 +217,28 @@ export const fetchLowWalletUsers = async (threshold = 100, limit = 5) => {
     .limit(limit);
 
   return data ?? [];
+};
+
+/** Single payload for dashboard — one React Query key / cache entry. */
+export const fetchDashboardBundle = async (date: Date, chartDays: number) => {
+  const [kpis, overview, statusDist, topCommunities, topPartners, recentOrders, lowWallet] =
+    await Promise.all([
+      fetchDashboardKPIs(date),
+      fetchOrdersOverview(chartDays),
+      fetchOrderStatusDistribution(date),
+      fetchTopCommunities(),
+      fetchTopPartners(),
+      fetchRecentOrders(),
+      fetchLowWalletUsers(),
+    ]);
+
+  return {
+    kpis,
+    overview,
+    statusDist,
+    topCommunities,
+    topPartners,
+    recentOrders,
+    lowWallet,
+  };
 };
