@@ -10,13 +10,16 @@ import { fetchTotalWalletBalance, fetchWallets } from '../services/wallet.servic
 
 import pageStyles from '@/styles/pages.module.css';
 
+type WalletListResult = Awaited<ReturnType<typeof fetchWallets>>;
+type WalletRow = WalletListResult['data'][number];
+
 export const WalletPage = () => {
   const [page, setPage] = useState(1);
   const pageSize = 25;
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['admin-wallets', page, pageSize],
-    queryFn: async () => {
+    queryFn: async (): Promise<WalletListResult & { totalBalance: number }> => {
       const [res, bal] = await Promise.all([
         fetchWallets(page, pageSize),
         fetchTotalWalletBalance(),
@@ -28,10 +31,11 @@ export const WalletPage = () => {
   });
 
   if (isLoading && !data) return <Loader />;
+  if (!data) return <Loader />;
 
-  const rows = data?.data ?? [];
-  const total = data?.total ?? 0;
-  const totalBalance = data?.totalBalance ?? 0;
+  const rows = data.data;
+  const total = data.total;
+  const totalBalance = data.totalBalance;
 
   return (
     <div style={{ opacity: isFetching && !isLoading ? 0.85 : 1 }}>
@@ -50,7 +54,7 @@ export const WalletPage = () => {
           <EmptyState title="No wallets found" />
         ) : (
           <>
-            <Table
+            <Table<WalletRow>
               columns={[
                 {
                   key: 'customer',
