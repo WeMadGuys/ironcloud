@@ -43,10 +43,13 @@ export type UserProfileData = {
   fullName: string;
   phone: string;
   email: string | null;
+  avatarUrl: string | null;
   apartment: string;
   tower: string | null;
   flatNumber: string;
 };
+
+const AVATAR_BUCKET = 'avatars';
 
 let cachedProfile: UserProfileData | null = null;
 
@@ -67,7 +70,7 @@ export async function fetchUserProfile(): Promise<UserProfileData | null> {
 
   const { data: profileData } = await (supabase
     .from('profiles') as ReturnType<typeof supabase.from>)
-    .select('full_name, phone, email')
+    .select('full_name, phone, email, avatar_url')
     .eq('id', userId)
     .maybeSingle();
 
@@ -90,12 +93,14 @@ export async function fetchUserProfile(): Promise<UserProfileData | null> {
     full_name: string | null;
     phone: string | null;
     email: string | null;
+    avatar_url: string | null;
   } | null;
 
   const profile: UserProfileData = {
     fullName: row?.full_name?.trim() || 'User',
     phone: row?.phone?.trim() || '',
     email: row?.email ?? null,
+    avatarUrl: row?.avatar_url?.trim() || null,
     apartment: communityName,
     tower: (addressData as { tower: string | null } | null)?.tower || null,
     flatNumber:
@@ -149,6 +154,110 @@ export async function updateProfile(data: UpdateProfileData) {
   }
 
   return { success: true };
+}
+
+function getAvatarExtension(mimeType: string): string {
+  if (mimeType.includes('png')) return 'png';
+  if (mimeType.includes('webp')) return 'webp';
+  return 'jpg';
+}
+
+/**
+ * Uploads a profile photo to storage and saves the public URL on the profile row.
+ */
+export async function uploadProfileAvatar(
+  localUri: string,
+  mimeType = 'image/jpeg',
+): Promise<string> {
+  const userId = await getCurrentUserId();
+  const ext = getAvatarExtension(mimeType);
+  const path = `${userId}/avatar.${ext}`;
+
+  const response = await fetch(localUri);
+  if (!response.ok) {
+    throw new Error('Could not read the selected image');
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+
+  const { error: uploadError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .upload(path, arrayBuffer, {
+      contentType: mimeType,
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error('[Profile] Avatar upload error:', uploadError.message);
+    throw new Error(uploadError.message);
+  }
+
+  const { data: urlData } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+  const avatarUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+
+  const { error: updateError } = await (supabase
+    .from('profiles') as ReturnType<typeof supabase.from>)
+    .update({
+      avatar_url: avatarUrl,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+
+  if (updateError) {
+    console.error('[Profile] Avatar URL update error:', updateError.message);
+    throw new Error(updateError.message);
+  }
+
+  if (cachedProfile) {
+    cachedProfile = { ...cachedProfile, avatarUrl };
+  }
+
+  return avatarUrl;
+}
+
+/**
+ * Removes the current user's profile photo.
+ */
+export async function removeProfileAvatar(): Promise<void> {
+  const userId = await getCurrentUserId();
+
+  const { data: files, error: listError } = await supabase.storage
+    .from(AVATAR_BUCKET)
+    .list(userId);
+
+  if (listError) {
+    console.error('[Profile] Avatar list error:', listError.message);
+    throw new Error(listError.message);
+  }
+
+  if (files && files.length > 0) {
+    const paths = files.map((file) => `${userId}/${file.name}`);
+    const { error: removeError } = await supabase.storage
+      .from(AVATAR_BUCKET)
+      .remove(paths);
+
+    if (removeError) {
+      console.error('[Profile] Avatar remove error:', removeError.message);
+      throw new Error(removeError.message);
+    }
+  }
+
+  const { error: updateError } = await (supabase
+    .from('profiles') as ReturnType<typeof supabase.from>)
+    .update({
+      avatar_url: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+
+  if (updateError) {
+    console.error('[Profile] Avatar clear error:', updateError.message);
+    throw new Error(updateError.message);
+  }
+
+  if (cachedProfile) {
+    cachedProfile = { ...cachedProfile, avatarUrl: null };
+  }
 }
 
 /**

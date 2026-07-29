@@ -17,7 +17,14 @@
       }
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow IronCloud to access your photos to set a profile picture.",
+          "cameraPermission": "Allow IronCloud to use your camera to take a profile picture."
+        }
+      ]
     ]
   }
 }

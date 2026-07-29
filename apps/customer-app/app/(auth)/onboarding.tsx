@@ -32,6 +32,10 @@ import {
   completeOnboarding,
   validatePromoCode,
 } from '../../src/features/profile/services/profile.service';
+import {
+  applyReferralCode,
+  validateReferralCode,
+} from '../../src/features/referrals/services/referral.service';
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -47,13 +51,17 @@ export default function OnboardingScreen() {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [promoCode, setPromoCode] = useState('');
+  const [referralCode, setReferralCode] = useState('');
 
   const [promoValidated, setPromoValidated] = useState(false);
   const [promoMessage, setPromoMessage] = useState('');
+  const [referralValidated, setReferralValidated] = useState(false);
+  const [referralMessage, setReferralMessage] = useState('');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
+  const [isApplyingReferral, setIsApplyingReferral] = useState(false);
 
   const handleSearchCommunities = useCallback(async (query: string) => {
     setCommunitySearch(query);
@@ -105,6 +113,37 @@ export default function OnboardingScreen() {
     }
   };
 
+  const handleApplyReferral = async () => {
+    if (!referralCode.trim()) return;
+
+    setIsApplyingReferral(true);
+    setReferralMessage('');
+
+    try {
+      const result = await validateReferralCode(
+        referralCode,
+        selectedCommunity?.id ?? null,
+      );
+      if (result.valid) {
+        setReferralValidated(true);
+        const friendReward = result.program?.refereeReward;
+        setReferralMessage(
+          friendReward != null
+            ? `Valid! You'll get ₹${friendReward} after your first qualifying recharge.`
+            : 'Referral code applied.',
+        );
+      } else {
+        setReferralValidated(false);
+        setReferralMessage(result.message || 'Invalid referral code');
+      }
+    } catch {
+      setReferralValidated(false);
+      setReferralMessage('Failed to validate referral code');
+    } finally {
+      setIsApplyingReferral(false);
+    }
+  };
+
   const handleContinue = async () => {
     const newErrors: Record<string, string> = {};
 
@@ -139,6 +178,17 @@ export default function OnboardingScreen() {
         },
         promoCode: promoValidated ? promoCode.trim() : undefined,
       });
+
+      if (referralValidated && referralCode.trim()) {
+        try {
+          await applyReferralCode(
+            referralCode.trim(),
+            selectedCommunity!.id,
+          );
+        } catch (referralErr) {
+          console.warn('Referral apply failed after onboarding:', referralErr);
+        }
+      }
 
       // Navigate to home tabs
       router.replace('/(tabs)/home');
@@ -384,6 +434,57 @@ export default function OnboardingScreen() {
                 ]}
               >
                 {promoMessage}
+              </Text>
+            ) : null}
+          </View>
+
+          {/* Referral Code */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.inputLabel}>
+              Referral Code <Text style={styles.optionalText}>(optional)</Text>
+            </Text>
+            <View style={styles.inputContainer}>
+              <MaterialCommunityIcons
+                name="gift-outline"
+                size={20}
+                color={colors.icon.secondary}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={[styles.input, styles.promoInput]}
+                placeholder="Friend's referral code"
+                placeholderTextColor={inputs.placeholder.color}
+                value={referralCode}
+                onChangeText={(text) => {
+                  setReferralCode(text);
+                  setReferralValidated(false);
+                  setReferralMessage('');
+                }}
+                autoCapitalize="characters"
+                editable={!referralValidated}
+              />
+              {isApplyingReferral ? (
+                <ActivityIndicator size="small" color={colors.brand.primary} />
+              ) : referralValidated ? (
+                <MaterialCommunityIcons
+                  name="check-circle"
+                  size={20}
+                  color={colors.status.success.foreground}
+                />
+              ) : (
+                <Pressable onPress={handleApplyReferral} style={styles.applyButton}>
+                  <Text style={styles.applyButtonText}>APPLY</Text>
+                </Pressable>
+              )}
+            </View>
+            {referralMessage ? (
+              <Text
+                style={[
+                  styles.promoMessage,
+                  referralValidated ? styles.promoSuccess : styles.promoError,
+                ]}
+              >
+                {referralMessage}
               </Text>
             ) : null}
           </View>

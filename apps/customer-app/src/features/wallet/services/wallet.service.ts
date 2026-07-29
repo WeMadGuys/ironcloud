@@ -1,5 +1,7 @@
 import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import { fetchUserProfile } from '../../profile/services/profile.service';
+import { openRazorpayCheckout } from './razorpay-checkout';
 
 const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -173,7 +175,8 @@ export async function topUpWallet(params: {
   }
 
   const apiBase = getApiBaseUrl();
-  const response = await fetch(`${apiBase}/api/wallet/top-up`, {
+
+  const orderResponse = await fetch(`${apiBase}/api/payments/razorpay/create-order`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -185,21 +188,76 @@ export async function topUpWallet(params: {
     }),
   });
 
-  const payload = (await response.json().catch(() => ({}))) as {
+  const orderPayload = (await orderResponse.json().catch(() => ({}))) as {
+    orderId?: string;
+    keyId?: string;
+    amountPaise?: number;
+    currency?: string;
+    amount?: number;
+    error?: string;
+  };
+
+  if (!orderResponse.ok) {
+    throw new Error(orderPayload.error || 'Could not start payment.');
+  }
+
+  if (!orderPayload.orderId || !orderPayload.keyId || !orderPayload.amountPaise) {
+    throw new Error('Invalid payment order response.');
+  }
+
+  const profile = await fetchUserProfile();
+
+  let checkoutResult;
+  try {
+    checkoutResult = await openRazorpayCheckout({
+      keyId: orderPayload.keyId,
+      orderId: orderPayload.orderId,
+      amountPaise: orderPayload.amountPaise,
+      currency: orderPayload.currency ?? 'INR',
+      description: 'IronCloud wallet top-up',
+      prefill: {
+        name: profile?.fullName,
+        email: profile?.email ?? undefined,
+        contact: profile?.phone,
+      },
+    });
+  } catch (err) {
+    const code = (err as { code?: number })?.code;
+    if (code === 0 || code === 2) {
+      throw new Error('Payment cancelled.');
+    }
+    const message = err instanceof Error ? err.message : 'Payment failed.';
+    throw new Error(message);
+  }
+
+  const verifyResponse = await fetch(`${apiBase}/api/payments/razorpay/verify`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      razorpayOrderId: checkoutResult.razorpayOrderId,
+      razorpayPaymentId: checkoutResult.razorpayPaymentId,
+      razorpaySignature: checkoutResult.razorpaySignature,
+    }),
+  });
+
+  const verifyPayload = (await verifyResponse.json().catch(() => ({}))) as {
     balance?: number;
     bonus?: number;
     creditTotal?: number;
     error?: string;
   };
 
-  if (!response.ok) {
-    throw new Error(payload.error || 'Top-up failed.');
+  if (!verifyResponse.ok) {
+    throw new Error(verifyPayload.error || 'Payment verification failed.');
   }
 
   return {
-    balance: Number(payload.balance ?? 0),
-    bonus: Number(payload.bonus ?? 0),
-    creditTotal: Number(payload.creditTotal ?? params.amount),
+    balance: Number(verifyPayload.balance ?? 0),
+    bonus: Number(verifyPayload.bonus ?? 0),
+    creditTotal: Number(verifyPayload.creditTotal ?? params.amount),
   };
 }
 

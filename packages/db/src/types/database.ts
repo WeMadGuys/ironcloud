@@ -65,6 +65,7 @@ export interface Database {
           phone: string | null;
           email: string | null;
           avatar_url: string | null;
+          referral_code: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -75,6 +76,7 @@ export interface Database {
           phone?: string | null;
           email?: string | null;
           avatar_url?: string | null;
+          referral_code?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -85,6 +87,7 @@ export interface Database {
           phone?: string | null;
           email?: string | null;
           avatar_url?: string | null;
+          referral_code?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -735,6 +738,99 @@ export interface Database {
           code?: string;
           reward_amount?: number;
           status?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      referral_programs: {
+        Row: {
+          id: string;
+          name: string;
+          is_active: boolean;
+          referrer_reward_amount: number;
+          referee_reward_amount: number;
+          min_referee_topup_amount: number;
+          valid_from: string | null;
+          valid_to: string | null;
+          community_ids: string[] | null;
+          cities: string[] | null;
+          max_referrals_per_referrer: number | null;
+          share_message_template: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          is_active?: boolean;
+          referrer_reward_amount?: number;
+          referee_reward_amount?: number;
+          min_referee_topup_amount?: number;
+          valid_from?: string | null;
+          valid_to?: string | null;
+          community_ids?: string[] | null;
+          cities?: string[] | null;
+          max_referrals_per_referrer?: number | null;
+          share_message_template?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          is_active?: boolean;
+          referrer_reward_amount?: number;
+          referee_reward_amount?: number;
+          min_referee_topup_amount?: number;
+          valid_from?: string | null;
+          valid_to?: string | null;
+          community_ids?: string[] | null;
+          cities?: string[] | null;
+          max_referrals_per_referrer?: number | null;
+          share_message_template?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      referral_attributions: {
+        Row: {
+          id: string;
+          program_id: string;
+          referrer_id: string;
+          referee_id: string;
+          referral_code: string;
+          status: string;
+          qualifying_topup_amount: number | null;
+          referrer_wallet_txn_id: string | null;
+          referee_wallet_txn_id: string | null;
+          rewarded_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          program_id: string;
+          referrer_id: string;
+          referee_id: string;
+          referral_code: string;
+          status?: string;
+          qualifying_topup_amount?: number | null;
+          referrer_wallet_txn_id?: string | null;
+          referee_wallet_txn_id?: string | null;
+          rewarded_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          program_id?: string;
+          referrer_id?: string;
+          referee_id?: string;
+          referral_code?: string;
+          status?: string;
+          qualifying_topup_amount?: number | null;
+          referrer_wallet_txn_id?: string | null;
+          referee_wallet_txn_id?: string | null;
+          rewarded_at?: string | null;
           created_at?: string;
         };
         Relationships: [];

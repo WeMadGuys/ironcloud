@@ -22,7 +22,8 @@ import {
   fetchBanners,
   fetchCampaigns,
   fetchCoupons,
-  fetchReferrals,
+  fetchReferralAttributions,
+  fetchReferralPrograms,
 } from '../services/promotions.service';
 
 import formStyles from '@/styles/form.module.css';
@@ -31,6 +32,8 @@ import pageStyles from '@/styles/pages.module.css';
 type CouponRow = Awaited<ReturnType<typeof fetchCoupons>>[number];
 type CampaignRow = Awaited<ReturnType<typeof fetchCampaigns>>[number];
 type BannerRow = Awaited<ReturnType<typeof fetchBanners>>[number];
+type ReferralProgramRow = Awaited<ReturnType<typeof fetchReferralPrograms>>[number];
+type ReferralAttributionRow = Awaited<ReturnType<typeof fetchReferralAttributions>>[number];
 
 const emptyCoupon = () => ({
   code: '',
@@ -61,6 +64,21 @@ const emptyBanner = () => ({
   isActive: true,
 });
 
+const emptyReferralProgram = () => ({
+  name: 'Refer & Earn',
+  isActive: true,
+  referrerRewardAmount: '100',
+  refereeRewardAmount: '50',
+  minRefereeTopupAmount: '299',
+  validFrom: '',
+  validTo: '',
+  communityIds: [] as string[],
+  cities: [] as string[],
+  maxReferralsPerReferrer: '',
+  shareMessageTemplate:
+    'Join IronCloud with my code {{code}} and get ₹{{referee_reward}} after your first wallet recharge of ₹{{min_topup}}+!',
+});
+
 function toIsoOrNull(local: string): string | null {
   if (!local.trim()) return null;
   const d = new Date(local);
@@ -89,7 +107,10 @@ export const PromotionsPage = () => {
   const [coupons, setCoupons] = useState<CouponRow[]>([]);
   const [campaigns, setCampaigns] = useState<CampaignRow[]>([]);
   const [banners, setBanners] = useState<BannerRow[]>([]);
-  const [referrals, setReferrals] = useState<Awaited<ReturnType<typeof fetchReferrals>>>([]);
+  const [referralPrograms, setReferralPrograms] = useState<ReferralProgramRow[]>([]);
+  const [referralAttributions, setReferralAttributions] = useState<ReferralAttributionRow[]>(
+    [],
+  );
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('coupons');
@@ -97,10 +118,13 @@ export const PromotionsPage = () => {
   const [editingCoupon, setEditingCoupon] = useState<CouponRow | null>(null);
   const [editingCampaign, setEditingCampaign] = useState<CampaignRow | null>(null);
   const [editingBanner, setEditingBanner] = useState<BannerRow | null>(null);
+  const [editingReferralProgram, setEditingReferralProgram] =
+    useState<ReferralProgramRow | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ type: string; id: string } | null>(null);
   const [couponForm, setCouponForm] = useState(emptyCoupon);
   const [campaignForm, setCampaignForm] = useState(emptyCampaign);
   const [bannerForm, setBannerForm] = useState(emptyBanner);
+  const [referralForm, setReferralForm] = useState(emptyReferralProgram);
 
   const createCoupon = trpc.promotions.createCoupon.useMutation();
   const updateCoupon = trpc.promotions.updateCoupon.useMutation();
@@ -111,6 +135,9 @@ export const PromotionsPage = () => {
   const createBanner = trpc.promotions.createBanner.useMutation();
   const updateBanner = trpc.promotions.updateBanner.useMutation();
   const deleteBanner = trpc.promotions.deleteBanner.useMutation();
+  const createReferralProgram = trpc.promotions.createReferralProgram.useMutation();
+  const updateReferralProgram = trpc.promotions.updateReferralProgram.useMutation();
+  const deleteReferralProgram = trpc.promotions.deleteReferralProgram.useMutation();
 
   const cityOptions = useMemo(() => {
     const set = new Set<string>();
@@ -126,13 +153,15 @@ export const PromotionsPage = () => {
       fetchCoupons(),
       fetchCampaigns(),
       fetchBanners(),
-      fetchReferrals(),
+      fetchReferralPrograms(),
+      fetchReferralAttributions(),
       fetchCommunityOptions(),
-    ]).then(([c, ca, b, r, communityOpts]) => {
+    ]).then(([c, ca, b, programs, attributions, communityOpts]) => {
       setCoupons(c);
       setCampaigns(ca);
       setBanners(b);
-      setReferrals(r);
+      setReferralPrograms(programs);
+      setReferralAttributions(attributions);
       setCommunities(communityOpts.filter((x) => x.status === 'active' || !x.status));
       setLoading(false);
     });
@@ -147,9 +176,11 @@ export const PromotionsPage = () => {
     setEditingCoupon(null);
     setEditingCampaign(null);
     setEditingBanner(null);
+    setEditingReferralProgram(null);
     setCouponForm(emptyCoupon());
     setCampaignForm(emptyCampaign());
     setBannerForm(emptyBanner());
+    setReferralForm(emptyReferralProgram());
   };
 
   const openCreate = () => {
@@ -300,6 +331,69 @@ export const PromotionsPage = () => {
           },
         );
       }
+      return;
+    }
+
+    if (tab === 'referrals') {
+      if (!referralForm.name.trim()) {
+        toast('Program name is required', 'error');
+        return;
+      }
+      const referrerRewardAmount = Number(referralForm.referrerRewardAmount);
+      const refereeRewardAmount = Number(referralForm.refereeRewardAmount);
+      const minRefereeTopupAmount = Number(referralForm.minRefereeTopupAmount);
+      if (
+        !Number.isFinite(referrerRewardAmount) ||
+        referrerRewardAmount < 0 ||
+        !Number.isFinite(refereeRewardAmount) ||
+        refereeRewardAmount < 0 ||
+        !Number.isFinite(minRefereeTopupAmount) ||
+        minRefereeTopupAmount < 0
+      ) {
+        toast('Reward and minimum top-up amounts must be valid numbers', 'error');
+        return;
+      }
+
+      const payload = {
+        name: referralForm.name.trim(),
+        isActive: referralForm.isActive,
+        referrerRewardAmount,
+        refereeRewardAmount,
+        minRefereeTopupAmount,
+        validFrom: toIsoOrNull(referralForm.validFrom),
+        validTo: toIsoOrNull(referralForm.validTo),
+        communityIds: referralForm.communityIds.length
+          ? referralForm.communityIds
+          : null,
+        cities: referralForm.cities.length ? referralForm.cities : null,
+        maxReferralsPerReferrer: referralForm.maxReferralsPerReferrer
+          ? Number(referralForm.maxReferralsPerReferrer)
+          : null,
+        shareMessageTemplate: referralForm.shareMessageTemplate.trim() || null,
+      };
+
+      if (editingReferralProgram) {
+        updateReferralProgram.mutate(
+          { id: editingReferralProgram.id, ...payload },
+          {
+            onSuccess: () => {
+              toast('Referral program updated', 'success');
+              closeModal();
+              load();
+            },
+            onError: (err) => toast(err.message, 'error'),
+          },
+        );
+      } else {
+        createReferralProgram.mutate(payload, {
+          onSuccess: () => {
+            toast('Referral program created', 'success');
+            closeModal();
+            load();
+          },
+          onError: (err) => toast(err.message, 'error'),
+        });
+      }
     }
   };
 
@@ -317,6 +411,9 @@ export const PromotionsPage = () => {
     if (deleteTarget.type === 'coupon') deleteCoupon.mutate({ id: deleteTarget.id }, onDone);
     if (deleteTarget.type === 'campaign') deleteCampaign.mutate({ id: deleteTarget.id }, onDone);
     if (deleteTarget.type === 'banner') deleteBanner.mutate({ id: deleteTarget.id }, onDone);
+    if (deleteTarget.type === 'referral_program') {
+      deleteReferralProgram.mutate({ id: deleteTarget.id }, onDone);
+    }
   };
 
   const openEditCoupon = (c: CouponRow) => {
@@ -342,16 +439,26 @@ export const PromotionsPage = () => {
   if (loading) return <Loader fullPage />;
 
   const tabs = ['coupons', 'campaigns', 'banners', 'referrals'] as const;
-  const canAdd = tab !== 'referrals';
-  const isEditing = Boolean(editingCoupon || editingCampaign || editingBanner);
+  const canAdd = true;
+  const isEditing = Boolean(
+    editingCoupon || editingCampaign || editingBanner || editingReferralProgram,
+  );
   const addLabel =
-    tab === 'coupons' ? 'Add Coupon' : tab === 'campaigns' ? 'Add Campaign' : 'Add Banner';
+    tab === 'coupons'
+      ? 'Add Coupon'
+      : tab === 'campaigns'
+        ? 'Add Campaign'
+        : tab === 'banners'
+          ? 'Add Banner'
+          : 'Add Program';
   const modalTitle = isEditing
     ? tab === 'coupons'
       ? 'Edit Coupon'
       : tab === 'campaigns'
         ? 'Edit Campaign'
-        : 'Edit Banner'
+        : tab === 'banners'
+          ? 'Edit Banner'
+          : 'Edit Referral Program'
     : addLabel;
   const submitting =
     createCoupon.isPending ||
@@ -359,11 +466,25 @@ export const PromotionsPage = () => {
     createCampaign.isPending ||
     updateCampaign.isPending ||
     createBanner.isPending ||
-    updateBanner.isPending;
+    updateBanner.isPending ||
+    createReferralProgram.isPending ||
+    updateReferralProgram.isPending;
   const deleting =
-    deleteCoupon.isPending || deleteCampaign.isPending || deleteBanner.isPending;
+    deleteCoupon.isPending ||
+    deleteCampaign.isPending ||
+    deleteBanner.isPending ||
+    deleteReferralProgram.isPending;
 
   const toggleCommunity = (id: string) => {
+    if (tab === 'referrals') {
+      setReferralForm((f) => ({
+        ...f,
+        communityIds: f.communityIds.includes(id)
+          ? f.communityIds.filter((x) => x !== id)
+          : [...f.communityIds, id],
+      }));
+      return;
+    }
     setCouponForm((f) => ({
       ...f,
       communityIds: f.communityIds.includes(id)
@@ -373,12 +494,42 @@ export const PromotionsPage = () => {
   };
 
   const toggleCity = (city: string) => {
+    if (tab === 'referrals') {
+      setReferralForm((f) => ({
+        ...f,
+        cities: f.cities.includes(city)
+          ? f.cities.filter((x) => x !== city)
+          : [...f.cities, city],
+      }));
+      return;
+    }
     setCouponForm((f) => ({
       ...f,
       cities: f.cities.includes(city)
         ? f.cities.filter((x) => x !== city)
         : [...f.cities, city],
     }));
+  };
+
+  const openEditReferralProgram = (p: ReferralProgramRow) => {
+    setEditingReferralProgram(p);
+    setReferralForm({
+      name: p.name ?? '',
+      isActive: Boolean(p.is_active),
+      referrerRewardAmount: String(p.referrer_reward_amount ?? ''),
+      refereeRewardAmount: String(p.referee_reward_amount ?? ''),
+      minRefereeTopupAmount: String(p.min_referee_topup_amount ?? ''),
+      validFrom: toLocalInput(p.valid_from),
+      validTo: toLocalInput(p.valid_to),
+      communityIds: (p.community_ids as string[] | null) ?? [],
+      cities: (p.cities as string[] | null) ?? [],
+      maxReferralsPerReferrer:
+        p.max_referrals_per_referrer != null
+          ? String(p.max_referrals_per_referrer)
+          : '',
+      shareMessageTemplate: p.share_message_template ?? '',
+    });
+    setModalOpen(true);
   };
 
   return (
@@ -570,17 +721,110 @@ export const PromotionsPage = () => {
       )}
 
       {tab === 'referrals' && (
-        <Card title="Referrals">
-          <Table
-            columns={[
-              { key: 'code', header: 'Code', render: (r) => r.code },
-              { key: 'reward', header: 'Reward', render: (r) => r.reward_amount },
-              { key: 'status', header: 'Status', render: (r) => r.status },
-            ]}
-            data={referrals}
-            keyExtractor={(r) => r.id}
-          />
-        </Card>
+        <>
+          <Card title="Referral programs">
+            <Table
+              columns={[
+                { key: 'name', header: 'Name', render: (r) => r.name },
+                {
+                  key: 'referrer',
+                  header: 'Referrer reward',
+                  render: (r) => `₹${r.referrer_reward_amount}`,
+                },
+                {
+                  key: 'referee',
+                  header: 'Friend reward',
+                  render: (r) => `₹${r.referee_reward_amount}`,
+                },
+                {
+                  key: 'min',
+                  header: 'Min top-up',
+                  render: (r) => `₹${r.min_referee_topup_amount}`,
+                },
+                {
+                  key: 'active',
+                  header: 'Status',
+                  render: (r) => (
+                    <Badge variant={r.is_active ? 'success' : 'default'}>
+                      {r.is_active ? 'Active' : 'Off'}
+                    </Badge>
+                  ),
+                },
+                {
+                  key: 'actions',
+                  header: '',
+                  render: (r) => (
+                    <div className={formStyles.rowActions}>
+                      <Button variant="secondary" size="sm" onClick={() => openEditReferralProgram(r)}>
+                        Edit
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={() =>
+                          setDeleteTarget({ type: 'referral_program', id: r.id })
+                        }
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]}
+              data={referralPrograms}
+              keyExtractor={(r) => r.id}
+            />
+          </Card>
+
+          <Card title="Attributions">
+            <Table
+              columns={[
+                {
+                  key: 'code',
+                  header: 'Code',
+                  render: (r) => r.referral_code,
+                },
+                {
+                  key: 'referrer',
+                  header: 'Referrer',
+                  render: (r) =>
+                    (r.referrer as { full_name?: string | null } | null)?.full_name ||
+                    '—',
+                },
+                {
+                  key: 'referee',
+                  header: 'Friend',
+                  render: (r) =>
+                    (r.referee as { full_name?: string | null } | null)?.full_name ||
+                    '—',
+                },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (r) => r.status,
+                },
+                {
+                  key: 'reward',
+                  header: 'Referrer ₹',
+                  render: (r) =>
+                    r.status === 'rewarded'
+                      ? `₹${(r.program as { referrer_reward_amount?: number } | null)?.referrer_reward_amount ?? 0}`
+                      : '—',
+                },
+                {
+                  key: 'date',
+                  header: 'Created',
+                  render: (r) =>
+                    r.created_at
+                      ? new Date(r.created_at).toLocaleDateString()
+                      : '—',
+                },
+              ]}
+              data={referralAttributions}
+              keyExtractor={(r) => r.id}
+            />
+          </Card>
+        </>
       )}
 
       <CreateEntityModal
@@ -884,6 +1128,191 @@ export const PromotionsPage = () => {
                 Active
               </label>
             )}
+          </div>
+        )}
+
+        {tab === 'referrals' && (
+          <div className={formStyles.stack}>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-name">
+                Program name *
+              </label>
+              <input
+                id="ref-name"
+                className={formStyles.input}
+                value={referralForm.name}
+                onChange={(e) => setReferralForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <label className={formStyles.checkLabel}>
+              <input
+                type="checkbox"
+                checked={referralForm.isActive}
+                onChange={(e) =>
+                  setReferralForm((f) => ({ ...f, isActive: e.target.checked }))
+                }
+              />
+              Active
+            </label>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-referrer">
+                Referrer reward (₹) *
+              </label>
+              <input
+                id="ref-referrer"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                value={referralForm.referrerRewardAmount}
+                onChange={(e) =>
+                  setReferralForm((f) => ({
+                    ...f,
+                    referrerRewardAmount: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-referee">
+                Friend reward (₹) *
+              </label>
+              <input
+                id="ref-referee"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                value={referralForm.refereeRewardAmount}
+                onChange={(e) =>
+                  setReferralForm((f) => ({
+                    ...f,
+                    refereeRewardAmount: e.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-min">
+                Min first top-up (₹) *
+              </label>
+              <input
+                id="ref-min"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                value={referralForm.minRefereeTopupAmount}
+                onChange={(e) =>
+                  setReferralForm((f) => ({
+                    ...f,
+                    minRefereeTopupAmount: e.target.value,
+                  }))
+                }
+              />
+              <p className={formStyles.hint}>
+                Friend must recharge at least this amount once to unlock rewards.
+              </p>
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-max">
+                Max referrals per referrer
+              </label>
+              <input
+                id="ref-max"
+                className={formStyles.input}
+                type="number"
+                min={1}
+                step={1}
+                value={referralForm.maxReferralsPerReferrer}
+                onChange={(e) =>
+                  setReferralForm((f) => ({
+                    ...f,
+                    maxReferralsPerReferrer: e.target.value,
+                  }))
+                }
+                placeholder="Unlimited"
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-from">
+                Valid from
+              </label>
+              <input
+                id="ref-from"
+                className={formStyles.input}
+                type="datetime-local"
+                value={referralForm.validFrom}
+                onChange={(e) =>
+                  setReferralForm((f) => ({ ...f, validFrom: e.target.value }))
+                }
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-to">
+                Valid to
+              </label>
+              <input
+                id="ref-to"
+                className={formStyles.input}
+                type="datetime-local"
+                value={referralForm.validTo}
+                onChange={(e) =>
+                  setReferralForm((f) => ({ ...f, validTo: e.target.value }))
+                }
+              />
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Communities (optional)</span>
+              <div className={formStyles.checkRow}>
+                {communities.map((c) => (
+                  <label key={c.id} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={referralForm.communityIds.includes(c.id)}
+                      onChange={() => toggleCommunity(c.id)}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Cities (optional)</span>
+              <div className={formStyles.checkRow}>
+                {cityOptions.map((city) => (
+                  <label key={city} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={referralForm.cities.includes(city)}
+                      onChange={() => toggleCity(city)}
+                    />
+                    {city}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="ref-share">
+                Share message template
+              </label>
+              <textarea
+                id="ref-share"
+                className={formStyles.input}
+                rows={3}
+                value={referralForm.shareMessageTemplate}
+                onChange={(e) =>
+                  setReferralForm((f) => ({
+                    ...f,
+                    shareMessageTemplate: e.target.value,
+                  }))
+                }
+              />
+              <p className={formStyles.hint}>
+                Placeholders: {'{{code}}'}, {'{{referee_reward}}'}, {'{{referrer_reward}}'},{' '}
+                {'{{min_topup}}'}
+              </p>
+            </div>
           </div>
         )}
       </CreateEntityModal>

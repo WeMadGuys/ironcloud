@@ -500,11 +500,11 @@ export default function WalletScreen() {
               </View>
             )}
 
-            {/* Payment Methods — Razorpay later */}
+            {/* Payment via Razorpay */}
             <View style={styles.paymentMethods}>
-              <Text style={styles.paymentMethodsTitle}>Payment Methods</Text>
+              <Text style={styles.paymentMethodsTitle}>Payment</Text>
               <Text style={styles.paymentMethodsHint}>
-                Payment gateway coming soon. Confirm will credit your wallet now.
+                Pay securely with UPI, cards, or net banking via Razorpay.
               </Text>
             </View>
           </ScrollView>

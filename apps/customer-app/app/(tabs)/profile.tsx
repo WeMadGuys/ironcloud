@@ -1,9 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -31,7 +33,9 @@ import {
   clearProfileCache,
   fetchUserProfile,
   getCachedProfile,
+  removeProfileAvatar,
   updateProfile,
+  uploadProfileAvatar,
   type UserProfileData,
 } from '../../src/features/profile/services/profile.service';
 import { supabase } from '../../src/lib/supabase';
@@ -70,6 +74,7 @@ export default function ProfileScreen() {
   const [editEmail, setEditEmail] = useState('');
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   const loadProfile = useCallback(async () => {
     const showLoading = !getCachedProfile();
@@ -106,6 +111,107 @@ export default function ProfileScreen() {
       delete next[field];
       return next;
     });
+  };
+
+  const pickAndUploadAvatar = async (source: 'camera' | 'library') => {
+    if (isUploadingAvatar) return;
+
+    const permission =
+      source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      Alert.alert(
+        'Permission required',
+        source === 'camera'
+          ? 'Camera access is needed to take a profile photo.'
+          : 'Photo library access is needed to choose a profile photo.',
+      );
+      return;
+    }
+
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    const asset = result.assets[0];
+    setIsUploadingAvatar(true);
+    try {
+      const avatarUrl = await uploadProfileAvatar(
+        asset.uri,
+        asset.mimeType ?? 'image/jpeg',
+      );
+      setProfile((prev) => (prev ? { ...prev, avatarUrl } : prev));
+    } catch (error) {
+      Alert.alert(
+        'Upload failed',
+        error instanceof Error ? error.message : 'Could not update profile photo',
+      );
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleChangeAvatar = () => {
+    if (isLoading || isUploadingAvatar || !profile) return;
+
+    const options: Array<{
+      text: string;
+      style?: 'default' | 'cancel' | 'destructive';
+      onPress?: () => void;
+    }> = [
+      { text: 'Take photo', onPress: () => pickAndUploadAvatar('camera') },
+      { text: 'Choose from library', onPress: () => pickAndUploadAvatar('library') },
+    ];
+
+    if (profile.avatarUrl) {
+      options.push({
+        text: 'Remove photo',
+        style: 'destructive',
+        onPress: () => {
+          Alert.alert('Remove photo', 'Remove your profile photo?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: async () => {
+                setIsUploadingAvatar(true);
+                try {
+                  await removeProfileAvatar();
+                  setProfile((prev) => (prev ? { ...prev, avatarUrl: null } : prev));
+                } catch (error) {
+                  Alert.alert(
+                    'Remove failed',
+                    error instanceof Error
+                      ? error.message
+                      : 'Could not remove profile photo',
+                  );
+                } finally {
+                  setIsUploadingAvatar(false);
+                }
+              },
+            },
+          ]);
+        },
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert('Profile photo', 'Choose an option', options);
   };
 
   const handleSaveProfile = async () => {
@@ -192,6 +298,14 @@ export default function ProfileScreen() {
       showArrow: true,
     },
     {
+      id: 'referrals',
+      icon: 'gift-outline',
+      label: 'Refer & Earn',
+      subtitle: 'Invite friends and earn wallet cashback',
+      onPress: () => router.push('/profile/referrals'),
+      showArrow: true,
+    },
+    {
       id: 'help',
       icon: 'help-circle-outline',
       label: 'Help & Support',
@@ -262,15 +376,28 @@ export default function ProfileScreen() {
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              {isLoading ? (
+              {isLoading || isUploadingAvatar ? (
                 <ActivityIndicator size="large" color={colors.brand.onPrimary} />
+              ) : profile?.avatarUrl ? (
+                <Image
+                  source={{ uri: profile.avatarUrl }}
+                  style={styles.avatarImage}
+                  accessibilityLabel="Profile photo"
+                />
               ) : (
                 <Text style={styles.avatarText}>
                   {profile ? getInitials(profile.fullName) : 'U'}
                 </Text>
               )}
             </View>
-            <Pressable style={styles.cameraButton}>
+            <Pressable
+              style={[
+                styles.cameraButton,
+                (isLoading || isUploadingAvatar || !profile) && styles.cameraButtonDisabled,
+              ]}
+              onPress={handleChangeAvatar}
+              disabled={isLoading || isUploadingAvatar || !profile}
+            >
               <MaterialCommunityIcons
                 name="camera"
                 size={16}
@@ -560,6 +687,11 @@ const styles = StyleSheet.create({
     fontSize: 36,
     color: colors.brand.onPrimary,
   },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+  },
   cameraButton: {
     position: 'absolute',
     bottom: 0,
@@ -572,6 +704,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: colors.surface.background,
+  },
+  cameraButtonDisabled: {
+    opacity: 0.6,
   },
   profileLoading: {
     paddingVertical: spacing.md,

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -48,7 +49,7 @@ import {
 } from '../../src/features/booking/components/EstimateOrderCard';
 import { getGarmentCatalog } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
-import { fetchUserProfile } from '../../src/features/profile/services/profile.service';
+import { fetchUserProfile, getCachedProfile } from '../../src/features/profile/services/profile.service';
 import { getWallet } from '../../src/features/wallet/services/wallet.service';
 
 interface DayOption {
@@ -127,6 +128,15 @@ function getSlotChipParts(startHour: number) {
   };
 }
 
+function getInitials(name: string): string {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
 export default function HomeScreen() {
   const router = useRouter();
   const days = getNextDays(7);
@@ -150,6 +160,13 @@ export default function HomeScreen() {
   const [headerAddress, setHeaderAddress] = useState({
     name: '',
     detail: '',
+  });
+  const [headerProfile, setHeaderProfile] = useState(() => {
+    const cached = getCachedProfile();
+    return {
+      avatarUrl: cached?.avatarUrl ?? null,
+      fullName: cached?.fullName ?? '',
+    };
   });
 
   useEffect(() => {
@@ -190,7 +207,7 @@ export default function HomeScreen() {
       setContentLoading(true);
     }
     try {
-      const [booking, bookedOffsets, wallet, addresses] = await Promise.all([
+      const [booking, bookedOffsets, wallet, addresses, profile] = await Promise.all([
         getHomeBookingForDay(dayOffset),
         getBookedDayOffsets(7),
         getWallet(),
@@ -201,6 +218,10 @@ export default function HomeScreen() {
       setDayBooking(booking);
       setBookedDays(bookedOffsets);
       setWalletBalance(wallet?.balance ?? null);
+      setHeaderProfile({
+        avatarUrl: profile?.avatarUrl ?? null,
+        fullName: profile?.fullName ?? '',
+      });
 
       const defaultAddress =
         addresses.find((address) => address.isDefault) || addresses[0];
@@ -373,11 +394,23 @@ export default function HomeScreen() {
         style={styles.profileButton}
         onPress={() => router.push('/(tabs)/profile')}
       >
-        <MaterialCommunityIcons
-          name="account-outline"
-          size={22}
-          color={colors.icon.primary}
-        />
+        {headerProfile.avatarUrl ? (
+          <Image
+            source={{ uri: headerProfile.avatarUrl }}
+            style={styles.profileAvatar}
+            accessibilityLabel="Profile photo"
+          />
+        ) : headerProfile.fullName && headerProfile.fullName !== 'User' ? (
+          <Text style={styles.profileInitials}>
+            {getInitials(headerProfile.fullName)}
+          </Text>
+        ) : (
+          <MaterialCommunityIcons
+            name="account-outline"
+            size={22}
+            color={colors.icon.primary}
+          />
+        )}
       </Pressable>
     </View>
   );
@@ -839,6 +872,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.border.default,
+    overflow: 'hidden',
+  },
+  profileAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  profileInitials: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 14,
+    color: colors.brand.primary,
   },
   datePickerContainer: {
     marginTop: spacing.md,

@@ -234,4 +234,136 @@ export const promotionsRouter = router({
       if (error) throw new Error(error.message);
       return { success: true };
     }),
+
+  createReferralProgram: adminProcedure
+    .input(
+      z.object({
+        name: z.string().min(1),
+        isActive: z.boolean().optional(),
+        referrerRewardAmount: z.number().min(0),
+        refereeRewardAmount: z.number().min(0),
+        minRefereeTopupAmount: z.number().min(0),
+        validFrom: z.string().datetime().optional().nullable(),
+        validTo: z.string().datetime().optional().nullable(),
+        communityIds: z.array(z.string().uuid()).optional().nullable(),
+        cities: z.array(z.string().min(1)).optional().nullable(),
+        maxReferralsPerReferrer: z.number().int().positive().optional().nullable(),
+        shareMessageTemplate: z.string().optional().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from('referral_programs')
+        .insert({
+          name: input.name.trim(),
+          is_active: input.isActive ?? true,
+          referrer_reward_amount: input.referrerRewardAmount,
+          referee_reward_amount: input.refereeRewardAmount,
+          min_referee_topup_amount: input.minRefereeTopupAmount,
+          valid_from: input.validFrom ?? null,
+          valid_to: input.validTo ?? null,
+          community_ids:
+            input.communityIds && input.communityIds.length > 0
+              ? input.communityIds
+              : null,
+          cities:
+            input.cities && input.cities.length > 0
+              ? input.cities.map((c) => c.trim()).filter(Boolean)
+              : null,
+          max_referrals_per_referrer: input.maxReferralsPerReferrer ?? null,
+          share_message_template: input.shareMessageTemplate?.trim() || null,
+        })
+        .select('id')
+        .single();
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'referral_program.create',
+        entityType: 'referral_program',
+        entityId: data.id,
+        after: { name: input.name },
+      });
+
+      return { id: data.id };
+    }),
+
+  updateReferralProgram: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1),
+        isActive: z.boolean(),
+        referrerRewardAmount: z.number().min(0),
+        refereeRewardAmount: z.number().min(0),
+        minRefereeTopupAmount: z.number().min(0),
+        validFrom: z.string().datetime().optional().nullable(),
+        validTo: z.string().datetime().optional().nullable(),
+        communityIds: z.array(z.string().uuid()).optional().nullable(),
+        cities: z.array(z.string().min(1)).optional().nullable(),
+        maxReferralsPerReferrer: z.number().int().positive().optional().nullable(),
+        shareMessageTemplate: z.string().optional().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const updates = {
+        name: input.name.trim(),
+        is_active: input.isActive,
+        referrer_reward_amount: input.referrerRewardAmount,
+        referee_reward_amount: input.refereeRewardAmount,
+        min_referee_topup_amount: input.minRefereeTopupAmount,
+        valid_from: input.validFrom ?? null,
+        valid_to: input.validTo ?? null,
+        community_ids:
+          input.communityIds && input.communityIds.length > 0
+            ? input.communityIds
+            : null,
+        cities:
+          input.cities && input.cities.length > 0
+            ? input.cities.map((c) => c.trim()).filter(Boolean)
+            : null,
+        max_referrals_per_referrer: input.maxReferralsPerReferrer ?? null,
+        share_message_template: input.shareMessageTemplate?.trim() || null,
+      };
+
+      const { error } = await ctx.supabase
+        .from('referral_programs')
+        .update(updates)
+        .eq('id', input.id);
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'referral_program.update',
+        entityType: 'referral_program',
+        entityId: input.id,
+        after: updates,
+      });
+
+      return { success: true };
+    }),
+
+  deleteReferralProgram: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { error } = await ctx.supabase
+        .from('referral_programs')
+        .delete()
+        .eq('id', input.id);
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'referral_program.delete',
+        entityType: 'referral_program',
+        entityId: input.id,
+      });
+
+      return { success: true };
+    }),
 });
