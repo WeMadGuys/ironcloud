@@ -34,6 +34,7 @@ import {
   type ApplicableWalletCoupon,
   type WalletTransaction,
 } from '../../src/features/wallet/services/wallet.service';
+import { isExpoGo } from '../../src/lib/expo-go';
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
 
@@ -500,11 +501,13 @@ export default function WalletScreen() {
               </View>
             )}
 
-            {/* Payment via Razorpay */}
+            {/* Payment via Razorpay (dev stub in Expo Go) */}
             <View style={styles.paymentMethods}>
               <Text style={styles.paymentMethodsTitle}>Payment</Text>
               <Text style={styles.paymentMethodsHint}>
-                Pay securely with UPI, cards, or net banking via Razorpay.
+                {isExpoGo()
+                  ? 'Expo Go dev mode: Add Money credits your wallet without Razorpay.'
+                  : 'Pay securely with UPI, cards, or net banking via Razorpay.'}
               </Text>
             </View>
           </ScrollView>

@@ -129,18 +129,25 @@ export async function GET(req: Request) {
       .order('created_at', { ascending: false })
       .limit(50);
 
-    const rows = (attributions ?? []) as Array<{
+    type NestedOne<T> = T | T[] | null;
+
+    const asOne = <T,>(value: NestedOne<T>): T | null => {
+      if (value == null) return null;
+      return Array.isArray(value) ? (value[0] ?? null) : value;
+    };
+
+    const rows = (attributions ?? []) as unknown as Array<{
       id: string;
       status: string;
       referral_code: string;
       qualifying_topup_amount: number | null;
       rewarded_at: string | null;
       created_at: string;
-      program: {
+      program: NestedOne<{
         referrer_reward_amount: number;
         referee_reward_amount: number;
-      } | null;
-      referee: { full_name: string | null } | null;
+      }>;
+      referee: NestedOne<{ full_name: string | null }>;
     }>;
 
     let pendingCount = 0;
@@ -148,7 +155,9 @@ export async function GET(req: Request) {
     let earnedAmount = 0;
 
     const referrals = rows.map((row) => {
-      const reward = Number(row.program?.referrer_reward_amount ?? 0);
+      const programRow = asOne(row.program);
+      const refereeRow = asOne(row.referee);
+      const reward = Number(programRow?.referrer_reward_amount ?? 0);
       if (row.status === 'pending') pendingCount += 1;
       if (row.status === 'rewarded') {
         rewardedCount += 1;
@@ -157,7 +166,7 @@ export async function GET(req: Request) {
       return {
         id: row.id,
         status: row.status,
-        friendName: maskName(row.referee?.full_name ?? null),
+        friendName: maskName(refereeRow?.full_name ?? null),
         createdAt: row.created_at,
         rewardedAt: row.rewarded_at,
         rewardAmount: reward,

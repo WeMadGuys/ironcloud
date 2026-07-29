@@ -1,4 +1,7 @@
-import RazorpayCheckout from 'react-native-razorpay';
+// react-native-razorpay requires a native dev build and breaks Expo Go.
+// Uncomment when using `npx expo run:android` / `run:ios`:
+//
+// import RazorpayCheckout from 'react-native-razorpay';
 
 import type {
   RazorpayCheckoutInput,
@@ -6,28 +9,11 @@ import type {
 } from './razorpay-checkout';
 
 export async function openRazorpayCheckout(
-  input: RazorpayCheckoutInput,
+  _input: RazorpayCheckoutInput,
 ): Promise<RazorpayCheckoutResult> {
-  const data = await RazorpayCheckout.open({
-    description: input.description,
-    currency: input.currency,
-    key: input.keyId,
-    amount: input.amountPaise,
-    order_id: input.orderId,
-    name: 'IronCloud',
-    prefill: {
-      name: input.prefill?.name,
-      email: input.prefill?.email,
-      contact: input.prefill?.contact,
-    },
-    theme: { color: '#1E3A5F' },
-  });
-
-  return {
-    razorpayPaymentId: data.razorpay_payment_id,
-    razorpayOrderId: data.razorpay_order_id,
-    razorpaySignature: data.razorpay_signature,
-  };
+  throw new Error(
+    'Razorpay native checkout is disabled for Expo Go. Use a dev build or the Expo Go wallet bypass.',
+  );
 }
 
 export type { RazorpayCheckoutInput, RazorpayCheckoutResult };

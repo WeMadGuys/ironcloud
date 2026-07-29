@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from '../../../lib/api';
+import { isExpoGo } from '../../../lib/expo-go';
 import { supabase } from '../../../lib/supabase';
 import { fetchUserProfile } from '../../profile/services/profile.service';
 import { openRazorpayCheckout } from './razorpay-checkout';
@@ -175,6 +176,38 @@ export async function topUpWallet(params: {
   }
 
   const apiBase = getApiBaseUrl();
+
+  // Expo Go has no native Razorpay module — use dev stub top-up instead.
+  if (isExpoGo()) {
+    const response = await fetch(`${apiBase}/api/wallet/top-up`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        amount: params.amount,
+        couponCode: params.couponCode ?? null,
+      }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      balance?: number;
+      bonus?: number;
+      creditTotal?: number;
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'Top-up failed.');
+    }
+
+    return {
+      balance: Number(payload.balance ?? 0),
+      bonus: Number(payload.bonus ?? 0),
+      creditTotal: Number(payload.creditTotal ?? params.amount),
+    };
+  }
 
   const orderResponse = await fetch(`${apiBase}/api/payments/razorpay/create-order`, {
     method: 'POST',
