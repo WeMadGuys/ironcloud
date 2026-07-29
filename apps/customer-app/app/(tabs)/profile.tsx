@@ -2,25 +2,38 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   colors,
+  inputs,
   radius,
   shadows,
   spacing,
   typographyScale,
 } from '@ironcloud/ui';
 
-import { AUTH_PROVIDER, MOCK_USER_ID } from '../../src/config/auth';
+import { AUTH_PROVIDER } from '../../src/config/auth';
+import {
+  clearProfileCache,
+  fetchUserProfile,
+  getCachedProfile,
+  updateProfile,
+  type UserProfileData,
+} from '../../src/features/profile/services/profile.service';
 import { supabase } from '../../src/lib/supabase';
 
 const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
@@ -32,13 +45,8 @@ function formatDisplayPhone(phone: string | null | undefined): string {
   return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
 }
 
-interface UserProfile {
-  fullName: string;
-  phone: string;
-  email: string | null;
-  apartment: string;
-  tower: string | null;
-  flatNumber: string;
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 interface MenuItem {
@@ -53,64 +61,23 @@ interface MenuItem {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [profile, setProfile] = useState<UserProfileData | null>(
+    () => getCachedProfile(),
+  );
+  const [isLoading, setIsLoading] = useState(() => !getCachedProfile());
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFullName, setEditFullName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const loadProfile = useCallback(async () => {
+    const showLoading = !getCachedProfile();
+    if (showLoading) setIsLoading(true);
+
     try {
-      setIsLoading(true);
-
-      let userId: string | null = null;
-      if (IS_MOCK_AUTH) {
-        userId = MOCK_USER_ID;
-      } else {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        userId = user?.id ?? null;
-      }
-
-      if (!userId) {
-        setProfile(null);
-        return;
-      }
-
-      const { data: profileData } = await (supabase
-        .from('profiles') as ReturnType<typeof supabase.from>)
-        .select('full_name, phone, email')
-        .eq('id', userId)
-        .maybeSingle();
-
-      const { data: addressData } = await (supabase
-        .from('addresses') as ReturnType<typeof supabase.from>)
-        .select(`
-          tower,
-          flat_number,
-          community:community_id (name)
-        `)
-        .eq('customer_id', userId)
-        .eq('is_default', true)
-        .maybeSingle();
-
-      const communityName =
-        (addressData as { community: { name: string } | null } | null)?.community
-          ?.name || 'Not set';
-
-      const row = profileData as {
-        full_name: string | null;
-        phone: string | null;
-        email: string | null;
-      } | null;
-
-      setProfile({
-        fullName: row?.full_name?.trim() || 'User',
-        phone: row?.phone?.trim() || '',
-        email: row?.email ?? null,
-        apartment: communityName,
-        tower: (addressData as { tower: string | null } | null)?.tower || null,
-        flatNumber:
-          (addressData as { flat_number: string } | null)?.flat_number || '',
-      });
+      const data = await fetchUserProfile();
+      setProfile(data);
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
@@ -123,6 +90,56 @@ export default function ProfileScreen() {
       loadProfile();
     }, [loadProfile]),
   );
+
+  const openEditModal = () => {
+    if (!profile) return;
+    setEditFullName(profile.fullName === 'User' ? '' : profile.fullName);
+    setEditEmail(profile.email ?? '');
+    setEditErrors({});
+    setShowEditModal(true);
+  };
+
+  const clearEditError = (field: string) => {
+    setEditErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const handleSaveProfile = async () => {
+    const trimmedName = editFullName.trim();
+    const trimmedEmail = editEmail.trim();
+    const newErrors: Record<string, string> = {};
+
+    if (!trimmedName) {
+      newErrors.fullName = 'Please enter your name';
+    }
+    if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    setEditErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) return;
+
+    setIsSaving(true);
+    try {
+      await updateProfile({
+        fullName: trimmedName,
+        email: trimmedEmail || undefined,
+      });
+      const data = await fetchUserProfile();
+      setProfile(data);
+      setShowEditModal(false);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to update profile';
+      setEditErrors({ submit: message });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleLogout = () => {
     Alert.alert(
@@ -141,6 +158,7 @@ export default function ProfileScreen() {
             } catch (error) {
               console.warn('Logout signOut failed:', error);
             }
+            clearProfileCache();
             router.replace('/(auth)/login');
           },
         },
@@ -222,7 +240,11 @@ export default function ProfileScreen() {
           />
         </Pressable>
         <Text style={styles.headerTitle}>Profile</Text>
-        <Pressable style={styles.editButton}>
+        <Pressable
+          style={[styles.editButton, (isLoading || !profile) && styles.editButtonDisabled]}
+          onPress={openEditModal}
+          disabled={isLoading || !profile}
+        >
           <MaterialCommunityIcons
             name="pencil-outline"
             size={20}
@@ -240,9 +262,13 @@ export default function ProfileScreen() {
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {profile ? getInitials(profile.fullName) : 'U'}
-              </Text>
+              {isLoading ? (
+                <ActivityIndicator size="large" color={colors.brand.onPrimary} />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {profile ? getInitials(profile.fullName) : 'U'}
+                </Text>
+              )}
             </View>
             <Pressable style={styles.cameraButton}>
               <MaterialCommunityIcons
@@ -252,11 +278,19 @@ export default function ProfileScreen() {
               />
             </Pressable>
           </View>
-          <Text style={styles.userName}>{profile?.fullName || 'User'}</Text>
-          <Text style={styles.userPhone}>{formatDisplayPhone(profile?.phone)}</Text>
-          {profile?.email ? (
-            <Text style={styles.userEmail}>{profile.email}</Text>
-          ) : null}
+          {isLoading ? (
+            <View style={styles.profileLoading}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : (
+            <>
+              <Text style={styles.userName}>{profile?.fullName || 'User'}</Text>
+              <Text style={styles.userPhone}>{formatDisplayPhone(profile?.phone)}</Text>
+              {profile?.email ? (
+                <Text style={styles.userEmail}>{profile.email}</Text>
+              ) : null}
+            </>
+          )}
         </View>
 
         {/* Address Card */}
@@ -318,6 +352,140 @@ export default function ProfileScreen() {
           <Text style={styles.appInfoSubtext}>Made with ❤️ in India</Text>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showEditModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <KeyboardAvoidingView
+            style={styles.modalKeyboardView}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Edit profile</Text>
+              <Pressable
+                onPress={() => setShowEditModal(false)}
+                style={styles.modalCloseButton}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={24}
+                  color={colors.icon.primary}
+                />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              contentContainerStyle={styles.editForm}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.fieldGroup}>
+                <Text style={styles.inputLabel}>Full Name</Text>
+                <View
+                  style={[
+                    styles.inputContainer,
+                    editErrors.fullName && styles.inputContainerError,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="account-outline"
+                    size={22}
+                    color={colors.icon.secondary}
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your full name"
+                    placeholderTextColor={inputs.placeholder.color}
+                    value={editFullName}
+                    onChangeText={(text) => {
+                      setEditFullName(text);
+                      clearEditError('fullName');
+                    }}
+                    autoCapitalize="words"
+                  />
+                </View>
+                {editErrors.fullName ? (
+                  <Text style={styles.errorText}>{editErrors.fullName}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.inputLabel}>
+                  Email Address{' '}
+                  <Text style={styles.optionalText}>(optional)</Text>
+                </Text>
+                <View
+                  style={[
+                    styles.inputContainer,
+                    editErrors.email && styles.inputContainerError,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="email-outline"
+                    size={20}
+                    color={colors.icon.secondary}
+                    style={styles.inputIcon}
+                  />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter your email address"
+                    placeholderTextColor={inputs.placeholder.color}
+                    value={editEmail}
+                    onChangeText={(text) => {
+                      setEditEmail(text);
+                      clearEditError('email');
+                    }}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                {editErrors.email ? (
+                  <Text style={styles.errorText}>{editErrors.email}</Text>
+                ) : null}
+              </View>
+
+              <View style={styles.fieldGroup}>
+                <Text style={styles.inputLabel}>Phone Number</Text>
+                <View style={[styles.inputContainer, styles.inputContainerDisabled]}>
+                  <MaterialCommunityIcons
+                    name="phone-outline"
+                    size={20}
+                    color={colors.icon.secondary}
+                    style={styles.inputIcon}
+                  />
+                  <Text style={styles.readOnlyInput}>
+                    {formatDisplayPhone(profile?.phone)}
+                  </Text>
+                </View>
+                <Text style={styles.fieldHint}>
+                  Phone number is linked to your login and cannot be changed here.
+                </Text>
+              </View>
+
+              {editErrors.submit ? (
+                <Text style={styles.errorText}>{editErrors.submit}</Text>
+              ) : null}
+
+              <Pressable
+                style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                onPress={handleSaveProfile}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color={colors.brand.onPrimary} />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save changes</Text>
+                )}
+              </Pressable>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -360,6 +528,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  editButtonDisabled: {
+    opacity: 0.5,
+  },
   scrollView: {
     flex: 1,
   },
@@ -401,6 +572,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 3,
     borderColor: colors.surface.background,
+  },
+  profileLoading: {
+    paddingVertical: spacing.md,
   },
   userName: {
     fontFamily: fonts.poppins.semibold,
@@ -508,5 +682,109 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.text.muted,
     marginTop: spacing.xs,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: colors.surface.background,
+  },
+  modalKeyboardView: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  modalTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 18,
+    color: colors.text.heading,
+  },
+  modalCloseButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editForm: {
+    padding: spacing.lg,
+    paddingBottom: spacing['2xl'],
+  },
+  fieldGroup: {
+    marginBottom: spacing.lg,
+  },
+  inputLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginBottom: spacing.xs,
+  },
+  optionalText: {
+    fontFamily: fonts.inter.regular,
+    color: colors.text.muted,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.input,
+    borderRadius: radius.input,
+    paddingHorizontal: spacing.md,
+    minHeight: 52,
+  },
+  inputContainerError: {
+    borderColor: colors.status.error.foreground,
+  },
+  inputContainerDisabled: {
+    backgroundColor: colors.surface.background,
+  },
+  inputIcon: {
+    marginRight: spacing.sm,
+  },
+  input: {
+    flex: 1,
+    fontFamily: fonts.inter.regular,
+    fontSize: 15,
+    color: colors.text.primary,
+    paddingVertical: spacing.sm,
+  },
+  readOnlyInput: {
+    flex: 1,
+    fontFamily: fonts.inter.regular,
+    fontSize: 15,
+    color: colors.text.muted,
+    paddingVertical: spacing.sm,
+  },
+  fieldHint: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.muted,
+    marginTop: spacing.xs,
+  },
+  errorText: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.status.error.foreground,
+    marginTop: spacing.xs,
+  },
+  saveButton: {
+    backgroundColor: colors.brand.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  saveButtonDisabled: {
+    opacity: 0.7,
+  },
+  saveButtonText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 16,
+    color: colors.brand.onPrimary,
   },
 });

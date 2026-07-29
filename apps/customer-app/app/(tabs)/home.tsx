@@ -48,6 +48,7 @@ import {
 } from '../../src/features/booking/components/EstimateOrderCard';
 import { getGarmentCatalog } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
+import { fetchUserProfile } from '../../src/features/profile/services/profile.service';
 import { getWallet } from '../../src/features/wallet/services/wallet.service';
 
 interface DayOption {
@@ -194,6 +195,7 @@ export default function HomeScreen() {
         getBookedDayOffsets(7),
         getWallet(),
         listAddresses(),
+        fetchUserProfile(),
       ]);
 
       setDayBooking(booking);

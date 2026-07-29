@@ -39,6 +39,73 @@ export type CouponResult = {
   used_count: number;
 };
 
+export type UserProfileData = {
+  fullName: string;
+  phone: string;
+  email: string | null;
+  apartment: string;
+  tower: string | null;
+  flatNumber: string;
+};
+
+let cachedProfile: UserProfileData | null = null;
+
+export function getCachedProfile(): UserProfileData | null {
+  return cachedProfile;
+}
+
+export function clearProfileCache(): void {
+  cachedProfile = null;
+}
+
+/**
+ * Loads the current user's profile and default address.
+ * Results are cached so profile screens can render immediately after home prefetch.
+ */
+export async function fetchUserProfile(): Promise<UserProfileData | null> {
+  const userId = await getCurrentUserId();
+
+  const { data: profileData } = await (supabase
+    .from('profiles') as ReturnType<typeof supabase.from>)
+    .select('full_name, phone, email')
+    .eq('id', userId)
+    .maybeSingle();
+
+  const { data: addressData } = await (supabase
+    .from('addresses') as ReturnType<typeof supabase.from>)
+    .select(`
+      tower,
+      flat_number,
+      community:community_id (name)
+    `)
+    .eq('customer_id', userId)
+    .eq('is_default', true)
+    .maybeSingle();
+
+  const communityName =
+    (addressData as { community: { name: string } | null } | null)?.community
+      ?.name || 'Not set';
+
+  const row = profileData as {
+    full_name: string | null;
+    phone: string | null;
+    email: string | null;
+  } | null;
+
+  const profile: UserProfileData = {
+    fullName: row?.full_name?.trim() || 'User',
+    phone: row?.phone?.trim() || '',
+    email: row?.email ?? null,
+    apartment: communityName,
+    tower: (addressData as { tower: string | null } | null)?.tower || null,
+    flatNumber:
+      (addressData as { flat_number: string } | null)?.flat_number || '',
+  };
+
+  cachedProfile = profile;
+  return profile;
+}
+
 /**
  * Gets the current user ID (real or mock).
  * Prefers getSession (local) so onboarding works right after setSession.
