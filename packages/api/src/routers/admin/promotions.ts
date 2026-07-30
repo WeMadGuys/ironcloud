@@ -178,9 +178,11 @@ export const promotionsRouter = router({
   createBanner: adminProcedure
     .input(z.object({
       title: z.string().min(1),
-      imageUrl: z.string().url().optional(),
-      link: z.string().optional(),
+      imageUrl: z.string().url().optional().nullable(),
+      link: z.string().optional().nullable(),
       position: z.string().optional(),
+      maxImpressions: z.number().int().min(1).optional(),
+      isActive: z.boolean().optional(),
       communityIds: z.array(z.string().uuid()).optional(),
       activeFrom: z.string().datetime().optional(),
       activeTo: z.string().datetime().optional(),
@@ -189,10 +191,12 @@ export const promotionsRouter = router({
       const { data, error } = await ctx.supabase
         .from('banners')
         .insert({
-          title: input.title,
-          image_url: input.imageUrl ?? null,
-          link: input.link ?? null,
-          position: input.position ?? 'home',
+          title: input.title.trim(),
+          image_url: input.imageUrl?.trim() || null,
+          link: input.link?.trim() || null,
+          position: input.position?.trim() || 'home',
+          max_impressions: input.maxImpressions ?? 1,
+          is_active: input.isActive ?? true,
           community_ids: input.communityIds ?? null,
           active_from: input.activeFrom ?? null,
           active_to: input.activeTo ?? null,
@@ -209,15 +213,21 @@ export const promotionsRouter = router({
     .input(z.object({
       id: z.string().uuid(),
       title: z.string().min(1),
+      imageUrl: z.string().url().optional().nullable(),
       position: z.string().optional(),
       link: z.string().optional().nullable(),
+      maxImpressions: z.number().int().min(1).optional(),
       isActive: z.boolean().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const updates = {
         title: input.title.trim(),
+        image_url: input.imageUrl?.trim() || null,
         position: input.position?.trim() || 'home',
         link: input.link?.trim() || null,
+        ...(input.maxImpressions !== undefined
+          ? { max_impressions: input.maxImpressions }
+          : {}),
         ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
       };
 

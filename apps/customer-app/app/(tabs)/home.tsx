@@ -26,6 +26,15 @@ import {
   typographyScale,
 } from '@ironcloud/ui';
 
+import { PromoBannerModal } from '../../src/features/banners/components/PromoBannerModal';
+import {
+  recordBannerImpression,
+  shouldShowBanner,
+} from '../../src/features/banners/services/banner-impressions.service';
+import {
+  pickBannerForCommunity,
+  type PromoBanner,
+} from '../../src/features/banners/services/banners.service';
 import {
   cancelBooking,
   createBooking,
@@ -168,6 +177,8 @@ export default function HomeScreen() {
       fullName: cached?.fullName ?? '',
     };
   });
+  const [promoBanner, setPromoBanner] = useState<PromoBanner | null>(null);
+  const bannerCheckedRef = useRef(false);
 
   useEffect(() => {
     if (!communityId) {
@@ -277,6 +288,57 @@ export default function HomeScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadHomeData, selectedDay]),
   );
+
+  // Promo banner: load after home is ready so it never blocks first paint.
+  useEffect(() => {
+    if (initialLoading || bannerCheckedRef.current) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const candidate = await pickBannerForCommunity(communityId);
+        if (cancelled) return;
+        if (!candidate) {
+          bannerCheckedRef.current = true;
+          return;
+        }
+
+        const ok = await shouldShowBanner(
+          candidate.id,
+          candidate.maxImpressions,
+        );
+        if (!ok || cancelled) {
+          bannerCheckedRef.current = true;
+          return;
+        }
+
+        // Prefetch image so the modal opens with less flicker.
+        await Image.prefetch(candidate.imageUrl).catch(() => undefined);
+        if (cancelled) return;
+
+        bannerCheckedRef.current = true;
+        setPromoBanner(candidate);
+      } catch (error) {
+        console.error('Error loading promo banner:', error);
+        bannerCheckedRef.current = true;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialLoading, communityId]);
+
+  const handleClosePromoBanner = useCallback(async () => {
+    const current = promoBanner;
+    setPromoBanner(null);
+    if (!current) return;
+    try {
+      await recordBannerImpression(current.id);
+    } catch (error) {
+      console.error('Error recording banner impression:', error);
+    }
+  }, [promoBanner]);
 
   const handleSelectDay = (index: number) => {
     if (index === selectedDay || contentLoading) return;
@@ -758,6 +820,10 @@ export default function HomeScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {promoBanner ? (
+        <PromoBannerModal banner={promoBanner} onClose={handleClosePromoBanner} />
+      ) : null}
 
       {/* Bottom CTA */}
       <View style={styles.bottomCta}>

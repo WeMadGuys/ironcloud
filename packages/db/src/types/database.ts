@@ -684,6 +684,7 @@ export interface Database {
           active_from: string | null;
           active_to: string | null;
           is_active: boolean;
+          max_impressions: number;
           created_at: string;
         };
         Insert: {
@@ -696,6 +697,7 @@ export interface Database {
           active_from?: string | null;
           active_to?: string | null;
           is_active?: boolean;
+          max_impressions?: number;
           created_at?: string;
         };
         Update: {
@@ -708,6 +710,7 @@ export interface Database {
           active_from?: string | null;
           active_to?: string | null;
           is_active?: boolean;
+          max_impressions?: number;
           created_at?: string;
         };
         Relationships: [];

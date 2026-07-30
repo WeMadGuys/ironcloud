@@ -24,6 +24,7 @@ import {
   fetchCoupons,
   fetchReferralAttributions,
   fetchReferralPrograms,
+  uploadBannerImage,
 } from '../services/promotions.service';
 
 import formStyles from '@/styles/form.module.css';
@@ -61,6 +62,8 @@ const emptyBanner = () => ({
   title: '',
   position: 'home',
   link: '',
+  imageUrl: '',
+  maxImpressions: '1',
   isActive: true,
 });
 
@@ -125,6 +128,7 @@ export const PromotionsPage = () => {
   const [campaignForm, setCampaignForm] = useState(emptyCampaign);
   const [bannerForm, setBannerForm] = useState(emptyBanner);
   const [referralForm, setReferralForm] = useState(emptyReferralProgram);
+  const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
 
   const createCoupon = trpc.promotions.createCoupon.useMutation();
   const updateCoupon = trpc.promotions.updateCoupon.useMutation();
@@ -181,6 +185,7 @@ export const PromotionsPage = () => {
     setCampaignForm(emptyCampaign());
     setBannerForm(emptyBanner());
     setReferralForm(emptyReferralProgram());
+    setUploadingBannerImage(false);
   };
 
   const openCreate = () => {
@@ -296,13 +301,33 @@ export const PromotionsPage = () => {
         toast('Title is required', 'error');
         return;
       }
+      const imageUrl = bannerForm.imageUrl.trim();
+      if (!imageUrl) {
+        toast('Upload a banner image (or paste an image URL)', 'error');
+        return;
+      }
+      try {
+        // Validate absolute URL for the customer Image component.
+        // eslint-disable-next-line no-new
+        new URL(imageUrl);
+      } catch {
+        toast('Image URL must be a valid absolute URL', 'error');
+        return;
+      }
+      const maxImpressions = Number.parseInt(bannerForm.maxImpressions, 10);
+      if (!Number.isFinite(maxImpressions) || maxImpressions < 1) {
+        toast('Max shows must be at least 1', 'error');
+        return;
+      }
       if (editingBanner) {
         updateBanner.mutate(
           {
             id: editingBanner.id,
             title: bannerForm.title.trim(),
+            imageUrl: imageUrl || null,
             position: bannerForm.position.trim() || 'home',
             link: bannerForm.link.trim() || null,
+            maxImpressions,
             isActive: bannerForm.isActive,
           },
           {
@@ -318,8 +343,11 @@ export const PromotionsPage = () => {
         createBanner.mutate(
           {
             title: bannerForm.title.trim(),
+            imageUrl: imageUrl || null,
             position: bannerForm.position.trim() || 'home',
-            link: bannerForm.link.trim() || undefined,
+            link: bannerForm.link.trim() || null,
+            maxImpressions,
+            isActive: bannerForm.isActive,
           },
           {
             onSuccess: () => {
@@ -468,7 +496,8 @@ export const PromotionsPage = () => {
     createBanner.isPending ||
     updateBanner.isPending ||
     createReferralProgram.isPending ||
-    updateReferralProgram.isPending;
+    updateReferralProgram.isPending ||
+    uploadingBannerImage;
   const deleting =
     deleteCoupon.isPending ||
     deleteCampaign.isPending ||
@@ -509,6 +538,20 @@ export const PromotionsPage = () => {
         ? f.cities.filter((x) => x !== city)
         : [...f.cities, city],
     }));
+  };
+
+  const handleBannerImageSelect = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadingBannerImage(true);
+    try {
+      const imageUrl = await uploadBannerImage(file);
+      setBannerForm((f) => ({ ...f, imageUrl }));
+      toast('Image uploaded', 'success');
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Upload failed', 'error');
+    } finally {
+      setUploadingBannerImage(false);
+    }
   };
 
   const openEditReferralProgram = (p: ReferralProgramRow) => {
@@ -672,7 +715,32 @@ export const PromotionsPage = () => {
           <Table
             columns={[
               { key: 'title', header: 'Title', render: (b) => b.title },
+              {
+                key: 'image',
+                header: 'Image',
+                render: (b) =>
+                  b.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={b.image_url}
+                      alt=""
+                      style={{
+                        width: 56,
+                        height: 36,
+                        objectFit: 'cover',
+                        borderRadius: 4,
+                      }}
+                    />
+                  ) : (
+                    '—'
+                  ),
+              },
               { key: 'position', header: 'Position', render: (b) => b.position },
+              {
+                key: 'max',
+                header: 'Max shows',
+                render: (b) => b.max_impressions ?? 1,
+              },
               {
                 key: 'active',
                 header: 'Active',
@@ -696,6 +764,8 @@ export const PromotionsPage = () => {
                           title: b.title ?? '',
                           position: b.position ?? 'home',
                           link: b.link ?? '',
+                          imageUrl: b.image_url ?? '',
+                          maxImpressions: String(b.max_impressions ?? 1),
                           isActive: Boolean(b.is_active),
                         });
                         setModalOpen(true);
@@ -1095,6 +1165,73 @@ export const PromotionsPage = () => {
               />
             </div>
             <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="banner-image-file">
+                Banner image *
+              </label>
+              {bannerForm.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={bannerForm.imageUrl}
+                  alt="Banner preview"
+                  style={{
+                    width: '100%',
+                    maxHeight: 180,
+                    objectFit: 'contain',
+                    borderRadius: 8,
+                    background: 'var(--ic-surface-section)',
+                    border: '1px solid var(--ic-border-default)',
+                  }}
+                />
+              ) : null}
+              <input
+                id="banner-image-file"
+                className={formStyles.input}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploadingBannerImage}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  void handleBannerImageSelect(file);
+                }}
+              />
+              <p className={formStyles.hint}>
+                {uploadingBannerImage
+                  ? 'Uploading…'
+                  : 'Upload JPEG, PNG, or WebP (max 5 MB). Customers see this on app open.'}
+              </p>
+              <label className={formStyles.label} htmlFor="banner-image">
+                Or paste image URL
+              </label>
+              <input
+                id="banner-image"
+                className={formStyles.input}
+                value={bannerForm.imageUrl}
+                onChange={(e) => setBannerForm((f) => ({ ...f, imageUrl: e.target.value }))}
+                placeholder="https://…"
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="banner-max">
+                Max shows per device *
+              </label>
+              <input
+                id="banner-max"
+                className={formStyles.input}
+                type="number"
+                min={1}
+                step={1}
+                value={bannerForm.maxImpressions}
+                onChange={(e) =>
+                  setBannerForm((f) => ({ ...f, maxImpressions: e.target.value }))
+                }
+              />
+              <p className={formStyles.hint}>
+                After a customer closes the banner this many times, it will not appear again on
+                that device.
+              </p>
+            </div>
+            <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="banner-position">
                 Position
               </label>
@@ -1103,31 +1240,31 @@ export const PromotionsPage = () => {
                 className={formStyles.input}
                 value={bannerForm.position}
                 onChange={(e) => setBannerForm((f) => ({ ...f, position: e.target.value }))}
+                placeholder="home"
               />
             </div>
             <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="banner-link">
-                Link
+                Link (optional)
               </label>
               <input
                 id="banner-link"
                 className={formStyles.input}
                 value={bannerForm.link}
                 onChange={(e) => setBannerForm((f) => ({ ...f, link: e.target.value }))}
+                placeholder="https://…"
               />
             </div>
-            {editingBanner && (
-              <label className={formStyles.checkLabel}>
-                <input
-                  type="checkbox"
-                  checked={bannerForm.isActive}
-                  onChange={(e) =>
-                    setBannerForm((f) => ({ ...f, isActive: e.target.checked }))
-                  }
-                />
-                Active
-              </label>
-            )}
+            <label className={formStyles.checkLabel}>
+              <input
+                type="checkbox"
+                checked={bannerForm.isActive}
+                onChange={(e) =>
+                  setBannerForm((f) => ({ ...f, isActive: e.target.checked }))
+                }
+              />
+              Active
+            </label>
           </div>
         )}
 
