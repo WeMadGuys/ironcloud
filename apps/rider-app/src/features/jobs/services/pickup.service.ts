@@ -1,6 +1,7 @@
 import { AUTH_PROVIDER, MOCK_RIDER_ID } from '../../../config/auth';
 import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
 
 export type GarmentCatalogItem = {
@@ -363,4 +364,5 @@ export async function confirmPickup(
   }
 
   await debitWalletAfterPickup(orderId);
+  clearJobsCache();
 }

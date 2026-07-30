@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -23,9 +23,8 @@ import {
 } from '@ironcloud/ui';
 
 import {
-  getCommunityJobs,
-  getDashboardSummary,
-  getRiderProfile,
+  getCachedRiderJobs,
+  getHomeBundle,
   type CommunityJobSummary,
 } from '../../src/features/jobs/services/jobs.service';
 
@@ -92,8 +91,10 @@ export default function HomeScreen() {
   const days = getNextDays(7);
   const [selectedDay, setSelectedDay] = useState(0);
   const [search, setSearch] = useState('');
-  const [initialLoading, setInitialLoading] = useState(true);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [initialLoading, setInitialLoading] = useState(() => !getCachedRiderJobs());
   const [contentLoading, setContentLoading] = useState(false);
+  const hasLoadedOnceRef = useRef(Boolean(getCachedRiderJobs()));
   const [profileName, setProfileName] = useState('Rider');
   const [summary, setSummary] = useState({
     pickupOrders: 0,
@@ -103,35 +104,52 @@ export default function HomeScreen() {
     pendingJobs: 0,
     jobDayOffsets: [] as number[],
   });
-  const [communities, setCommunities] = useState<CommunityJobSummary[]>([]);
+  const [allCommunities, setAllCommunities] = useState<CommunityJobSummary[]>([]);
 
-  const loadData = useCallback(async (mode: 'initial' | 'content' = 'content') => {
-    if (mode === 'initial') {
-      setInitialLoading(true);
-    } else {
-      setContentLoading(true);
-    }
-    try {
-      const [profile, dash, list] = await Promise.all([
-        getRiderProfile(),
-        getDashboardSummary(selectedDay),
-        getCommunityJobs(selectedDay, 'all', search),
-      ]);
-      if (profile) setProfileName(profile.fullName.split(' ')[0]);
-      setSummary(dash);
-      setCommunities(list);
-    } finally {
-      setInitialLoading(false);
-      setContentLoading(false);
-    }
-  }, [selectedDay, search]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const visibleCommunities = useMemo(() => {
+    const q = debouncedSearch.toLowerCase();
+    if (!q) return allCommunities;
+    return allCommunities.filter(
+      (c) =>
+        c.communityName.toLowerCase().includes(q) ||
+        c.towersLabel.toLowerCase().includes(q),
+    );
+  }, [allCommunities, debouncedSearch]);
+
+  const loadData = useCallback(
+    async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
+      const warm = Boolean(getCachedRiderJobs()) || hasLoadedOnceRef.current;
+      if (mode === 'initial' && !warm) {
+        setInitialLoading(true);
+      } else if (!warm) {
+        setContentLoading(true);
+      }
+
+      try {
+        const bundle = await getHomeBundle(dayOffset, '');
+        if (bundle.profile) setProfileName(bundle.profile.fullName.split(' ')[0]);
+        setSummary(bundle.summary);
+        setAllCommunities(bundle.communities);
+        hasLoadedOnceRef.current = true;
+      } finally {
+        setInitialLoading(false);
+        setContentLoading(false);
+      }
+    },
+    [],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      loadData(initialLoading ? 'initial' : 'content');
+      loadData(selectedDay, initialLoading ? 'initial' : 'content');
       // initialLoading intentionally omitted — only gates first load mode.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadData]),
+    }, [loadData, selectedDay]),
   );
 
   const handleSelectDay = (index: number) => {
@@ -234,15 +252,14 @@ export default function HomeScreen() {
                   placeholderTextColor={inputs.placeholder.color}
                   value={search}
                   onChangeText={setSearch}
-                  onSubmitEditing={() => loadData('content')}
                 />
               </View>
             </View>
 
-            {communities.length === 0 ? (
+            {visibleCommunities.length === 0 ? (
               <Text style={styles.empty}>No jobs for this day.</Text>
             ) : (
-              communities.map((item) => (
+              visibleCommunities.map((item) => (
                 <CommunityCard
                   key={item.communityId}
                   item={item}

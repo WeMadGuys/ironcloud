@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -39,13 +39,18 @@ export default function CommunityTowersScreen() {
   const [towers, setTowers] = useState<
     { tower: string; totalJobs: number; completedJobs: number }[]
   >([]);
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!communityId) return;
-    setLoading(true);
-    const data = await getTowerJobs(communityId, dayOffset);
-    setTowers(data);
-    setLoading(false);
+    if (!hasLoadedRef.current) setLoading(true);
+    try {
+      const data = await getTowerJobs(communityId, dayOffset);
+      setTowers(data);
+      hasLoadedRef.current = true;
+    } finally {
+      setLoading(false);
+    }
   }, [communityId, dayOffset]);
 
   useFocusEffect(

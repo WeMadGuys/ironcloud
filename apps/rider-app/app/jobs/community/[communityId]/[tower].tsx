@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -41,13 +41,22 @@ export default function FlatListScreen() {
   const dayOffset = Number(day ?? 0);
   const [loading, setLoading] = useState(true);
   const [flats, setFlats] = useState<FlatJob[]>([]);
+  const hasLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!communityId || !tower) return;
-    setLoading(true);
-    const data = await getFlatJobs(communityId, decodeURIComponent(tower), dayOffset);
-    setFlats(data);
-    setLoading(false);
+    if (!hasLoadedRef.current) setLoading(true);
+    try {
+      const data = await getFlatJobs(
+        communityId,
+        decodeURIComponent(tower),
+        dayOffset,
+      );
+      setFlats(data);
+      hasLoadedRef.current = true;
+    } finally {
+      setLoading(false);
+    }
   }, [communityId, tower, dayOffset]);
 
   useFocusEffect(

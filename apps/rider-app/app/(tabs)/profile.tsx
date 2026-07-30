@@ -7,7 +7,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
 import { signOut } from '../../src/features/auth/services/auth';
-import { getRiderProfile } from '../../src/features/jobs/services/jobs.service';
+import {
+  clearJobsCache,
+  clearRiderProfileCache,
+  getRiderProfile,
+} from '../../src/features/jobs/services/jobs.service';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -18,6 +22,8 @@ export default function ProfileScreen() {
   }, []);
 
   const handleLogout = async () => {
+    clearJobsCache();
+    clearRiderProfileCache();
     await signOut();
     router.replace('/(auth)/login');
   };

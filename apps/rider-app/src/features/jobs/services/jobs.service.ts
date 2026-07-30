@@ -1,3 +1,4 @@
+import { createTtlCache } from '../../../lib/ttl-cache';
 import { supabase } from '../../../lib/supabase';
 import {
   getJobDayOffset,
@@ -13,6 +14,7 @@ export type RiderJobRow = {
   id: string;
   job_type: 'pickup' | 'delivery';
   status: string;
+  scheduled_start: string | null;
   order: {
     id: string;
     order_number: string;
@@ -66,10 +68,14 @@ export type DashboardSummary = {
   jobDayOffsets: number[];
 };
 
+const JOBS_CACHE_TTL_MS = 20_000;
+const JOBS_LIST_LIMIT = 150;
+
 const JOB_SELECT = `
   id,
   job_type,
   status,
+  scheduled_start,
   order:order_id (
     id,
     order_number,
@@ -86,22 +92,41 @@ const JOB_SELECT = `
   )
 `;
 
-async function fetchRiderJobs(): Promise<RiderJobRow[]> {
-  const riderId = await getRiderId();
-  if (!riderId) return [];
+const jobsCache = createTtlCache<RiderJobRow[]>(JOBS_CACHE_TTL_MS);
+const profileCache = createTtlCache<{ fullName: string; phone: string }>(60_000);
 
-  const { data, error } = await (supabase
-    .from('rider_jobs') as ReturnType<typeof supabase.from>)
-    .select(JOB_SELECT)
-    .eq('rider_id', riderId)
-    .order('created_at', { ascending: false });
+export function getCachedRiderJobs(): RiderJobRow[] | null {
+  return jobsCache.get();
+}
 
-  if (error) {
-    console.error('[Jobs] fetch error:', error);
-    return [];
-  }
+export function clearJobsCache(): void {
+  jobsCache.clear();
+}
 
-  return (data as RiderJobRow[]) || [];
+export function clearRiderProfileCache(): void {
+  profileCache.clear();
+}
+
+async function fetchRiderJobs(options?: { force?: boolean }): Promise<RiderJobRow[]> {
+  return jobsCache.getOrFetch(async () => {
+    const riderId = await getRiderId();
+    if (!riderId) return [];
+
+    // Bound payload: recent jobs are enough for the 7-day strip at ~100 riders.
+    const { data, error } = await (supabase
+      .from('rider_jobs') as ReturnType<typeof supabase.from>)
+      .select(JOB_SELECT)
+      .eq('rider_id', riderId)
+      .order('created_at', { ascending: false })
+      .limit(JOBS_LIST_LIMIT);
+
+    if (error) {
+      console.error('[Jobs] fetch error:', error);
+      return [];
+    }
+
+    return (data as RiderJobRow[]) || [];
+  }, options?.force === true);
 }
 
 function jobMatchesDay(job: RiderJobRow, dayOffset: number): boolean {
@@ -150,61 +175,10 @@ function matchesFilter(job: RiderJobRow, filter: JobFilter): boolean {
   return true;
 }
 
-export async function getJobsForDay(
-  dayOffset: number,
-  filter: JobFilter = 'all',
-): Promise<FlatJob[]> {
-  const jobs = await fetchRiderJobs();
-  return jobs
-    .filter((job) => jobMatchesDay(job, dayOffset) && matchesFilter(job, filter))
-    .map(mapToFlatJob)
-    .filter((job): job is FlatJob => job !== null);
-}
-
-export async function getDashboardSummary(dayOffset: number): Promise<DashboardSummary> {
-  const jobs = await fetchRiderJobs();
-  const dayJobs = jobs.filter((job) => jobMatchesDay(job, dayOffset));
-  const flats = dayJobs.map(mapToFlatJob).filter((j): j is FlatJob => j !== null);
-
-  const pickupOrders = flats.filter((j) => j.jobType === 'pickup').length;
-  const deliveryOrders = flats.filter((j) => j.jobType === 'delivery').length;
-  const totalGarments = flats.reduce((sum, j) => sum + j.garmentCount, 0);
-  const communityIds = new Set(flats.map((j) => j.communityId));
-  const pendingJobs = flats.filter((j) => j.jobStatus !== 'completed').length;
-
-  const communities = await getCommunityJobs(dayOffset);
-  const nextCommunity =
-    communities.find((c) => c.completedJobs < c.totalJobs) || communities[0] || null;
-
-  const jobDayOffsets = new Set<number>();
-  for (const job of jobs) {
-    const order = job.order;
-    if (!order) continue;
-    const offset = getJobDayOffset(
-      job.job_type,
-      order.pickup_slot?.window_start ?? null,
-      order.delivery_slot?.window_start ?? null,
-    );
-    if (offset != null) jobDayOffsets.add(offset);
-  }
-
-  return {
-    pickupOrders,
-    deliveryOrders,
-    totalGarments,
-    communities: communityIds.size,
-    pendingJobs,
-    nextCommunity,
-    jobDayOffsets: [...jobDayOffsets].sort((a, b) => a - b),
-  };
-}
-
-export async function getCommunityJobs(
-  dayOffset: number,
-  filter: JobFilter = 'all',
+function buildCommunitySummaries(
+  flats: FlatJob[],
   search = '',
-): Promise<CommunityJobSummary[]> {
-  const flats = await getJobsForDay(dayOffset, filter);
+): CommunityJobSummary[] {
   const query = search.trim().toLowerCase();
   const filtered = query
     ? flats.filter(
@@ -244,22 +218,144 @@ export async function getCommunityJobs(
   return [...map.values()].map(({ towers, ...rest }) => ({
     ...rest,
     towersLabel:
-      towers.size > 1 ? `Towers ${[...towers].sort().join(', ')}` : `Tower ${[...towers][0]}`,
+      towers.size > 1
+        ? `Towers ${[...towers].sort().join(', ')}`
+        : `Tower ${[...towers][0]}`,
     status:
       rest.completedJobs === 0
         ? 'active'
         : rest.completedJobs < rest.totalJobs
-        ? 'in_progress'
-        : 'upcoming',
+          ? 'in_progress'
+          : 'upcoming',
   }));
+}
+
+export async function getJobsForDay(
+  dayOffset: number,
+  filter: JobFilter = 'all',
+  options?: { force?: boolean },
+): Promise<FlatJob[]> {
+  const jobs = await fetchRiderJobs(options);
+  return jobs
+    .filter((job) => jobMatchesDay(job, dayOffset) && matchesFilter(job, filter))
+    .map(mapToFlatJob)
+    .filter((job): job is FlatJob => job !== null);
+}
+
+export async function getDashboardSummary(
+  dayOffset: number,
+  options?: { force?: boolean },
+): Promise<DashboardSummary> {
+  const jobs = await fetchRiderJobs(options);
+  const dayJobs = jobs.filter((job) => jobMatchesDay(job, dayOffset));
+  const flats = dayJobs.map(mapToFlatJob).filter((j): j is FlatJob => j !== null);
+
+  const pickupOrders = flats.filter((j) => j.jobType === 'pickup').length;
+  const deliveryOrders = flats.filter((j) => j.jobType === 'delivery').length;
+  const totalGarments = flats.reduce((sum, j) => sum + j.garmentCount, 0);
+  const communityIds = new Set(flats.map((j) => j.communityId));
+  const pendingJobs = flats.filter((j) => j.jobStatus !== 'completed').length;
+
+  // Derive from the same in-memory day set — do not re-fetch.
+  const communities = buildCommunitySummaries(flats);
+  const nextCommunity =
+    communities.find((c) => c.completedJobs < c.totalJobs) || communities[0] || null;
+
+  const jobDayOffsets = new Set<number>();
+  for (const job of jobs) {
+    const order = job.order;
+    if (!order) continue;
+    const offset = getJobDayOffset(
+      job.job_type,
+      order.pickup_slot?.window_start ?? null,
+      order.delivery_slot?.window_start ?? null,
+    );
+    if (offset != null) jobDayOffsets.add(offset);
+  }
+
+  return {
+    pickupOrders,
+    deliveryOrders,
+    totalGarments,
+    communities: communityIds.size,
+    pendingJobs,
+    nextCommunity,
+    jobDayOffsets: [...jobDayOffsets].sort((a, b) => a - b),
+  };
+}
+
+export async function getCommunityJobs(
+  dayOffset: number,
+  filter: JobFilter = 'all',
+  search = '',
+  options?: { force?: boolean },
+): Promise<CommunityJobSummary[]> {
+  const flats = await getJobsForDay(dayOffset, filter, options);
+  return buildCommunitySummaries(flats, search);
+}
+
+/** One network round-trip for Home: profile + summary + communities. */
+export async function getHomeBundle(
+  dayOffset: number,
+  search = '',
+  options?: { force?: boolean },
+): Promise<{
+  profile: { fullName: string; phone: string } | null;
+  summary: DashboardSummary;
+  communities: CommunityJobSummary[];
+}> {
+  const [profile, jobs] = await Promise.all([
+    getRiderProfile(options),
+    fetchRiderJobs(options),
+  ]);
+
+  const dayJobs = jobs.filter((job) => jobMatchesDay(job, dayOffset));
+  const flats = dayJobs.map(mapToFlatJob).filter((j): j is FlatJob => j !== null);
+
+  const pickupOrders = flats.filter((j) => j.jobType === 'pickup').length;
+  const deliveryOrders = flats.filter((j) => j.jobType === 'delivery').length;
+  const totalGarments = flats.reduce((sum, j) => sum + j.garmentCount, 0);
+  const communityIds = new Set(flats.map((j) => j.communityId));
+  const pendingJobs = flats.filter((j) => j.jobStatus !== 'completed').length;
+
+  const communities = buildCommunitySummaries(flats, search);
+  const nextCommunity =
+    communities.find((c) => c.completedJobs < c.totalJobs) || communities[0] || null;
+
+  const jobDayOffsets = new Set<number>();
+  for (const job of jobs) {
+    const order = job.order;
+    if (!order) continue;
+    const offset = getJobDayOffset(
+      job.job_type,
+      order.pickup_slot?.window_start ?? null,
+      order.delivery_slot?.window_start ?? null,
+    );
+    if (offset != null) jobDayOffsets.add(offset);
+  }
+
+  return {
+    profile,
+    summary: {
+      pickupOrders,
+      deliveryOrders,
+      totalGarments,
+      communities: communityIds.size,
+      pendingJobs,
+      nextCommunity,
+      jobDayOffsets: [...jobDayOffsets].sort((a, b) => a - b),
+    },
+    communities,
+  };
 }
 
 export async function getTowerJobs(
   communityId: string,
   dayOffset: number,
   filter: JobFilter = 'all',
+  options?: { force?: boolean },
 ): Promise<{ tower: string; totalJobs: number; completedJobs: number }[]> {
-  const flats = (await getJobsForDay(dayOffset, filter)).filter(
+  const flats = (await getJobsForDay(dayOffset, filter, options)).filter(
     (f) => f.communityId === communityId,
   );
   const map = new Map<string, { totalJobs: number; completedJobs: number }>();
@@ -281,32 +377,37 @@ export async function getFlatJobs(
   tower: string,
   dayOffset: number,
   filter: JobFilter = 'all',
+  options?: { force?: boolean },
 ): Promise<FlatJob[]> {
-  return (await getJobsForDay(dayOffset, filter))
+  return (await getJobsForDay(dayOffset, filter, options))
     .filter((f) => f.communityId === communityId && f.tower === tower)
     .sort((a, b) => a.flatNumber.localeCompare(b.flatNumber, undefined, { numeric: true }));
 }
 
-export async function getRiderProfile(): Promise<{
+export async function getRiderProfile(options?: {
+  force?: boolean;
+}): Promise<{
   fullName: string;
   phone: string;
 } | null> {
   const riderId = await getRiderId();
   if (!riderId) return null;
 
-  const { data } = await (supabase
-    .from('profiles') as ReturnType<typeof supabase.from>)
-    .select('full_name, phone')
-    .eq('id', riderId)
-    .maybeSingle();
+  return profileCache.getOrFetch(async () => {
+    const { data } = await (supabase
+      .from('profiles') as ReturnType<typeof supabase.from>)
+      .select('full_name, phone')
+      .eq('id', riderId)
+      .maybeSingle();
 
-  if (!data) {
-    return { fullName: 'Rider', phone: '9876543210' };
-  }
+    if (!data) {
+      return { fullName: 'Rider', phone: '9876543210' };
+    }
 
-  const row = data as { full_name: string | null; phone: string | null };
-  return {
-    fullName: row.full_name || 'Rider',
-    phone: row.phone || '',
-  };
+    const row = data as { full_name: string | null; phone: string | null };
+    return {
+      fullName: row.full_name || 'Rider',
+      phone: row.phone || '',
+    };
+  }, options?.force === true);
 }

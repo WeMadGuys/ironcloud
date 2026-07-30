@@ -3,6 +3,11 @@ import { supabase } from '../../../lib/supabase';
 
 export async function getRiderId(): Promise<string | null> {
   if (AUTH_PROVIDER === 'mock') return MOCK_RIDER_ID;
+
+  // Prefer local session — getUser() hits the network on every call.
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.user?.id) return sessionData.session.user.id;
+
   const {
     data: { user },
   } = await supabase.auth.getUser();

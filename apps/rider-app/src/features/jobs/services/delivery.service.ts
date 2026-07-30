@@ -1,5 +1,6 @@
 import { AUTH_PROVIDER, MOCK_RIDER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
+import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
 
 export type DeliveryItem = {
@@ -57,4 +58,6 @@ export async function confirmDelivery(orderId: string): Promise<void> {
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('order_id', orderId)
     .eq('job_type', 'delivery');
+
+  clearJobsCache();
 }
