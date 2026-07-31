@@ -84,7 +84,7 @@ function targetLabel(row: PricingRow): string {
 }
 
 export const PricingRulesPanel = () => {
-  const toast = useToast();
+  const { toast } = useToast();
   const [pricing, setPricing] = useState<PricingRow[]>([]);
   const [services, setServices] = useState<ServiceOption[]>([]);
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
