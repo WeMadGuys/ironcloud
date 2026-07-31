@@ -296,14 +296,6 @@ export default function ProfileScreen() {
       showArrow: true,
     },
     {
-      id: 'addresses',
-      icon: 'map-marker-outline',
-      label: 'My Address',
-      subtitle: 'View or edit your address',
-      onPress: () => router.push('/profile/addresses'),
-      showArrow: true,
-    },
-    {
       id: 'notifications',
       icon: 'bell-outline',
       label: 'Notifications',
@@ -331,7 +323,7 @@ export default function ProfileScreen() {
       id: 'about',
       icon: 'information-outline',
       label: 'About',
-      subtitle: 'App version 1.0.0',
+      subtitle: 'Doorstep ironing for your apartment',
       onPress: () => {},
       showArrow: true,
     },
@@ -506,6 +498,11 @@ export default function ProfileScreen() {
                 >
                   {item.label}
                 </Text>
+                {item.id === 'about' && item.subtitle ? (
+                  <Text style={styles.menuSubtitle} numberOfLines={1}>
+                    {item.subtitle}
+                  </Text>
+                ) : null}
               </View>
               {item.showArrow && (
                 <MaterialCommunityIcons
@@ -836,6 +833,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.semibold,
     fontSize: 15,
     color: colors.text.primary,
+  },
+  menuSubtitle: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.muted,
+    marginTop: 2,
   },
   appInfoText: {
     fontFamily: fonts.inter.regular,

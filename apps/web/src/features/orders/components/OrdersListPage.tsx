@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { Badge, Button, EmptyState, Loader, Pagination, SearchInput, Table } from '@/components';
 import type { OrderStatus, PaymentMethod } from '@ironcloud/db';
-import { useDateFilter } from '@/contexts/DateFilterContext';
 import { fetchCommunityOptions, type CommunityOption } from '@/features/communities/services/communities.service';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { trpc } from '@/lib/trpc';
@@ -14,10 +13,15 @@ import {
   formatOrderStatus,
   formatRelativeTime,
   getOrderStatusBadge,
-  toISODate,
 } from '@/utils/format';
 
 import { fetchOrders } from '../services/orders.service';
+import {
+  dateRangeKey,
+  ORDER_DATE_PRESET_OPTIONS,
+  resolveOrderDateRange,
+  type OrderDatePreset,
+} from '../utils/datePresets';
 
 import pageStyles from '@/styles/pages.module.css';
 import listStyles from './OrdersListPage.module.css';
@@ -60,14 +64,15 @@ const formatPickupSlot = (order: {
 type OrderRow = Awaited<ReturnType<typeof fetchOrders>>['data'][number];
 
 export const OrdersListPage = () => {
-  const { selectedDate } = useDateFilter();
-  const selectedDateKey = toISODate(selectedDate);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [status, setStatus] = useState<OrderStatus | ''>('');
   const [communityId, setCommunityId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
+  const [datePreset, setDatePreset] = useState<OrderDatePreset>('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<OrderStatus | ''>('');
@@ -76,7 +81,15 @@ export const OrdersListPage = () => {
 
   const bulkUpdateMutation = trpc.orders.bulkUpdateStatus.useMutation();
 
-  const hasActiveFilters = Boolean(search || status || communityId || paymentMethod);
+  const dateKey = dateRangeKey(datePreset, customFrom, customTo);
+  const dateRange = useMemo(
+    () => resolveOrderDateRange(datePreset, customFrom, customTo),
+    [datePreset, customFrom, customTo],
+  );
+
+  const hasActiveFilters = Boolean(
+    search || status || communityId || paymentMethod || datePreset !== 'today',
+  );
 
   useEffect(() => {
     void fetchCommunityOptions().then(setCommunities);
@@ -85,7 +98,7 @@ export const OrdersListPage = () => {
   useEffect(() => {
     setPage(1);
     setSelectedIds(new Set());
-  }, [selectedDateKey, debouncedSearch, status, communityId, paymentMethod]);
+  }, [dateKey, debouncedSearch, status, communityId, paymentMethod]);
 
   const { data: result, isLoading, isFetching } = useQuery({
     queryKey: [
@@ -96,7 +109,7 @@ export const OrdersListPage = () => {
       status,
       communityId,
       paymentMethod,
-      selectedDateKey,
+      dateKey,
       reloadKey,
     ],
     queryFn: () =>
@@ -107,7 +120,8 @@ export const OrdersListPage = () => {
         status: status || undefined,
         communityId: communityId || undefined,
         paymentMethod: paymentMethod || undefined,
-        date: selectedDate,
+        dateFrom: dateRange.from,
+        dateTo: dateRange.to,
       }),
     staleTime: 30_000,
     placeholderData: keepPreviousData,
@@ -147,6 +161,9 @@ export const OrdersListPage = () => {
     setStatus('');
     setCommunityId('');
     setPaymentMethod('');
+    setDatePreset('today');
+    setCustomFrom('');
+    setCustomTo('');
     setPage(1);
   };
 
@@ -178,6 +195,45 @@ export const OrdersListPage = () => {
             setPage(1);
           }}
         />
+        <select
+          className={pageStyles.select}
+          value={datePreset}
+          onChange={(e) => {
+            setDatePreset(e.target.value as OrderDatePreset);
+            setPage(1);
+          }}
+          aria-label="Filter by pickup date"
+        >
+          {ORDER_DATE_PRESET_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {datePreset === 'custom' ? (
+          <>
+            <input
+              type="date"
+              className={pageStyles.select}
+              value={customFrom}
+              onChange={(e) => {
+                setCustomFrom(e.target.value);
+                setPage(1);
+              }}
+              aria-label="Custom from date"
+            />
+            <input
+              type="date"
+              className={pageStyles.select}
+              value={customTo}
+              onChange={(e) => {
+                setCustomTo(e.target.value);
+                setPage(1);
+              }}
+              aria-label="Custom to date"
+            />
+          </>
+        ) : null}
         <select
           className={pageStyles.select}
           value={status}
@@ -328,7 +384,11 @@ export const OrdersListPage = () => {
                   key: 'payment',
                   header: 'Payment',
                   render: (o) =>
-                    o.payment_method === 'razorpay_direct' ? 'Razorpay' : o.payment_method === 'wallet' ? 'Wallet' : o.payment_method,
+                    o.payment_method === 'razorpay_direct'
+                      ? 'Razorpay'
+                      : o.payment_method === 'wallet'
+                        ? 'Wallet'
+                        : o.payment_method,
                 },
                 {
                   key: 'amount',
@@ -351,7 +411,7 @@ export const OrdersListPage = () => {
             />
             <Pagination
               page={page}
-              totalPages={Math.ceil(total / pageSize)}
+              totalPages={Math.max(1, Math.ceil(total / pageSize))}
               total={total}
               pageSize={pageSize}
               onPageChange={setPage}

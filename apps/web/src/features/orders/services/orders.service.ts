@@ -9,8 +9,13 @@ export type OrderListParams = {
   status?: OrderStatus;
   communityId?: string;
   paymentMethod?: PaymentMethod;
-  /** Filter by pickup slot day (not booking created_at). */
+  /**
+   * Filter by pickup slot window (not booking created_at).
+   * Prefer dateFrom/dateTo for ranges; `date` is a single-day shorthand.
+   */
   date?: Date;
+  dateFrom?: Date | null;
+  dateTo?: Date | null;
   sortKey?: string;
   sortAsc?: boolean;
 };
@@ -25,6 +30,8 @@ export const fetchOrders = async (params: OrderListParams) => {
     communityId,
     paymentMethod,
     date,
+    dateFrom,
+    dateTo,
     sortKey = 'created_at',
     sortAsc = false,
   } = params;
@@ -46,13 +53,15 @@ export const fetchOrders = async (params: OrderListParams) => {
   if (paymentMethod) query = query.eq('payment_method', paymentMethod);
   if (search) query = query.ilike('order_number', `%${search}%`);
 
-  // Filter by pickup day in one round-trip (avoids slots → orders waterfall).
-  if (date) {
-    const dayStart = startOfDay(date).toISOString();
-    const dayEnd = endOfDay(date).toISOString();
-    query = query
-      .gte('pickup_slot.window_start', dayStart)
-      .lte('pickup_slot.window_start', dayEnd);
+  const rangeStart = dateFrom ?? (date ? startOfDay(date) : null);
+  const rangeEnd = dateTo ?? (date ? endOfDay(date) : null);
+
+  // Filter by pickup day/range in one round-trip (avoids slots → orders waterfall).
+  if (rangeStart) {
+    query = query.gte('pickup_slot.window_start', rangeStart.toISOString());
+  }
+  if (rangeEnd) {
+    query = query.lte('pickup_slot.window_start', rangeEnd.toISOString());
   }
 
   const { data, count, error } = await query
