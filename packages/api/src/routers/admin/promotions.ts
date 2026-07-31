@@ -183,7 +183,9 @@ export const promotionsRouter = router({
       position: z.string().optional(),
       maxImpressions: z.number().int().min(1).optional(),
       isActive: z.boolean().optional(),
-      communityIds: z.array(z.string().uuid()).optional(),
+      communityIds: z.array(z.string().uuid()).optional().nullable(),
+      cities: z.array(z.string().min(1)).optional().nullable(),
+      userIds: z.array(z.string().uuid()).optional().nullable(),
       activeFrom: z.string().datetime().optional(),
       activeTo: z.string().datetime().optional(),
     }))
@@ -197,7 +199,14 @@ export const promotionsRouter = router({
           position: input.position?.trim() || 'home',
           max_impressions: input.maxImpressions ?? 1,
           is_active: input.isActive ?? true,
-          community_ids: input.communityIds ?? null,
+          community_ids:
+            input.communityIds && input.communityIds.length > 0
+              ? input.communityIds
+              : null,
+          cities:
+            input.cities && input.cities.length > 0 ? input.cities : null,
+          user_ids:
+            input.userIds && input.userIds.length > 0 ? input.userIds : null,
           active_from: input.activeFrom ?? null,
           active_to: input.activeTo ?? null,
         })
@@ -218,6 +227,9 @@ export const promotionsRouter = router({
       link: z.string().optional().nullable(),
       maxImpressions: z.number().int().min(1).optional(),
       isActive: z.boolean().optional(),
+      communityIds: z.array(z.string().uuid()).nullable().optional(),
+      cities: z.array(z.string().min(1)).nullable().optional(),
+      userIds: z.array(z.string().uuid()).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const updates = {
@@ -229,6 +241,28 @@ export const promotionsRouter = router({
           ? { max_impressions: input.maxImpressions }
           : {}),
         ...(input.isActive !== undefined ? { is_active: input.isActive } : {}),
+        ...(input.communityIds !== undefined
+          ? {
+              community_ids:
+                input.communityIds && input.communityIds.length > 0
+                  ? input.communityIds
+                  : null,
+            }
+          : {}),
+        ...(input.cities !== undefined
+          ? {
+              cities:
+                input.cities && input.cities.length > 0 ? input.cities : null,
+            }
+          : {}),
+        ...(input.userIds !== undefined
+          ? {
+              user_ids:
+                input.userIds && input.userIds.length > 0
+                  ? input.userIds
+                  : null,
+            }
+          : {}),
       };
 
       const { error } = await ctx.supabase.from('banners').update(updates).eq('id', input.id);

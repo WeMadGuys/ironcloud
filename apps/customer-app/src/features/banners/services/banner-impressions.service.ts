@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 const STATE_KEY = 'ironcloud_banner_impressions';
 
@@ -10,11 +11,32 @@ type BannerImpressionState = Record<string, BannerImpressionEntry>;
 
 let memoryState: BannerImpressionState | null = null;
 
+function readWebStorage(): string | null {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    return localStorage.getItem(STATE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeWebStorage(value: string): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem(STATE_KEY, value);
+  } catch {
+    // Ignore quota / private mode errors
+  }
+}
+
 async function readState(): Promise<BannerImpressionState> {
   if (memoryState) return memoryState;
 
   try {
-    const raw = await SecureStore.getItemAsync(STATE_KEY);
+    const raw =
+      Platform.OS === 'web'
+        ? readWebStorage()
+        : await SecureStore.getItemAsync(STATE_KEY);
     if (!raw) {
       memoryState = {};
       return memoryState;
@@ -30,7 +52,12 @@ async function readState(): Promise<BannerImpressionState> {
 
 async function writeState(state: BannerImpressionState): Promise<void> {
   memoryState = state;
-  await SecureStore.setItemAsync(STATE_KEY, JSON.stringify(state));
+  const serialized = JSON.stringify(state);
+  if (Platform.OS === 'web') {
+    writeWebStorage(serialized);
+    return;
+  }
+  await SecureStore.setItemAsync(STATE_KEY, serialized);
 }
 
 export async function getBannerShowCount(bannerId: string): Promise<number> {

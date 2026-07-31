@@ -13,9 +13,21 @@ type ModalProps = {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Wider dialog for grids / pickers */
+  size?: 'default' | 'wide';
+  /** Raise above another open modal (e.g. nested picker) */
+  stacked?: boolean;
 };
 
-export const Modal = ({ open, onClose, title, children, footer }: ModalProps) => {
+export const Modal = ({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  size = 'default',
+  stacked = false,
+}: ModalProps) => {
   useEffect(() => {
     if (!open) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -28,8 +40,17 @@ export const Modal = ({ open, onClose, title, children, footer }: ModalProps) =>
   if (!open) return null;
 
   return (
-    <div className={styles.overlay} onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`${styles.overlay} ${stacked ? styles.overlayStacked : ''}`}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      <div
+        className={`${styles.modal} ${size === 'wide' ? styles.modalWide : ''}`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={styles.header}>
           <h2 id="modal-title" className={styles.title}>{title}</h2>
           <button type="button" className={styles.close} onClick={onClose} aria-label="Close">

@@ -680,6 +680,8 @@ export interface Database {
           image_url: string | null;
           link: string | null;
           community_ids: string[] | null;
+          cities: string[] | null;
+          user_ids: string[] | null;
           position: string;
           active_from: string | null;
           active_to: string | null;
@@ -693,6 +695,8 @@ export interface Database {
           image_url?: string | null;
           link?: string | null;
           community_ids?: string[] | null;
+          cities?: string[] | null;
+          user_ids?: string[] | null;
           position?: string;
           active_from?: string | null;
           active_to?: string | null;
@@ -706,6 +710,8 @@ export interface Database {
           image_url?: string | null;
           link?: string | null;
           community_ids?: string[] | null;
+          cities?: string[] | null;
+          user_ids?: string[] | null;
           position?: string;
           active_from?: string | null;
           active_to?: string | null;

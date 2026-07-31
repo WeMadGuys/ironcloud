@@ -9,9 +9,11 @@ import {
   ConfirmationDialog,
   CreateEntityModal,
   Loader,
+  Modal,
   Table,
 } from '@/components';
 import { useToast } from '@/components/Toast/ToastProvider';
+import { CustomersGrid } from '@/features/customers/components/CustomersGrid';
 import {
   fetchCommunityOptions,
   type CommunityOption,
@@ -65,6 +67,9 @@ const emptyBanner = () => ({
   imageUrl: '',
   maxImpressions: '1',
   isActive: true,
+  communityIds: [] as string[],
+  cities: [] as string[],
+  userIds: [] as string[],
 });
 
 const emptyReferralProgram = () => ({
@@ -129,6 +134,8 @@ export const PromotionsPage = () => {
   const [bannerForm, setBannerForm] = useState(emptyBanner);
   const [referralForm, setReferralForm] = useState(emptyReferralProgram);
   const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
+  const [userPickerOpen, setUserPickerOpen] = useState(false);
+  const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
 
   const createCoupon = trpc.promotions.createCoupon.useMutation();
   const updateCoupon = trpc.promotions.updateCoupon.useMutation();
@@ -329,6 +336,11 @@ export const PromotionsPage = () => {
             link: bannerForm.link.trim() || null,
             maxImpressions,
             isActive: bannerForm.isActive,
+            communityIds: bannerForm.communityIds.length
+              ? bannerForm.communityIds
+              : null,
+            cities: bannerForm.cities.length ? bannerForm.cities : null,
+            userIds: bannerForm.userIds.length ? bannerForm.userIds : null,
           },
           {
             onSuccess: () => {
@@ -348,6 +360,11 @@ export const PromotionsPage = () => {
             link: bannerForm.link.trim() || null,
             maxImpressions,
             isActive: bannerForm.isActive,
+            communityIds: bannerForm.communityIds.length
+              ? bannerForm.communityIds
+              : null,
+            cities: bannerForm.cities.length ? bannerForm.cities : null,
+            userIds: bannerForm.userIds.length ? bannerForm.userIds : null,
           },
           {
             onSuccess: () => {
@@ -514,6 +531,15 @@ export const PromotionsPage = () => {
       }));
       return;
     }
+    if (tab === 'banners') {
+      setBannerForm((f) => ({
+        ...f,
+        communityIds: f.communityIds.includes(id)
+          ? f.communityIds.filter((x) => x !== id)
+          : [...f.communityIds, id],
+      }));
+      return;
+    }
     setCouponForm((f) => ({
       ...f,
       communityIds: f.communityIds.includes(id)
@@ -525,6 +551,15 @@ export const PromotionsPage = () => {
   const toggleCity = (city: string) => {
     if (tab === 'referrals') {
       setReferralForm((f) => ({
+        ...f,
+        cities: f.cities.includes(city)
+          ? f.cities.filter((x) => x !== city)
+          : [...f.cities, city],
+      }));
+      return;
+    }
+    if (tab === 'banners') {
+      setBannerForm((f) => ({
         ...f,
         cities: f.cities.includes(city)
           ? f.cities.filter((x) => x !== city)
@@ -737,6 +772,30 @@ export const PromotionsPage = () => {
               },
               { key: 'position', header: 'Position', render: (b) => b.position },
               {
+                key: 'audience',
+                header: 'Audience',
+                render: (b) => {
+                  const users = (b.user_ids as string[] | null)?.length ?? 0;
+                  const communitiesCount =
+                    (b.community_ids as string[] | null)?.length ?? 0;
+                  const citiesCount = (b.cities as string[] | null)?.length ?? 0;
+                  if (!users && !communitiesCount && !citiesCount) {
+                    return 'Everyone';
+                  }
+                  const bits: string[] = [];
+                  if (users) bits.push(`${users} user${users === 1 ? '' : 's'}`);
+                  if (communitiesCount) {
+                    bits.push(
+                      `${communitiesCount} community${communitiesCount === 1 ? '' : 'ies'}`,
+                    );
+                  }
+                  if (citiesCount) {
+                    bits.push(`${citiesCount} cit${citiesCount === 1 ? 'y' : 'ies'}`);
+                  }
+                  return bits.join(' · ');
+                },
+              },
+              {
                 key: 'max',
                 header: 'Max shows',
                 render: (b) => b.max_impressions ?? 1,
@@ -767,6 +826,9 @@ export const PromotionsPage = () => {
                           imageUrl: b.image_url ?? '',
                           maxImpressions: String(b.max_impressions ?? 1),
                           isActive: Boolean(b.is_active),
+                          communityIds: (b.community_ids as string[] | null) ?? [],
+                          cities: (b.cities as string[] | null) ?? [],
+                          userIds: (b.user_ids as string[] | null) ?? [],
                         });
                         setModalOpen(true);
                       }}
@@ -1265,6 +1327,75 @@ export const PromotionsPage = () => {
               />
               Active
             </label>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Audience</span>
+              <p className={formStyles.hint}>
+                Leave all empty to show to everyone. If specific users are selected, only
+                those users see the banner. Otherwise community and city filters both apply
+                when set.
+              </p>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Communities (optional)</span>
+              <div className={formStyles.checkGrid}>
+                {communities.map((c) => (
+                  <label key={c.id} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={bannerForm.communityIds.includes(c.id)}
+                      onChange={() => toggleCommunity(c.id)}
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Cities (optional)</span>
+              <div className={formStyles.checkGrid}>
+                {cityOptions.map((city) => (
+                  <label key={city} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={bannerForm.cities.includes(city)}
+                      onChange={() => toggleCity(city)}
+                    />
+                    {city}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Specific customers (optional)</span>
+              <p className={formStyles.hint}>
+                {bannerForm.userIds.length
+                  ? `${bannerForm.userIds.length} customer${bannerForm.userIds.length === 1 ? '' : 's'} selected`
+                  : 'No customers selected'}
+              </p>
+              <div className={formStyles.rowActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPickerSelectedIds(new Set(bannerForm.userIds));
+                    setUserPickerOpen(true);
+                  }}
+                >
+                  Select customers
+                </Button>
+                {bannerForm.userIds.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setBannerForm((f) => ({ ...f, userIds: [] }))}
+                  >
+                    Clear users
+                  </Button>
+                ) : null}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1463,6 +1594,38 @@ export const PromotionsPage = () => {
         confirmLabel={deleting ? 'Deleting...' : 'Delete'}
         danger
       />
+
+      <Modal
+        open={userPickerOpen}
+        onClose={() => setUserPickerOpen(false)}
+        title="Select customers"
+        size="wide"
+        stacked
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setUserPickerOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setBannerForm((f) => ({
+                  ...f,
+                  userIds: Array.from(pickerSelectedIds),
+                }));
+                setUserPickerOpen(false);
+              }}
+            >
+              Apply ({pickerSelectedIds.size})
+            </Button>
+          </>
+        }
+      >
+        <CustomersGrid
+          mode="picker"
+          selectedIds={pickerSelectedIds}
+          onSelectedIdsChange={setPickerSelectedIds}
+        />
+      </Modal>
     </div>
   );
 };

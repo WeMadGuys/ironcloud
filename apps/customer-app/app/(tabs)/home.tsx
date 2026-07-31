@@ -32,7 +32,7 @@ import {
   shouldShowBanner,
 } from '../../src/features/banners/services/banner-impressions.service';
 import {
-  pickBannerForCommunity,
+  pickEligibleHomeBanner,
   type PromoBanner,
 } from '../../src/features/banners/services/banners.service';
 import {
@@ -60,6 +60,7 @@ import { getGarmentCatalog } from '../../src/features/booking/services/catalog.s
 import { listAddresses } from '../../src/features/profile/services/address.service';
 import { fetchUserProfile, getCachedProfile } from '../../src/features/profile/services/profile.service';
 import { getWallet } from '../../src/features/wallet/services/wallet.service';
+import { supabase } from '../../src/lib/supabase';
 
 interface DayOption {
   day: string;
@@ -159,6 +160,7 @@ export default function HomeScreen() {
   const [showInstructions, setShowInstructions] = useState(false);
   const [estimateCounts, setEstimateCounts] = useState<EstimateCounts>({});
   const [communityId, setCommunityId] = useState<string | null>(null);
+  const [communityCity, setCommunityCity] = useState<string | null>(null);
   const [isBooking, setIsBooking] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -241,6 +243,7 @@ export default function HomeScreen() {
         addresses.find((address) => address.isDefault) || addresses[0];
       if (defaultAddress) {
         setCommunityId(defaultAddress.communityId);
+        setCommunityCity(defaultAddress.city || null);
         setHeaderAddress({
           name: defaultAddress.communityName,
           detail: [
@@ -251,12 +254,14 @@ export default function HomeScreen() {
             .join(' • '),
         });
       } else if (booking) {
+        setCommunityCity(null);
         setHeaderAddress({
           name: booking.addressName,
           detail: booking.addressDetail,
         });
       } else {
         setCommunityId(null);
+        setCommunityCity(null);
       }
       hasLoadedOnceRef.current = true;
     } catch (error) {
@@ -296,7 +301,13 @@ export default function HomeScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const candidate = await pickBannerForCommunity(communityId);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const userId = sessionData.session?.user?.id ?? null;
+        const candidate = await pickEligibleHomeBanner({
+          userId,
+          communityId,
+          city: communityCity,
+        });
         if (cancelled) return;
         if (!candidate) {
           bannerCheckedRef.current = true;
@@ -327,7 +338,7 @@ export default function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [initialLoading, communityId]);
+  }, [initialLoading, communityId, communityCity]);
 
   const handleClosePromoBanner = useCallback(async () => {
     const current = promoBanner;
