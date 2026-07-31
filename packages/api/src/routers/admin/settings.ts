@@ -5,49 +5,54 @@ import { adminProcedure, superAdminProcedure, router } from '../../trpc/init';
 
 const pricingScopeSchema = z.enum(['all', 'city', 'community', 'user']);
 
-const pricingAudienceFields = z
-  .object({
-    scope: pricingScopeSchema,
-    city: z.string().min(1).optional().nullable(),
-    communityId: z.string().uuid().optional().nullable(),
-    userId: z.string().uuid().optional().nullable(),
-  })
-  .superRefine((val, ctx) => {
-    if (val.scope === 'all') {
-      if (val.city || val.communityId || val.userId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'All-scope rules must not set city, community, or user',
-        });
-      }
-    } else if (val.scope === 'city') {
-      if (!val.city?.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'City is required for city-scope rules',
-          path: ['city'],
-        });
-      }
-    } else if (val.scope === 'community') {
-      if (!val.communityId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'Community is required for community-scope rules',
-          path: ['communityId'],
-        });
-      }
-    } else if (val.scope === 'user') {
-      if (!val.userId) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'User is required for user-scope rules',
-          path: ['userId'],
-        });
-      }
-    }
-  });
+const pricingAudienceObject = z.object({
+  scope: pricingScopeSchema,
+  city: z.string().min(1).optional().nullable(),
+  communityId: z.string().uuid().optional().nullable(),
+  userId: z.string().uuid().optional().nullable(),
+});
 
-function audienceColumns(input: z.infer<typeof pricingAudienceFields>) {
+type PricingAudience = z.infer<typeof pricingAudienceObject>;
+
+function refinePricingAudience(
+  val: PricingAudience,
+  ctx: z.RefinementCtx,
+) {
+  if (val.scope === 'all') {
+    if (val.city || val.communityId || val.userId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'All-scope rules must not set city, community, or user',
+      });
+    }
+  } else if (val.scope === 'city') {
+    if (!val.city?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'City is required for city-scope rules',
+        path: ['city'],
+      });
+    }
+  } else if (val.scope === 'community') {
+    if (!val.communityId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Community is required for community-scope rules',
+        path: ['communityId'],
+      });
+    }
+  } else if (val.scope === 'user') {
+    if (!val.userId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'User is required for user-scope rules',
+        path: ['userId'],
+      });
+    }
+  }
+}
+
+function audienceColumns(input: PricingAudience) {
   return {
     scope: input.scope,
     city: input.scope === 'city' ? input.city!.trim() : null,
@@ -55,6 +60,23 @@ function audienceColumns(input: z.infer<typeof pricingAudienceFields>) {
     user_id: input.scope === 'user' ? input.userId! : null,
   };
 }
+
+const createPricingInput = pricingAudienceObject
+  .extend({
+    serviceId: z.string().uuid(),
+    basePrice: z.number().positive(),
+    expressMultiplier: z.number().positive().optional(),
+  })
+  .superRefine(refinePricingAudience);
+
+const updatePricingInput = pricingAudienceObject
+  .extend({
+    id: z.string().uuid(),
+    serviceId: z.string().uuid(),
+    basePrice: z.number().positive(),
+    expressMultiplier: z.number().positive().optional(),
+  })
+  .superRefine(refinePricingAudience);
 
 export const settingsRouter = router({
   updateSetting: adminProcedure
@@ -82,13 +104,7 @@ export const settingsRouter = router({
     }),
 
   createPricing: adminProcedure
-    .input(
-      pricingAudienceFields.extend({
-        serviceId: z.string().uuid(),
-        basePrice: z.number().positive(),
-        expressMultiplier: z.number().positive().optional(),
-      }),
-    )
+    .input(createPricingInput)
     .mutation(async ({ ctx, input }) => {
       const { data, error } = await ctx.supabase
         .from('pricing_rules')
@@ -116,14 +132,7 @@ export const settingsRouter = router({
     }),
 
   updatePricing: adminProcedure
-    .input(
-      pricingAudienceFields.extend({
-        id: z.string().uuid(),
-        serviceId: z.string().uuid(),
-        basePrice: z.number().positive(),
-        expressMultiplier: z.number().positive().optional(),
-      }),
-    )
+    .input(updatePricingInput)
     .mutation(async ({ ctx, input }) => {
       const { error } = await ctx.supabase
         .from('pricing_rules')
