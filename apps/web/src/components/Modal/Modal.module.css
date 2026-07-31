@@ -24,12 +24,18 @@
   box-shadow: var(--ic-shadow-lg);
   width: 100%;
   max-width: 480px;
-  max-height: 90vh;
-  overflow: auto;
+  max-height: min(90vh, 880px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   animation: scaleIn var(--ic-transition-base);
 }
 
 .modalWide {
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.modalXWide {
   max-width: min(960px, calc(100vw - 32px));
 }
 
@@ -44,6 +50,7 @@
   justify-content: space-between;
   padding: var(--ic-spacing-lg) var(--ic-spacing-xl);
   border-bottom: 1px solid var(--ic-border-divider);
+  flex-shrink: 0;
 }
 
 .title {
@@ -67,6 +74,9 @@
 
 .body {
   padding: var(--ic-spacing-xl);
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .footer {
@@ -75,4 +85,5 @@
   gap: var(--ic-spacing-md);
   padding: var(--ic-spacing-lg) var(--ic-spacing-xl);
   border-top: 1px solid var(--ic-border-divider);
+  flex-shrink: 0;
 }

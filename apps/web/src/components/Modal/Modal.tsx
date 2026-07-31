@@ -13,8 +13,8 @@ type ModalProps = {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
-  /** Wider dialog for grids / pickers */
-  size?: 'default' | 'wide';
+  /** Wider dialog for long forms / grids */
+  size?: 'default' | 'wide' | 'xwide';
   /** Raise above another open modal (e.g. nested picker) */
   stacked?: boolean;
 };
@@ -33,11 +33,19 @@ export const Modal = ({
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
     document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const sizeClass =
+    size === 'xwide' ? styles.modalXWide : size === 'wide' ? styles.modalWide : '';
 
   return (
     <div
@@ -48,7 +56,7 @@ export const Modal = ({
       aria-labelledby="modal-title"
     >
       <div
-        className={`${styles.modal} ${size === 'wide' ? styles.modalWide : ''}`}
+        className={`${styles.modal} ${sizeClass}`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>

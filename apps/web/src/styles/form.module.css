@@ -41,6 +41,25 @@
   color: var(--ic-text-placeholder);
 }
 
+.fileInput {
+  width: 100%;
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-primary);
+}
+
+.row2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ic-spacing-md);
+}
+
+@media (max-width: 560px) {
+  .row2 {
+    grid-template-columns: 1fr;
+  }
+}
+
 .hint {
   font-size: var(--ic-font-size-xs);
   color: var(--ic-text-muted);

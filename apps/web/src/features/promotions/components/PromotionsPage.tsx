@@ -966,6 +966,7 @@ export const PromotionsPage = () => {
         onSubmit={handleSave}
         submitLabel={isEditing ? 'Save' : 'Create'}
         submitting={submitting}
+        size={tab === 'banners' || tab === 'coupons' || tab === 'referrals' ? 'wide' : 'default'}
       >
         {tab === 'coupons' && (
           <div className={formStyles.stack}>
@@ -1237,7 +1238,7 @@ export const PromotionsPage = () => {
                   alt="Banner preview"
                   style={{
                     width: '100%',
-                    maxHeight: 180,
+                    maxHeight: 120,
                     objectFit: 'contain',
                     borderRadius: 8,
                     background: 'var(--ic-surface-section)',
@@ -1247,7 +1248,7 @@ export const PromotionsPage = () => {
               ) : null}
               <input
                 id="banner-image-file"
-                className={formStyles.input}
+                className={formStyles.fileInput}
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 disabled={uploadingBannerImage}
@@ -1260,7 +1261,7 @@ export const PromotionsPage = () => {
               <p className={formStyles.hint}>
                 {uploadingBannerImage
                   ? 'Uploading…'
-                  : 'Upload JPEG, PNG, or WebP (max 5 MB). Customers see this on app open.'}
+                  : 'JPEG, PNG, or WebP · max 5 MB'}
               </p>
               <label className={formStyles.label} htmlFor="banner-image">
                 Or paste image URL
@@ -1273,38 +1274,40 @@ export const PromotionsPage = () => {
                 placeholder="https://…"
               />
             </div>
-            <div className={formStyles.field}>
-              <label className={formStyles.label} htmlFor="banner-max">
-                Max shows per device *
-              </label>
-              <input
-                id="banner-max"
-                className={formStyles.input}
-                type="number"
-                min={1}
-                step={1}
-                value={bannerForm.maxImpressions}
-                onChange={(e) =>
-                  setBannerForm((f) => ({ ...f, maxImpressions: e.target.value }))
-                }
-              />
-              <p className={formStyles.hint}>
-                After a customer closes the banner this many times, it will not appear again on
-                that device.
-              </p>
+            <div className={formStyles.row2}>
+              <div className={formStyles.field}>
+                <label className={formStyles.label} htmlFor="banner-max">
+                  Max shows per device *
+                </label>
+                <input
+                  id="banner-max"
+                  className={formStyles.input}
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={bannerForm.maxImpressions}
+                  onChange={(e) =>
+                    setBannerForm((f) => ({ ...f, maxImpressions: e.target.value }))
+                  }
+                />
+              </div>
+              <div className={formStyles.field}>
+                <label className={formStyles.label} htmlFor="banner-position">
+                  Position
+                </label>
+                <input
+                  id="banner-position"
+                  className={formStyles.input}
+                  value={bannerForm.position}
+                  onChange={(e) => setBannerForm((f) => ({ ...f, position: e.target.value }))}
+                  placeholder="home"
+                />
+              </div>
             </div>
-            <div className={formStyles.field}>
-              <label className={formStyles.label} htmlFor="banner-position">
-                Position
-              </label>
-              <input
-                id="banner-position"
-                className={formStyles.input}
-                value={bannerForm.position}
-                onChange={(e) => setBannerForm((f) => ({ ...f, position: e.target.value }))}
-                placeholder="home"
-              />
-            </div>
+            <p className={formStyles.hint}>
+              After a customer closes the banner this many times, it will not appear again on
+              that device.
+            </p>
             <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="banner-link">
                 Link (optional)
@@ -1599,7 +1602,7 @@ export const PromotionsPage = () => {
         open={userPickerOpen}
         onClose={() => setUserPickerOpen(false)}
         title="Select customers"
-        size="wide"
+        size="xwide"
         stacked
         footer={
           <>

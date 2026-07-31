@@ -14,6 +14,7 @@ type CreateEntityModalProps = {
   submitLabel?: string;
   submitting?: boolean;
   submitDisabled?: boolean;
+  size?: 'default' | 'wide' | 'xwide';
 };
 
 export const CreateEntityModal = ({
@@ -25,11 +26,13 @@ export const CreateEntityModal = ({
   submitLabel = 'Create',
   submitting = false,
   submitDisabled = false,
+  size = 'default',
 }: CreateEntityModalProps) => (
   <Modal
     open={open}
     onClose={onClose}
     title={title}
+    size={size}
     footer={
       <>
         <Button variant="secondary" onClick={onClose} disabled={submitting}>
