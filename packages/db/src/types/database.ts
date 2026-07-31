@@ -305,6 +305,9 @@ export interface Database {
           id: string;
           service_id: string;
           community_id: string | null;
+          city: string | null;
+          user_id: string | null;
+          scope: string;
           base_price: number;
           express_multiplier: number;
           effective_from: string;
@@ -314,6 +317,9 @@ export interface Database {
           id?: string;
           service_id: string;
           community_id?: string | null;
+          city?: string | null;
+          user_id?: string | null;
+          scope?: string;
           base_price: number;
           express_multiplier?: number;
           effective_from?: string;
@@ -323,6 +329,9 @@ export interface Database {
           id?: string;
           service_id?: string;
           community_id?: string | null;
+          city?: string | null;
+          user_id?: string | null;
+          scope?: string;
           base_price?: number;
           express_multiplier?: number;
           effective_from?: string;

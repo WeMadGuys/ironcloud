@@ -161,6 +161,7 @@ export default function HomeScreen() {
   const [estimateCounts, setEstimateCounts] = useState<EstimateCounts>({});
   const [communityId, setCommunityId] = useState<string | null>(null);
   const [communityCity, setCommunityCity] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
   const [isBooking, setIsBooking] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -223,17 +224,19 @@ export default function HomeScreen() {
       setContentLoading(true);
     }
     try {
-      const [booking, bookedOffsets, wallet, addresses, profile] = await Promise.all([
+      const [booking, bookedOffsets, wallet, addresses, profile, sessionResult] = await Promise.all([
         getHomeBookingForDay(dayOffset),
         getBookedDayOffsets(7),
         getWallet(),
         listAddresses(),
         fetchUserProfile(),
+        supabase.auth.getSession(),
       ]);
 
       setDayBooking(booking);
       setBookedDays(bookedOffsets);
       setWalletBalance(wallet?.balance ?? null);
+      setUserId(sessionResult.data.session?.user?.id ?? null);
       setHeaderProfile({
         avatarUrl: profile?.avatarUrl ?? null,
         fullName: profile?.fullName ?? '',
@@ -370,7 +373,14 @@ export default function HomeScreen() {
       const hasEstimates = Object.values(estimateCounts).some((count) => count > 0);
       const estimatedGarments =
         hasEstimates && communityId
-          ? buildEstimateLines(await getGarmentCatalog(communityId), estimateCounts)
+          ? buildEstimateLines(
+              await getGarmentCatalog({
+                communityId,
+                userId,
+                city: communityCity,
+              }),
+              estimateCounts,
+            )
           : [];
       const { amount: estimatedAmount } = estimateTotals(estimatedGarments);
 
@@ -762,6 +772,8 @@ export default function HomeScreen() {
 
           <EstimateOrderCard
             communityId={communityId}
+            userId={userId}
+            city={communityCity}
             counts={estimateCounts}
             onChangeCounts={setEstimateCounts}
           />

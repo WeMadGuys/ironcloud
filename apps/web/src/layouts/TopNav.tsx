@@ -4,14 +4,13 @@ import Icon from '@mdi/react';
 import { mdiBell, mdiThemeLightDark } from '@mdi/js';
 import { useEffect, useRef, useState } from 'react';
 
-import { useDateFilter } from '@/contexts/DateFilterContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdminRole } from '@/features/auth/hooks/useAdminRole';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { signOut } from '@/features/auth/services/auth.service';
 import { ADMIN_ROUTES } from '@/constants/routes';
 import { getSupabase } from '@/lib/supabase';
-import { getInitials, parseISODate, toISODate } from '@/utils/format';
+import { getInitials } from '@/utils/format';
 import { SearchInput } from '@/components/SearchInput/SearchInput';
 import { GlobalSearch } from '@/features/search/components/GlobalSearch';
 
@@ -23,7 +22,6 @@ type TopNavProps = {
 };
 
 export const TopNav = ({ title, subtitle }: TopNavProps) => {
-  const { selectedDate, setSelectedDate } = useDateFilter();
   const { toggleTheme } = useTheme();
   const { user } = useAuth();
   const { profile } = useAdminRole();
@@ -82,16 +80,6 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
           {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
         </div>
         <div className={styles.right}>
-          <input
-            type="date"
-            className={styles.datePicker}
-            value={toISODate(selectedDate)}
-            onChange={(e) => {
-              if (!e.target.value) return;
-              setSelectedDate(parseISODate(e.target.value));
-            }}
-            aria-label="Select date"
-          />
           <SearchInput
             placeholder="Search (Ctrl+K)"
             onFocus={() => setSearchOpen(true)}

@@ -6,7 +6,13 @@ import { Card, Loader, Pagination, Table } from '@/components';
 import { useTheme } from '@/contexts/ThemeContext';
 import { formatRelativeTime } from '@/utils/format';
 
-import { fetchAuditLogs, fetchPricingRules, fetchRolePermissions, fetchServiceSlots, fetchSystemSettings } from '../services/settings.service';
+import {
+  fetchAuditLogs,
+  fetchRolePermissions,
+  fetchServiceSlots,
+  fetchSystemSettings,
+} from '../services/settings.service';
+import { PricingRulesPanel } from './PricingRulesPanel';
 
 import pageStyles from '@/styles/pages.module.css';
 
@@ -16,7 +22,6 @@ export const SettingsPage = () => {
   const [permissions, setPermissions] = useState<Awaited<ReturnType<typeof fetchRolePermissions>>>([]);
   const [auditLogs, setAuditLogs] = useState<Awaited<ReturnType<typeof fetchAuditLogs>>['data']>([]);
   const [auditTotal, setAuditTotal] = useState(0);
-  const [pricing, setPricing] = useState<Awaited<ReturnType<typeof fetchPricingRules>>>([]);
   const [slots, setSlots] = useState<Awaited<ReturnType<typeof fetchServiceSlots>>>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('general');
@@ -28,14 +33,12 @@ export const SettingsPage = () => {
       fetchSystemSettings(),
       fetchRolePermissions(),
       fetchAuditLogs(auditPage, pageSize),
-      fetchPricingRules(),
       fetchServiceSlots(),
-    ]).then(([s, p, a, pr, sl]) => {
+    ]).then(([s, p, a, sl]) => {
       setSettings(s);
       setPermissions(p);
       setAuditLogs(a.data);
       setAuditTotal(a.total);
-      setPricing(pr);
       setSlots(sl);
       setLoading(false);
     });
@@ -65,15 +68,7 @@ export const SettingsPage = () => {
         </Card>
       )}
 
-      {tab === 'pricing' && (
-        <Card title="Pricing Rules">
-          <Table columns={[
-            { key: 'service', header: 'Service', render: (p) => (p.services as { name: string } | null)?.name ?? '—' },
-            { key: 'community', header: 'Community', render: (p) => (p.communities as { name: string } | null)?.name ?? 'Default' },
-            { key: 'price', header: 'Base Price', render: (p) => p.base_price },
-          ]} data={pricing} keyExtractor={(p) => p.id} />
-        </Card>
-      )}
+      {tab === 'pricing' && <PricingRulesPanel />}
 
       {tab === 'slots' && (
         <Card title="Service Slots">

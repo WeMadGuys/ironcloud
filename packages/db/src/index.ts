@@ -22,3 +22,12 @@ export type {
   SlotType,
   PaymentMethod,
 } from './types';
+
+export {
+  PRICING_SCOPE_RANK,
+  pickBestUnitPrices,
+  pricingRuleMatchesAudience,
+  type PricingAudienceContext,
+  type PricingRuleCandidate,
+  type PricingScope,
+} from './pricing';

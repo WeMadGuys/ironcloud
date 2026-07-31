@@ -13,6 +13,7 @@ type StatCardProps = {
   trend?: { value: string; direction: TrendDirection };
   actionLabel?: string;
   actionHref?: string;
+  onClick?: () => void;
 };
 
 const iconVariantClass: Record<NonNullable<StatCardProps['iconVariant']>, string> = {
@@ -37,30 +38,55 @@ export const StatCard = ({
   trend,
   actionLabel,
   actionHref,
-}: StatCardProps) => (
-  <div className={styles.statCard}>
-    <div className={styles.top}>
-      <span className={styles.label}>{label}</span>
-      {icon && (
-        <div className={`${styles.iconWrap} ${iconVariantClass[iconVariant]}`}>
-          {icon}
-        </div>
-      )}
-    </div>
-    <div className={styles.value}>{value}</div>
-    <div className={styles.footer}>
-      {trend ? (
-        <span className={`${styles.trend} ${trendClass[trend.direction]}`}>
-          {trend.direction === 'positive' ? '↑' : trend.direction === 'negative' ? '↓' : '–'}{' '}
-          {trend.value}
-        </span>
-      ) : <span />}
-      {actionLabel && actionHref && (
-        <a href={actionHref} className={styles.link}>{actionLabel}</a>
-      )}
-    </div>
-  </div>
-);
+  onClick,
+}: StatCardProps) => {
+  const clickable = Boolean(onClick);
+  const className = `${styles.statCard}${clickable ? ` ${styles.clickable}` : ''}`;
+
+  const content = (
+    <>
+      <div className={styles.top}>
+        <span className={styles.label}>{label}</span>
+        {icon && (
+          <div className={`${styles.iconWrap} ${iconVariantClass[iconVariant]}`}>
+            {icon}
+          </div>
+        )}
+      </div>
+      <div className={styles.value}>{value}</div>
+      <div className={styles.footer}>
+        {trend ? (
+          <span className={`${styles.trend} ${trendClass[trend.direction]}`}>
+            {trend.direction === 'positive' ? '↑' : trend.direction === 'negative' ? '↓' : '–'}{' '}
+            {trend.value}
+          </span>
+        ) : <span />}
+        {actionLabel && actionHref && (
+          <a
+            href={actionHref}
+            className={styles.link}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actionLabel}
+          </a>
+        )}
+        {actionLabel && !actionHref && clickable && (
+          <span className={styles.link}>{actionLabel}</span>
+        )}
+      </div>
+    </>
+  );
+
+  if (clickable) {
+    return (
+      <button type="button" className={className} onClick={onClick} aria-label={`${label} details`}>
+        {content}
+      </button>
+    );
+  }
+
+  return <div className={className}>{content}</div>;
+};
 
 export const StatCardIcon = ({ path, color }: { path: string; color?: string }) => (
   <Icon path={path} size={0.8} color={color ?? 'var(--ic-brand-accent)'} />

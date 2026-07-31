@@ -34,6 +34,8 @@ export type EstimatedGarmentLine = {
 
 type Props = {
   communityId: string | null;
+  userId?: string | null;
+  city?: string | null;
   counts: EstimateCounts;
   onChangeCounts: (next: EstimateCounts) => void;
 };
@@ -87,6 +89,8 @@ function CounterRow({
 
 export function EstimateOrderCard({
   communityId,
+  userId,
+  city,
   counts,
   onChangeCounts,
 }: Props) {
@@ -102,7 +106,7 @@ export function EstimateOrderCard({
     }
     let cancelled = false;
     setLoading(true);
-    getGarmentCatalog(communityId).then((items) => {
+    getGarmentCatalog({ communityId, userId, city }).then((items) => {
       if (!cancelled) {
         setCatalog(items);
         setLoading(false);
@@ -111,7 +115,7 @@ export function EstimateOrderCard({
     return () => {
       cancelled = true;
     };
-  }, [communityId]);
+  }, [communityId, userId, city]);
 
   const { primary, more } = useMemo(() => splitCatalog(catalog), [catalog]);
 

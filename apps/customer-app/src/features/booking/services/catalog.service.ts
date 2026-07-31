@@ -1,5 +1,10 @@
 import type { ComponentProps } from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import {
+  pickBestUnitPrices,
+  type PricingRuleCandidate,
+  type PricingScope,
+} from '@ironcloud/db';
 
 import { supabase } from '../../../lib/supabase';
 
@@ -76,11 +81,16 @@ export function splitCatalog(items: GarmentCatalogItem[]): {
 }
 
 /**
- * Active services with community-aware unit prices (community override preferred).
+ * Active services with audience-aware unit prices.
+ * Precedence: user > community > city > all (platform default).
  */
-export async function getGarmentCatalog(
-  communityId: string,
-): Promise<GarmentCatalogItem[]> {
+export async function getGarmentCatalog(opts: {
+  communityId: string;
+  userId?: string | null;
+  city?: string | null;
+}): Promise<GarmentCatalogItem[]> {
+  const { communityId, userId, city } = opts;
+
   const { data: services, error } = await (supabase
     .from('services') as ReturnType<typeof supabase.from>)
     .select('id, name')
@@ -92,22 +102,23 @@ export async function getGarmentCatalog(
     return [];
   }
 
-  const { data: rules } = await (supabase
+  const { data: rules, error: rulesError } = await (supabase
     .from('pricing_rules') as ReturnType<typeof supabase.from>)
-    .select('service_id, base_price, community_id')
-    .or(`community_id.eq.${communityId},community_id.is.null`)
-    .order('community_id', { ascending: false });
+    .select(
+      'service_id, base_price, scope, city, community_id, user_id, effective_from',
+    );
 
-  const priceMap = new Map<string, number>();
-  for (const rule of (rules as {
-    service_id: string;
-    base_price: number;
-    community_id: string | null;
-  }[]) || []) {
-    if (!priceMap.has(rule.service_id)) {
-      priceMap.set(rule.service_id, Number(rule.base_price));
-    }
+  if (rulesError) {
+    console.error('[Catalog] pricing_rules error:', rulesError);
   }
+
+  const priceMap = pickBestUnitPrices(
+    ((rules as PricingRuleCandidate[] | null) ?? []).map((rule) => ({
+      ...rule,
+      scope: (rule.scope as PricingScope | null) ?? (rule.community_id ? 'community' : 'all'),
+    })),
+    { userId, communityId, city },
+  );
 
   return (services as { id: string; name: string }[]).map((service) => ({
     serviceId: service.id,

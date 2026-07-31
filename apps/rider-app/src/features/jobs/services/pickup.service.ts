@@ -1,6 +1,11 @@
 import { AUTH_PROVIDER, MOCK_RIDER_ID } from '../../../config/auth';
 import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import {
+  pickBestUnitPrices,
+  type PricingRuleCandidate,
+  type PricingScope,
+} from '@ironcloud/db';
 import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
 
@@ -169,7 +174,42 @@ async function debitWalletAfterPickup(orderId: string): Promise<void> {
   }
 }
 
-export async function getGarmentCatalog(communityId: string): Promise<GarmentCatalogItem[]> {
+export async function getOrderPricingContext(orderId: string): Promise<{
+  customerId: string | null;
+  communityId: string | null;
+  city: string | null;
+}> {
+  const { data, error } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .select('customer_id, community_id, communities(city)')
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.warn('[Pickup] pricing context:', error.message);
+    return { customerId: null, communityId: null, city: null };
+  }
+
+  const row = data as {
+    customer_id: string;
+    community_id: string | null;
+    communities: { city: string | null } | null;
+  };
+
+  return {
+    customerId: row.customer_id,
+    communityId: row.community_id,
+    city: row.communities?.city ?? null,
+  };
+}
+
+export async function getGarmentCatalog(opts: {
+  communityId: string;
+  userId?: string | null;
+  city?: string | null;
+}): Promise<GarmentCatalogItem[]> {
+  const { communityId, userId, city } = opts;
+
   const { data: services, error } = await (supabase
     .from('services') as ReturnType<typeof supabase.from>)
     .select('id, name')
@@ -181,18 +221,23 @@ export async function getGarmentCatalog(communityId: string): Promise<GarmentCat
     return [];
   }
 
-  const { data: rules } = await (supabase
+  const { data: rules, error: rulesError } = await (supabase
     .from('pricing_rules') as ReturnType<typeof supabase.from>)
-    .select('service_id, base_price, community_id')
-    .or(`community_id.eq.${communityId},community_id.is.null`)
-    .order('community_id', { ascending: false });
+    .select(
+      'service_id, base_price, scope, city, community_id, user_id, effective_from',
+    );
 
-  const priceMap = new Map<string, number>();
-  for (const rule of (rules as { service_id: string; base_price: number; community_id: string | null }[]) || []) {
-    if (!priceMap.has(rule.service_id)) {
-      priceMap.set(rule.service_id, Number(rule.base_price));
-    }
+  if (rulesError) {
+    console.error('[Pickup] pricing_rules error:', rulesError);
   }
+
+  const priceMap = pickBestUnitPrices(
+    ((rules as PricingRuleCandidate[] | null) ?? []).map((rule) => ({
+      ...rule,
+      scope: (rule.scope as PricingScope | null) ?? (rule.community_id ? 'community' : 'all'),
+    })),
+    { userId, communityId, city },
+  );
 
   return (services as { id: string; name: string }[]).map((service) => ({
     serviceId: service.id,
@@ -253,7 +298,12 @@ export async function confirmPickup(
   const riderId = await getRiderId();
   if (!riderId) throw new Error('Rider not authenticated');
 
-  const catalog = await getGarmentCatalog(communityId);
+  const pricingCtx = await getOrderPricingContext(orderId);
+  const catalog = await getGarmentCatalog({
+    communityId: pricingCtx.communityId || communityId,
+    userId: pricingCtx.customerId,
+    city: pricingCtx.city,
+  });
   const priceByService = Object.fromEntries(catalog.map((c) => [c.serviceId, c.unitPrice]));
   const nameByService = Object.fromEntries(catalog.map((c) => [c.serviceId, c.name]));
 

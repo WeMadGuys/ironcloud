@@ -38,6 +38,30 @@ export const fetchOrders = async (params: OrderListParams) => {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
+  const rangeStart = dateFrom ?? (date ? startOfDay(date) : null);
+  const rangeEnd = dateTo ?? (date ? endOfDay(date) : null);
+
+  // Nested embed filters do not constrain parent rows (left join). Resolve slot ids first.
+  let pickupSlotIds: string[] | null = null;
+  if (rangeStart || rangeEnd) {
+    let slotsQuery = supabase.from('service_slots').select('id');
+    if (rangeStart) {
+      slotsQuery = slotsQuery.gte('window_start', rangeStart.toISOString());
+    }
+    if (rangeEnd) {
+      slotsQuery = slotsQuery.lte('window_start', rangeEnd.toISOString());
+    }
+    const { data: slots, error: slotsError } = await slotsQuery;
+    if (slotsError) {
+      console.error('[fetchOrders] service_slots', slotsError.message);
+      return { data: [], total: 0, error: slotsError };
+    }
+    pickupSlotIds = (slots ?? []).map((s) => s.id);
+    if (pickupSlotIds.length === 0) {
+      return { data: [], total: 0, error: null };
+    }
+  }
+
   let query = supabase
     .from('orders')
     .select(`
@@ -52,21 +76,15 @@ export const fetchOrders = async (params: OrderListParams) => {
   if (communityId) query = query.eq('community_id', communityId);
   if (paymentMethod) query = query.eq('payment_method', paymentMethod);
   if (search) query = query.ilike('order_number', `%${search}%`);
-
-  const rangeStart = dateFrom ?? (date ? startOfDay(date) : null);
-  const rangeEnd = dateTo ?? (date ? endOfDay(date) : null);
-
-  // Filter by pickup day/range in one round-trip (avoids slots → orders waterfall).
-  if (rangeStart) {
-    query = query.gte('pickup_slot.window_start', rangeStart.toISOString());
-  }
-  if (rangeEnd) {
-    query = query.lte('pickup_slot.window_start', rangeEnd.toISOString());
-  }
+  if (pickupSlotIds) query = query.in('pickup_slot_id', pickupSlotIds);
 
   const { data, count, error } = await query
     .order(sortKey, { ascending: sortAsc })
     .range(from, to);
+
+  if (error) {
+    console.error('[fetchOrders]', error.message);
+  }
 
   return { data: data ?? [], total: count ?? 0, error };
 };

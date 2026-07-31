@@ -18,6 +18,7 @@ import {
   confirmPickup,
   getGarmentCatalog,
   getOrderEstimatePrefill,
+  getOrderPricingContext,
   type GarmentCatalogItem,
 } from '../../../../src/features/jobs/services/pickup.service';
 
@@ -43,8 +44,13 @@ export default function PickupScreen() {
 
     (async () => {
       setLoading(true);
+      const pricingCtx = await getOrderPricingContext(orderId);
       const [items, prefill] = await Promise.all([
-        getGarmentCatalog(communityId),
+        getGarmentCatalog({
+          communityId: pricingCtx.communityId || communityId,
+          userId: pricingCtx.customerId,
+          city: pricingCtx.city,
+        }),
         getOrderEstimatePrefill(orderId),
       ]);
 
