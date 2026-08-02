@@ -28,7 +28,7 @@ import {
 } from '@ironcloud/ui';
 
 import { AUTH_PROVIDER } from '../../src/config/auth';
-import { signOut } from '../../src/features/auth/services/auth';
+import { deleteAccount, signOut } from '../../src/features/auth/services/auth';
 import { clearOrdersCache } from '../../src/features/orders/services/orders.service';
 import {
   clearAddressCache,
@@ -277,6 +277,29 @@ export default function ProfileScreen() {
     }
   };
 
+  const performDeleteAccount = async () => {
+    try {
+      const result = await deleteAccount();
+      if (result.error) {
+        Alert.alert('Delete failed', result.error.message);
+        return;
+      }
+    } catch (error) {
+      Alert.alert(
+        'Delete failed',
+        error instanceof Error ? error.message : 'Could not delete account',
+      );
+      return;
+    }
+
+    clearProfileCache();
+    clearReferralCache();
+    clearOrdersCache();
+    clearWalletCache();
+    clearAddressCache();
+    router.replace('/(auth)/login');
+  };
+
   const handleLogout = () => {
     // RN Web's Alert.alert often does not show multi-button dialogs.
     if (Platform.OS === 'web') {
@@ -301,6 +324,29 @@ export default function ProfileScreen() {
         },
       ],
     );
+  };
+
+  const handleDeleteAccount = () => {
+    const message =
+      'Your account and personal data will be removed. Open bookings will be cancelled.';
+
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window === 'undefined' ||
+        window.confirm(`Delete account?\n\n${message}`);
+      if (confirmed) void performDeleteAccount();
+      return;
+    }
+
+    Alert.alert('Delete account', message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Continue',
+        onPress: () => {
+          void performDeleteAccount();
+        },
+      },
+    ]);
   };
 
   const menuItems: MenuItem[] = [
@@ -340,8 +386,8 @@ export default function ProfileScreen() {
       id: 'about',
       icon: 'information-outline',
       label: 'About',
-      subtitle: 'Doorstep ironing for your apartment',
-      onPress: () => {},
+      subtitle: 'Privacy Policy, Terms & app info',
+      onPress: () => router.push('/profile/about'),
       showArrow: true,
     },
     {
@@ -664,6 +710,16 @@ export default function ProfileScreen() {
                   <Text style={styles.saveButtonText}>Save changes</Text>
                 )}
               </Pressable>
+
+              <Pressable
+                style={styles.deleteAccountLink}
+                onPress={handleDeleteAccount}
+                disabled={isSaving}
+                accessibilityRole="button"
+                accessibilityLabel="Delete account"
+              >
+                <Text style={styles.deleteAccountLinkText}>Delete account</Text>
+              </Pressable>
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -967,5 +1023,15 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.semibold,
     fontSize: 16,
     color: colors.brand.onPrimary,
+  },
+  deleteAccountLink: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    marginTop: spacing.sm,
+  },
+  deleteAccountLinkText: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.text.secondary,
   },
 });

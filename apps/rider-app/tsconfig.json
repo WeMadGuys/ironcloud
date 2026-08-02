@@ -11,7 +11,8 @@
       "@ironcloud/db": ["../../packages/db/src/index.ts"],
       "@ironcloud/db/*": ["../../packages/db/src/*"],
       "@ironcloud/ui": ["../../packages/ui/src/tokens/index.ts"],
-      "@ironcloud/ui/*": ["../../packages/ui/src/*"]
+      "@ironcloud/ui/*": ["../../packages/ui/src/*"],
+      "@ironcloud/config/legal": ["../../packages/config/src/legal.ts"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"]

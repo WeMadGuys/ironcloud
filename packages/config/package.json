@@ -1,5 +1,10 @@
 {
   "name": "@ironcloud/config",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "main": "./src/legal.ts",
+  "types": "./src/legal.ts",
+  "exports": {
+    "./legal": "./src/legal.ts"
+  }
 }

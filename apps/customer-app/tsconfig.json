@@ -25,6 +25,9 @@
       ],
       "@ironcloud/ui/*": [
         "../../packages/ui/src/*"
+      ],
+      "@ironcloud/config/legal": [
+        "../../packages/config/src/legal.ts"
       ]
     }
   },

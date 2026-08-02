@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_SUPABASE_ANON_KEY:
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
   },
-  transpilePackages: ['@ironcloud/ui', '@ironcloud/db', '@ironcloud/api'],
+  transpilePackages: ['@ironcloud/ui', '@ironcloud/db', '@ironcloud/api', '@ironcloud/config'],
   experimental: {
     optimizePackageImports: ['@mdi/react', 'recharts'],
   },

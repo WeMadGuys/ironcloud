@@ -369,3 +369,56 @@ export const signOut = async () => {
   if (error) return { data: null, error: { message: error.message } };
   return { data: { signedOut: true as const }, error: null };
 };
+
+/**
+ * Permanently delete the signed-in rider account (Play / App Store requirement).
+ */
+export const deleteAccount = async (): Promise<AuthResult<{ deleted: true }>> => {
+  if (AUTH_PROVIDER === 'mock') {
+    await signOut();
+    return { data: { deleted: true }, error: null };
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    return {
+      data: null,
+      error: { message: 'Please sign in again to delete your account.' },
+    };
+  }
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/api/account/delete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ confirm: true }),
+    });
+
+    const body = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+
+    if (!response.ok) {
+      return {
+        data: null,
+        error: {
+          message: body?.error || 'Could not delete account. Please try again.',
+        },
+      };
+    }
+  } catch {
+    return {
+      data: null,
+      error: { message: 'Could not reach the server. Check your connection.' },
+    };
+  }
+
+  await signOut();
+  return { data: { deleted: true }, error: null };
+};
