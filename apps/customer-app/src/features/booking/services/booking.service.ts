@@ -915,6 +915,11 @@ export async function createBooking(input: CreateBookingInput): Promise<{
   }
 
   const pickupWindow = buildWindow(input.dayOffset, startHour, startHour + 1);
+  if (pickupWindow.end.getTime() <= Date.now()) {
+    throw new Error(
+      'This pickup slot has already passed. Please choose another time.',
+    );
+  }
   // Delivery is always 24 hours after pickup
   const deliveryWindow = getDeliveryWindowFromPickup(
     pickupWindow.start,

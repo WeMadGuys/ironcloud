@@ -218,4 +218,24 @@ export const ordersRouter = router({
 
       return { success: true };
     }),
+
+  /** Manually run delivery-day advance (same as nightly cron). */
+  advanceDeliveryDay: adminProcedure.mutation(async ({ ctx }) => {
+    const { data, error } = await ctx.supabase.rpc('advance_orders_for_delivery_day');
+
+    if (error) throw new Error(error.message);
+
+    const advanced = typeof data === 'number' ? data : Number(data ?? 0);
+
+    await writeAuditLog({
+      supabase: ctx.supabase,
+      actorId: ctx.userId,
+      action: 'order.advance_delivery_day',
+      entityType: 'order',
+      entityId: ctx.userId,
+      after: { advanced },
+    });
+
+    return { success: true, advanced };
+  }),
 });

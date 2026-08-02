@@ -80,6 +80,7 @@ export const OrdersListPage = () => {
   const pageSize = 25;
 
   const bulkUpdateMutation = trpc.orders.bulkUpdateStatus.useMutation();
+  const advanceDeliveryMutation = trpc.orders.advanceDeliveryDay.useMutation();
 
   const dateKey = dateRangeKey(datePreset, customFrom, customTo);
   const dateRange = useMemo(
@@ -289,6 +290,30 @@ export const OrdersListPage = () => {
             </Button>
           </div>
         )}
+        <div className={pageStyles.filtersAction}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              advanceDeliveryMutation.mutate(undefined, {
+                onSuccess: (res) => {
+                  window.alert(
+                    res.advanced > 0
+                      ? `Advanced ${res.advanced} order(s) to out for delivery.`
+                      : 'No orders were eligible to advance.',
+                  );
+                  setReloadKey((k) => k + 1);
+                },
+                onError: (err) => {
+                  window.alert(err.message || 'Failed to advance delivery day orders.');
+                },
+              })
+            }
+            disabled={advanceDeliveryMutation.isPending}
+          >
+            {advanceDeliveryMutation.isPending ? 'Running…' : 'Run delivery day advance'}
+          </Button>
+        </div>
       </div>
 
       {selectedIds.size > 0 && (

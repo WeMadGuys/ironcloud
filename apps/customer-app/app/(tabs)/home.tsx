@@ -98,6 +98,16 @@ function buildPickupWindow(dayOffset: number, startHour: number) {
   return { start, end };
 }
 
+/** Hide slots whose window has already ended (mainly for today). */
+function isPickupSlotAvailable(
+  dayOffset: number,
+  startHour: number,
+  now: Date = new Date(),
+): boolean {
+  const { end } = buildPickupWindow(dayOffset, startHour);
+  return end.getTime() > now.getTime();
+}
+
 function formatDeliveryPreview(dayOffset: number, startHour: number) {
   const pickup = buildPickupWindow(dayOffset, startHour);
   const delivery = getDeliveryWindowFromPickup(pickup.start, pickup.end);
@@ -182,6 +192,8 @@ export default function HomeScreen() {
   });
   const [promoBanner, setPromoBanner] = useState<PromoBanner | null>(null);
   const bannerCheckedRef = useRef(false);
+  /** Recompute past-slot filtering when the screen is focused. */
+  const [slotClock, setSlotClock] = useState(() => Date.now());
 
   useEffect(() => {
     if (!communityId) {
@@ -194,10 +206,6 @@ export default function HomeScreen() {
     getCommunityPickupSlots(communityId).then((slots) => {
       if (cancelled) return;
       setPickupSlots(slots);
-      setSelectedStartHour((prev) => {
-        if (prev != null && slots.some((s) => s.startHour === prev)) return prev;
-        return slots[0]?.startHour ?? null;
-      });
       setSlotsLoading(false);
     });
     return () => {
@@ -205,14 +213,31 @@ export default function HomeScreen() {
     };
   }, [communityId]);
 
+  const availableSlots = useMemo(() => {
+    const now = new Date(slotClock);
+    return pickupSlots.filter((slot) =>
+      isPickupSlotAvailable(selectedDay, slot.startHour, now),
+    );
+  }, [pickupSlots, selectedDay, slotClock]);
+
+  // Keep selection on a still-bookable slot for the selected day.
+  useEffect(() => {
+    setSelectedStartHour((prev) => {
+      if (prev != null && availableSlots.some((s) => s.startHour === prev)) {
+        return prev;
+      }
+      return availableSlots[0]?.startHour ?? null;
+    });
+  }, [availableSlots]);
+
   const deliveryPreviewLabel = useMemo(() => {
     if (selectedStartHour == null) return 'Select a pickup time';
     return formatDeliveryPreview(selectedDay, selectedStartHour);
   }, [selectedDay, selectedStartHour]);
 
   const visibleSlots = showAllSlots
-    ? pickupSlots
-    : pickupSlots.slice(0, VISIBLE_SLOT_COUNT);
+    ? availableSlots
+    : availableSlots.slice(0, VISIBLE_SLOT_COUNT);
 
   const hasLoadedOnceRef = useRef(false);
 
@@ -290,6 +315,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setSlotClock(Date.now());
       // First paint uses full-screen loader; day changes only refresh content below.
       loadHomeData(selectedDay, initialLoading ? 'initial' : 'content');
       // initialLoading intentionally omitted from deps — only gates the first load mode.
@@ -356,6 +382,7 @@ export default function HomeScreen() {
 
   const handleSelectDay = (index: number) => {
     if (index === selectedDay || contentLoading) return;
+    setSlotClock(Date.now());
     setSelectedDay(index);
   };
 
@@ -363,8 +390,12 @@ export default function HomeScreen() {
     if (isBooking) return;
     if (selectedStartHour == null) {
       Alert.alert(
-        'No pickup slot',
-        'Your community has no pickup times configured yet. Please try again later.',
+        'No slots available',
+        availableSlots.length === 0
+          ? selectedDay === 0
+            ? 'All pickup times for today have already passed. Please choose another day.'
+            : 'No pickup times are available for this day.'
+          : 'Please select a pickup time to continue.',
       );
       return;
     }
@@ -677,6 +708,15 @@ export default function HomeScreen() {
                 soon.
               </Text>
             </View>
+          ) : availableSlots.length === 0 ? (
+            <View style={styles.slotsEmpty}>
+              <Text style={styles.slotsEmptyTitle}>No slots available</Text>
+              <Text style={styles.slotsEmptyHint}>
+                {selectedDay === 0
+                  ? 'All pickup times for today have already passed. Please choose another day.'
+                  : 'No pickup times are available for this day. Please choose another day.'}
+              </Text>
+            </View>
           ) : (
             <>
               <ScrollView
@@ -746,7 +786,7 @@ export default function HomeScreen() {
                 })}
               </ScrollView>
 
-              {pickupSlots.length > VISIBLE_SLOT_COUNT && (
+              {availableSlots.length > VISIBLE_SLOT_COUNT && (
                 <Pressable
                   style={styles.moreSlotsLink}
                   onPress={() => setShowAllSlots((v) => !v)}

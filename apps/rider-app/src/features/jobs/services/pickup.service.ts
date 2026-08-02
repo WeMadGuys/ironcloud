@@ -385,6 +385,16 @@ export async function confirmPickup(
     .eq('order_id', orderId)
     .eq('job_type', 'pickup');
 
+  const { data: orderSlots } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .select('delivery_slot:delivery_slot_id (window_start, window_end)')
+    .eq('id', orderId)
+    .single();
+
+  const deliverySlot = (orderSlots as {
+    delivery_slot: { window_start: string; window_end: string } | null;
+  } | null)?.delivery_slot;
+
   const { data: existingDelivery } = await (supabase
     .from('rider_jobs') as ReturnType<typeof supabase.from>)
     .select('id')
@@ -393,26 +403,47 @@ export async function confirmPickup(
     .maybeSingle();
 
   if (!existingDelivery) {
-    const { data: order } = await (supabase
-      .from('orders') as ReturnType<typeof supabase.from>)
-      .select('delivery_slot:delivery_slot_id (window_start, window_end)')
-      .eq('id', orderId)
-      .single();
-
-    const slot = (order as {
-      delivery_slot: { window_start: string; window_end: string } | null;
-    } | null)?.delivery_slot;
-
     await (supabase.from('rider_jobs') as ReturnType<typeof supabase.from>).insert({
       order_id: orderId,
       rider_id: riderId,
       job_type: 'delivery',
       status: 'assigned',
-      scheduled_start: slot?.window_start ?? null,
-      scheduled_end: slot?.window_end ?? null,
+      scheduled_start: deliverySlot?.window_start ?? null,
+      scheduled_end: deliverySlot?.window_end ?? null,
+    });
+  }
+
+  // Same-day (or overdue) delivery: go out for delivery immediately.
+  // Next-day delivery stays picked_up until advance_orders_for_delivery_day runs.
+  if (isDeliveryDayReached(deliverySlot?.window_start)) {
+    await (supabase.from('orders') as ReturnType<typeof supabase.from>)
+      .update({ status: 'out_for_delivery' })
+      .eq('id', orderId);
+
+    await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
+      order_id: orderId,
+      status: 'out_for_delivery',
+      note: 'Delivery day — out for delivery',
+      actor_id: AUTH_PROVIDER === 'mock' ? MOCK_RIDER_ID : riderId,
+      metadata: {
+        source: 'confirm_pickup_same_day',
+        rider_id: riderId,
+      },
     });
   }
 
   await debitWalletAfterPickup(orderId);
   clearJobsCache();
+}
+
+/** Delivery slot calendar day (IST) is today or earlier. */
+function isDeliveryDayReached(windowStart: string | null | undefined): boolean {
+  if (!windowStart) return false;
+  const slotDay = new Date(windowStart).toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  });
+  const today = new Date().toLocaleDateString('en-CA', {
+    timeZone: 'Asia/Kolkata',
+  });
+  return slotDay <= today;
 }

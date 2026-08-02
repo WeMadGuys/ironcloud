@@ -44,6 +44,7 @@ export const OrderDetailPage = () => {
   const addNoteMutation = trpc.orders.addNote.useMutation();
   const cancelMutation = trpc.orders.cancel.useMutation();
   const updateStatusMutation = trpc.orders.updateStatus.useMutation();
+  const advanceDeliveryMutation = trpc.orders.advanceDeliveryDay.useMutation();
 
   const load = async () => {
     setLoading(true);
@@ -167,6 +168,29 @@ export const OrderDetailPage = () => {
                 disabled={!note || addNoteMutation.isPending}
               >
                 Add Note
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  advanceDeliveryMutation.mutate(undefined, {
+                    onSuccess: (res) => {
+                      window.alert(
+                        res.advanced > 0
+                          ? `Advanced ${res.advanced} order(s) to out for delivery.`
+                          : 'No orders were eligible to advance.',
+                      );
+                      load();
+                    },
+                    onError: (err) => {
+                      window.alert(err.message || 'Failed to advance delivery day orders.');
+                    },
+                  })
+                }
+                disabled={advanceDeliveryMutation.isPending}
+              >
+                {advanceDeliveryMutation.isPending
+                  ? 'Running…'
+                  : 'Run delivery day advance'}
               </Button>
               <Button
                 variant="danger"
