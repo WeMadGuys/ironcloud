@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { writeAuditLog } from '../../lib/audit';
+import { ensureDeliveryRiderJob } from '../../lib/ensureDeliveryJob';
 import { adminProcedure, router } from '../../trpc/init';
 
 const orderStatusSchema = z.enum([
@@ -9,6 +10,8 @@ const orderStatusSchema = z.enum([
   'ready_for_delivery', 'delivery_assigned', 'out_for_delivery', 'delivered',
   'completed', 'rated', 'cancelled', 'refund_initiated', 'refund_completed',
 ]);
+
+const DELIVERY_ASSIGN_STATUSES = new Set(['delivery_assigned', 'out_for_delivery']);
 
 export const ordersRouter = router({
   updateStatus: adminProcedure
@@ -24,6 +27,12 @@ export const ordersRouter = router({
         .eq('id', input.orderId)
         .single();
 
+      let deliveryRiderId: string | undefined;
+      if (DELIVERY_ASSIGN_STATUSES.has(input.status)) {
+        const ensured = await ensureDeliveryRiderJob(ctx.supabase, input.orderId);
+        deliveryRiderId = ensured.riderId;
+      }
+
       const { error } = await ctx.supabase
         .from('orders')
         .update({ status: input.status })
@@ -36,6 +45,9 @@ export const ordersRouter = router({
         status: input.status,
         actor_id: ctx.userId,
         note: input.note ?? null,
+        metadata: deliveryRiderId
+          ? { rider_id: deliveryRiderId, source: 'admin_status_update' }
+          : {},
       });
 
       await writeAuditLog({
@@ -45,10 +57,13 @@ export const ordersRouter = router({
         entityType: 'order',
         entityId: input.orderId,
         before: before ? { status: before.status } : undefined,
-        after: { status: input.status },
+        after: {
+          status: input.status,
+          ...(deliveryRiderId ? { deliveryRiderId } : {}),
+        },
       });
 
-      return { success: true };
+      return { success: true, deliveryRiderId };
     }),
 
   bulkUpdateStatus: adminProcedure
@@ -58,6 +73,12 @@ export const ordersRouter = router({
       note: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (DELIVERY_ASSIGN_STATUSES.has(input.status)) {
+        for (const orderId of input.orderIds) {
+          await ensureDeliveryRiderJob(ctx.supabase, orderId);
+        }
+      }
+
       const { error } = await ctx.supabase
         .from('orders')
         .update({ status: input.status })
