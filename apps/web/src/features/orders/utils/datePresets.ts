@@ -5,6 +5,8 @@ export type OrderDatePreset =
   | 'today'
   | 'yesterday'
   | 'tomorrow'
+  | 'last_7'
+  | 'last_30'
   | 'this_week'
   | 'last_week'
   | 'this_month'
@@ -17,11 +19,26 @@ export const ORDER_DATE_PRESET_OPTIONS: { value: OrderDatePreset; label: string 
   { value: 'today', label: 'Today' },
   { value: 'yesterday', label: 'Yesterday' },
   { value: 'tomorrow', label: 'Tomorrow' },
+  { value: 'last_7', label: 'Last 7 days' },
+  { value: 'last_30', label: 'Last 30 days' },
   { value: 'this_week', label: 'This week' },
   { value: 'last_week', label: 'Last week' },
   { value: 'this_month', label: 'This month' },
   { value: 'last_month', label: 'Last month' },
   { value: 'this_year', label: 'This year' },
+  { value: 'custom', label: 'Custom date' },
+];
+
+/** Dashboard date dropdown — no "all" / "tomorrow"; focuses on operational windows. */
+export const DASHBOARD_DATE_PRESET_OPTIONS: { value: OrderDatePreset; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: 'last_7', label: 'Last 7 days' },
+  { value: 'last_30', label: 'Last 30 days' },
+  { value: 'this_week', label: 'This week' },
+  { value: 'last_week', label: 'Last week' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
   { value: 'custom', label: 'Custom date' },
 ];
 
@@ -94,6 +111,10 @@ export function resolveOrderDateRange(
       const day = addDays(today, 1);
       return { from: day, to: endOfDay(day) };
     }
+    case 'last_7':
+      return { from: addDays(today, -6), to: endOfDay(today) };
+    case 'last_30':
+      return { from: addDays(today, -29), to: endOfDay(today) };
     case 'this_week':
       return { from: startOfWeek(today), to: endOfWeek(today) };
     case 'last_week': {
@@ -135,6 +156,15 @@ export function dateRangeKey(
 ): string {
   if (preset !== 'custom') return preset;
   return `custom:${customFrom ?? ''}:${customTo ?? ''}`;
+}
+
+/** Previous period of equal length ending just before `from` (for KPI trends). */
+export function previousDateRange(range: DateRange): DateRange {
+  if (!range.from || !range.to) return { from: null, to: null };
+  const ms = range.to.getTime() - range.from.getTime();
+  const prevTo = endOfDay(addDays(startOfDay(range.from), -1));
+  const prevFrom = startOfDay(new Date(prevTo.getTime() - ms));
+  return { from: prevFrom, to: prevTo };
 }
 
 export { toISODate };

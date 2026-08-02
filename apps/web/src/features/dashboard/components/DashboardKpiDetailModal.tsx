@@ -3,12 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { Badge, EmptyState, Loader, Modal, Table } from '@/components';
+import type { DateRange } from '@/features/orders/utils/datePresets';
 import {
   formatCurrency,
   formatOrderStatus,
   formatRelativeTime,
   getOrderStatusBadge,
-  toISODate,
 } from '@/utils/format';
 import type { OrderStatus } from '@ironcloud/db';
 
@@ -20,18 +20,24 @@ import {
 
 type Props = {
   kpi: DashboardKpiKey | null;
-  date: Date;
+  range: DateRange;
+  rangeKey: string;
   communityId?: string;
   onClose: () => void;
 };
 
-export const DashboardKpiDetailModal = ({ kpi, date, communityId, onClose }: Props) => {
-  const dateKey = toISODate(date);
+export const DashboardKpiDetailModal = ({
+  kpi,
+  range,
+  rangeKey,
+  communityId,
+  onClose,
+}: Props) => {
   const open = kpi !== null;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-dashboard-kpi', kpi, dateKey, communityId || 'all'],
-    queryFn: () => fetchDashboardKpiDetails(kpi!, date, communityId),
+    queryKey: ['admin-dashboard-kpi', kpi, rangeKey, communityId || 'all'],
+    queryFn: () => fetchDashboardKpiDetails(kpi!, range, communityId),
     enabled: open,
     staleTime: 30_000,
   });
@@ -120,7 +126,10 @@ export const DashboardKpiDetailModal = ({ kpi, date, communityId, onClose }: Pro
         )
       ) : data.kind === 'customers' ? (
         data.rows.length === 0 ? (
-          <EmptyState title="No customers" description="No customers ordered on this date." />
+          <EmptyState
+            title="No customers"
+            description="No customers with active orders in this range."
+          />
         ) : (
           <Table
             columns={[
@@ -138,7 +147,7 @@ export const DashboardKpiDetailModal = ({ kpi, date, communityId, onClose }: Pro
               },
               {
                 key: 'orders',
-                header: 'Orders today',
+                header: 'Active orders',
                 render: (c) => c.order_count,
               },
             ]}

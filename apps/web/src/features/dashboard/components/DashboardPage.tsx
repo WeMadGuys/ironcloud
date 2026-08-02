@@ -27,6 +27,12 @@ import {
   fetchCommunityOptions,
   type CommunityOption,
 } from '@/features/communities/services/communities.service';
+import {
+  DASHBOARD_DATE_PRESET_OPTIONS,
+  dateRangeKey,
+  resolveOrderDateRange,
+  type OrderDatePreset,
+} from '@/features/orders/utils/datePresets';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { getSupabase } from '@/lib/supabase';
 import {
@@ -34,8 +40,6 @@ import {
   formatOrderStatus,
   formatRelativeTime,
   getOrderStatusBadge,
-  parseISODate,
-  toISODate,
 } from '@/utils/format';
 import type { OrderStatus } from '@ironcloud/db';
 
@@ -45,34 +49,50 @@ import { DashboardKpiDetailModal } from './DashboardKpiDetailModal';
 import pageStyles from '@/styles/pages.module.css';
 import styles from './DashboardPage.module.css';
 
-const calcTrend = (current: number, previous: number) => {
+const calcTrend = (current: number, previous: number, singleDay: boolean) => {
   if (previous === 0) return { value: '—', direction: 'neutral' as const };
   const pct = ((current - previous) / previous) * 100;
   return {
-    value: `${Math.abs(pct).toFixed(1)}% vs previous day`,
+    value: `${Math.abs(pct).toFixed(1)}% vs previous ${singleDay ? 'day' : 'period'}`,
     direction: pct >= 0 ? ('positive' as const) : ('negative' as const),
   };
 };
 
 export const DashboardPage = () => {
-  const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [chartDays, setChartDays] = useState(7);
+  const [datePreset, setDatePreset] = useState<OrderDatePreset>('today');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [communityId, setCommunityId] = useState('');
   const [search, setSearch] = useState('');
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [activeKpi, setActiveKpi] = useState<DashboardKpiKey | null>(null);
   const debouncedSearch = useDebouncedValue(search);
-  const dateKey = toISODate(selectedDate);
+
+  const rangeKey = dateRangeKey(datePreset, customFrom, customTo);
+  const dateRange = useMemo(
+    () => resolveOrderDateRange(datePreset, customFrom, customTo),
+    [datePreset, customFrom, customTo],
+  );
+  const singleDay = useMemo(() => {
+    if (!dateRange.from || !dateRange.to) return true;
+    return (
+      dateRange.from.toDateString() ===
+      new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate()).toDateString()
+    );
+  }, [dateRange]);
+
+  const rangeLabel =
+    DASHBOARD_DATE_PRESET_OPTIONS.find((o) => o.value === datePreset)?.label ?? 'Selected range';
 
   useEffect(() => {
     void fetchCommunityOptions().then(setCommunities);
   }, []);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['admin-dashboard', dateKey, chartDays, communityId || 'all'],
-    queryFn: () =>
-      fetchDashboardBundle(selectedDate, chartDays, communityId || undefined),
+    queryKey: ['admin-dashboard', rangeKey, communityId || 'all'],
+    queryFn: () => fetchDashboardBundle(dateRange, communityId || undefined),
     staleTime: 45_000,
+    enabled: datePreset !== 'custom' || Boolean(customFrom || customTo),
   });
 
   // Soft realtime: debounce full reloads so live order churn doesn't thrash the page.
@@ -109,38 +129,47 @@ export const DashboardPage = () => {
     });
   }, [data?.recentOrders, debouncedSearch]);
 
-  if (isLoading && !data) return <Loader />;
+  const customPending = datePreset === 'custom' && !customFrom && !customTo;
 
-  const kpis = data!.kpis;
-  const overview = data!.overview;
-  const statusDist = data!.statusDist;
-  const topCommunities = data!.topCommunities;
-  const topPartners = data!.topPartners;
-  const lowWallet = data!.lowWallet;
+  if ((isLoading && !data) || (!data && !customPending)) return <Loader />;
 
-  const orderTrend = calcTrend(
-    kpis.trends.totalOrders.value,
-    kpis.trends.totalOrders.previous,
-  );
-
-  return (
-    <div style={{ opacity: isFetching && !isLoading ? 0.85 : 1 }}>
+  const filters = (
       <div className={pageStyles.filters}>
         <SearchInput
           placeholder="Search recent orders..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <input
-          type="date"
+        <select
           className={pageStyles.select}
-          value={dateKey}
-          onChange={(e) => {
-            if (!e.target.value) return;
-            setSelectedDate(parseISODate(e.target.value));
-          }}
-          aria-label="Dashboard date"
-        />
+          value={datePreset}
+          onChange={(e) => setDatePreset(e.target.value as OrderDatePreset)}
+          aria-label="Dashboard date range"
+        >
+          {DASHBOARD_DATE_PRESET_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {datePreset === 'custom' ? (
+          <>
+            <input
+              type="date"
+              className={pageStyles.select}
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              aria-label="Custom from date"
+            />
+            <input
+              type="date"
+              className={pageStyles.select}
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              aria-label="Custom to date"
+            />
+          </>
+        ) : null}
         <select
           className={pageStyles.select}
           value={communityId}
@@ -154,16 +183,36 @@ export const DashboardPage = () => {
             </option>
           ))}
         </select>
-        <select
-          className={pageStyles.select}
-          value={String(chartDays)}
-          onChange={(e) => setChartDays(Number(e.target.value))}
-          aria-label="Chart range"
-        >
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-        </select>
       </div>
+  );
+
+  if (customPending || !data) {
+    return (
+      <div>
+        {filters}
+        <p className={styles.listMeta} style={{ padding: '1.5rem' }}>
+          Select a custom date range to load dashboard metrics.
+        </p>
+      </div>
+    );
+  }
+
+  const kpis = data.kpis;
+  const overview = data.overview;
+  const statusDist = data.statusDist;
+  const topCommunities = data.topCommunities;
+  const topPartners = data.topPartners;
+  const lowWallet = data.lowWallet;
+
+  const orderTrend = calcTrend(
+    kpis.trends.totalOrders.value,
+    kpis.trends.totalOrders.previous,
+    singleDay,
+  );
+
+  return (
+    <div style={{ opacity: isFetching && !isLoading ? 0.85 : 1 }}>
+      {filters}
 
       <div className={styles.kpiGrid}>
         <StatCard
@@ -250,13 +299,7 @@ export const DashboardPage = () => {
       </div>
 
       <div className={styles.chartsRow}>
-        <Card
-          title="Orders Overview"
-          action={{
-            label: `${chartDays} Days`,
-            onClick: () => setChartDays(chartDays === 7 ? 30 : 7),
-          }}
-        >
+        <Card title="Orders Overview" action={{ label: rangeLabel }}>
           <OrdersAreaChart data={overview} />
         </Card>
         <Card title="Order Status Distribution">
@@ -343,7 +386,8 @@ export const DashboardPage = () => {
 
       <DashboardKpiDetailModal
         kpi={activeKpi}
-        date={selectedDate}
+        range={dateRange}
+        rangeKey={rangeKey}
         communityId={communityId || undefined}
         onClose={() => setActiveKpi(null)}
       />

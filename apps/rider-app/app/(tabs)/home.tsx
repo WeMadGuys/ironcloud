@@ -47,7 +47,18 @@ function CommunityCard({ item, onPress }: { item: CommunityJobSummary; onPress: 
       ? colors.status.success.foreground
       : item.status === 'in_progress'
       ? colors.status.warning.foreground
+      : item.status === 'completed'
+      ? colors.brand.accent
       : colors.text.muted;
+
+  const statusLabel =
+    item.status === 'active'
+      ? 'Active'
+      : item.status === 'in_progress'
+      ? 'In Progress'
+      : item.status === 'completed'
+      ? 'Completed'
+      : 'Upcoming';
 
   return (
     <Pressable style={styles.communityCard} onPress={onPress}>
@@ -62,11 +73,7 @@ function CommunityCard({ item, onPress }: { item: CommunityJobSummary; onPress: 
           <View style={[styles.statusBadge, { backgroundColor: `${statusColor}18` }]}>
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
             <Text style={[styles.statusText, { color: statusColor }]}>
-              {item.status === 'active'
-                ? 'Active'
-                : item.status === 'in_progress'
-                ? 'In Progress'
-                : 'Upcoming'}
+              {statusLabel}
             </Text>
           </View>
         </View>

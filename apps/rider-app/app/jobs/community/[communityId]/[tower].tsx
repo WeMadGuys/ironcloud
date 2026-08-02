@@ -18,7 +18,10 @@ import {
   type FlatJob,
 } from '../../../../src/features/jobs/services/jobs.service';
 
-function actionLabel(state: FlatJob['buttonState']) {
+function actionLabel(state: FlatJob['buttonState'], dayOffset: number) {
+  if (dayOffset > 0 && (state === 'collect' || state === 'deliver')) {
+    return 'Upcoming';
+  }
   switch (state) {
     case 'collect':
       return 'Collect';
@@ -66,6 +69,8 @@ export default function FlatListScreen() {
   );
 
   const handleAction = (flat: FlatJob) => {
+    // Future-day jobs are visible for planning but not actionable yet.
+    if (dayOffset > 0) return;
     if (flat.buttonState === 'collected' || flat.buttonState === 'delivered') return;
 
     if (flat.buttonState === 'collect') {
@@ -104,9 +109,10 @@ export default function FlatListScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
           {flats.map((flat) => {
-            const disabled = flat.buttonState === 'collected' || flat.buttonState === 'delivered';
-            const isSuccess =
+            const isDone =
               flat.buttonState === 'collected' || flat.buttonState === 'delivered';
+            const isFuture = dayOffset > 0 && !isDone;
+            const disabled = isDone || isFuture;
             return (
               <View key={`${flat.jobId}`} style={styles.card}>
                 <View style={styles.cardTop}>
@@ -121,14 +127,21 @@ export default function FlatListScreen() {
                   <Pressable
                     style={[
                       styles.actionButton,
-                      isSuccess && styles.actionButtonDone,
+                      isDone && styles.actionButtonDone,
+                      isFuture && styles.actionButtonUpcoming,
                       disabled && styles.actionButtonDisabled,
                     ]}
                     onPress={() => handleAction(flat)}
                     disabled={disabled}
                   >
-                    <Text style={[styles.actionText, isSuccess && styles.actionTextDone]}>
-                      {actionLabel(flat.buttonState)}
+                    <Text
+                      style={[
+                        styles.actionText,
+                        isDone && styles.actionTextDone,
+                        isFuture && styles.actionTextUpcoming,
+                      ]}
+                    >
+                      {actionLabel(flat.buttonState, dayOffset)}
                     </Text>
                   </Pressable>
                 </View>
@@ -184,8 +197,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.status.success.foreground,
   },
+  actionButtonUpcoming: {
+    backgroundColor: colors.surface.background,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
   actionButtonDisabled: { opacity: 0.9 },
   actionText: { fontFamily: fonts.inter.semibold, fontSize: 13, color: colors.brand.onPrimary },
   actionTextDone: { color: colors.status.success.foreground },
+  actionTextUpcoming: { color: colors.text.muted },
   empty: { textAlign: 'center', fontFamily: fonts.inter.regular, color: colors.text.muted, marginTop: spacing.xl },
 });

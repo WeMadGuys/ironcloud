@@ -1,6 +1,10 @@
 import { castRows } from '@/lib/query';
 import { getSupabase } from '@/lib/supabase';
-import { endOfDay, startOfDay } from '@/utils/format';
+import { endOfDay, startOfDay, toISODate } from '@/utils/format';
+import {
+  previousDateRange,
+  type DateRange,
+} from '@/features/orders/utils/datePresets';
 
 export type DashboardKPIs = {
   totalOrders: number;
@@ -17,57 +21,109 @@ export type DashboardKPIs = {
 };
 
 const PENDING_PICKUP_STATUSES = ['booked', 'pickup_assigned', 'pickup_in_progress'];
-const IN_PROGRESS_STATUSES = ['picked_up', 'warehouse_received', 'sorting', 'ironing', 'quality_check', 'packed', 'ready_for_delivery'];
+const IN_PROGRESS_STATUSES = [
+  'picked_up',
+  'warehouse_received',
+  'sorting',
+  'ironing',
+  'quality_check',
+  'packed',
+  'ready_for_delivery',
+];
 const OUT_FOR_DELIVERY_STATUSES = ['delivery_assigned', 'out_for_delivery'];
 const DELIVERED_STATUSES = ['delivered', 'completed', 'rated'];
 
 /** Rankings use a recent window — all-time full-table scans are wrong past PostgREST row caps. */
 const RANKING_LOOKBACK_DAYS = 30;
 
+type ActiveOrderRow = {
+  id: string;
+  status: string;
+  total_amount: number;
+  customer_id: string;
+  pickup_slot_id: string | null;
+  delivery_slot_id: string | null;
+};
+
+type SlotRow = { id: string; window_start: string };
+
+/**
+ * Orders with a pickup or delivery slot whose window falls in the range
+ * (operational "active that day"), not orders booked via created_at.
+ */
+async function fetchActiveOrdersInRange(
+  range: DateRange,
+  select: string,
+  communityId?: string,
+): Promise<Record<string, unknown>[]> {
+  const supabase = getSupabase();
+  const rangeStart = range.from;
+  const rangeEnd = range.to;
+  if (!rangeStart && !rangeEnd) return [];
+
+  let slotsQuery = supabase.from('service_slots').select('id, window_start');
+  if (rangeStart) slotsQuery = slotsQuery.gte('window_start', rangeStart.toISOString());
+  if (rangeEnd) slotsQuery = slotsQuery.lte('window_start', rangeEnd.toISOString());
+
+  const { data: slots, error: slotsError } = await slotsQuery;
+  if (slotsError) {
+    console.error('[dashboard] service_slots', slotsError.message);
+    return [];
+  }
+
+  const slotRows = castRows<SlotRow>(slots);
+  if (slotRows.length === 0) return [];
+
+  const slotIds = slotRows.map((s) => s.id);
+  // PostgREST .or() with .in() lists; chunk if a huge custom range ever blows URL limits.
+  const orFilter = `pickup_slot_id.in.(${slotIds.join(',')}),delivery_slot_id.in.(${slotIds.join(',')})`;
+
+  let query = supabase.from('orders').select(select).or(orFilter);
+  if (communityId) query = query.eq('community_id', communityId);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error('[dashboard] active orders', error.message);
+    return [];
+  }
+
+  // Dedupe — an order can match both pickup and delivery filters in theory via .or().
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const row of castRows<Record<string, unknown> & { id: string }>(data)) {
+    byId.set(row.id, row);
+  }
+  return [...byId.values()];
+}
+
+async function fetchActiveOrderCount(range: DateRange, communityId?: string): Promise<number> {
+  const rows = await fetchActiveOrdersInRange(range, 'id', communityId);
+  return rows.length;
+}
+
 export const fetchDashboardKPIs = async (
-  date: Date,
+  range: DateRange,
   communityId?: string,
 ): Promise<DashboardKPIs> => {
   const supabase = getSupabase();
-  const dayStart = startOfDay(date).toISOString();
-  const dayEnd = endOfDay(date).toISOString();
+  const effectiveRange: DateRange = range.from || range.to
+    ? range
+    : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
 
-  const prevDate = new Date(date);
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevStart = startOfDay(prevDate).toISOString();
-  const prevEnd = endOfDay(prevDate).toISOString();
+  const prevRange = previousDateRange(effectiveRange);
 
-  let ordersTodayQuery = supabase
-    .from('orders')
-    .select('status, total_amount, customer_id')
-    .gte('created_at', dayStart)
-    .lte('created_at', dayEnd);
-  let ordersYesterdayQuery = supabase
-    .from('orders')
-    .select('id', { count: 'exact', head: true })
-    .gte('created_at', prevStart)
-    .lte('created_at', prevEnd);
-
-  if (communityId) {
-    ordersTodayQuery = ordersTodayQuery.eq('community_id', communityId);
-    ordersYesterdayQuery = ordersYesterdayQuery.eq('community_id', communityId);
-  }
-
-  const [ordersToday, ordersYesterday, wallets, partners, riders] = await Promise.all([
-    ordersTodayQuery,
-    ordersYesterdayQuery,
-    // ~1k wallet rows is fine for 5 admins; prefer sum RPC later if this grows.
+  const [orderRows, totalYesterday, wallets, partners, riders] = await Promise.all([
+    fetchActiveOrdersInRange(
+      effectiveRange,
+      'id, status, total_amount, customer_id, pickup_slot_id, delivery_slot_id',
+      communityId,
+    ),
+    fetchActiveOrderCount(prevRange, communityId),
     supabase.from('wallets').select('balance'),
     supabase.from('partners').select('id', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('riders').select('id', { count: 'exact', head: true }),
   ]);
 
-  const orders = castRows<{
-    status: string;
-    total_amount: number;
-    customer_id: string;
-  }>(ordersToday.data);
-
+  const orders = orderRows as unknown as ActiveOrderRow[];
   const uniqueCustomers = new Set(orders.map((o) => o.customer_id));
 
   const countByStatus = (statuses: string[]) =>
@@ -80,7 +136,6 @@ export const fetchDashboardKPIs = async (
   );
 
   const totalToday = orders.length;
-  const totalYesterday = ordersYesterday.count ?? 0;
 
   return {
     totalOrders: totalToday,
@@ -99,51 +154,88 @@ export const fetchDashboardKPIs = async (
   };
 };
 
-export const fetchOrdersOverview = async (days: number, communityId?: string) => {
+export const fetchOrdersOverview = async (range: DateRange, communityId?: string) => {
   const supabase = getSupabase();
-  const start = new Date();
-  start.setDate(start.getDate() - days);
-  start.setHours(0, 0, 0, 0);
+  const rangeStart = range.from ?? startOfDay(new Date());
+  const rangeEnd = range.to ?? endOfDay(new Date());
+
+  let slotsQuery = supabase
+    .from('service_slots')
+    .select('id, window_start')
+    .gte('window_start', rangeStart.toISOString())
+    .lte('window_start', rangeEnd.toISOString());
+
+  const { data: slots, error: slotsError } = await slotsQuery;
+  if (slotsError) {
+    console.error('[dashboard] overview slots', slotsError.message);
+    return [];
+  }
+
+  const slotRows = castRows<SlotRow>(slots);
+  if (slotRows.length === 0) return [];
+
+  const slotDayById = new Map<string, string>();
+  for (const slot of slotRows) {
+    slotDayById.set(slot.id, toISODate(new Date(slot.window_start)));
+  }
+
+  const slotIds = slotRows.map((s) => s.id);
+  const orFilter = `pickup_slot_id.in.(${slotIds.join(',')}),delivery_slot_id.in.(${slotIds.join(',')})`;
 
   let query = supabase
     .from('orders')
-    .select('created_at')
-    .gte('created_at', start.toISOString());
-
+    .select('id, pickup_slot_id, delivery_slot_id')
+    .or(orFilter);
   if (communityId) query = query.eq('community_id', communityId);
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) {
+    console.error('[dashboard] overview orders', error.message);
+    return [];
+  }
 
-  const counts: Record<string, number> = {};
-  (data ?? []).forEach((o) => {
-    const date = o.created_at.split('T')[0];
-    counts[date] = (counts[date] ?? 0) + 1;
-  });
+  const counts: Record<string, Set<string>> = {};
+  for (const order of castRows<{
+    id: string;
+    pickup_slot_id: string | null;
+    delivery_slot_id: string | null;
+  }>(data)) {
+    const days = new Set<string>();
+    if (order.pickup_slot_id && slotDayById.has(order.pickup_slot_id)) {
+      days.add(slotDayById.get(order.pickup_slot_id)!);
+    }
+    if (order.delivery_slot_id && slotDayById.has(order.delivery_slot_id)) {
+      days.add(slotDayById.get(order.delivery_slot_id)!);
+    }
+    for (const day of days) {
+      if (!counts[day]) counts[day] = new Set();
+      counts[day].add(order.id);
+    }
+  }
 
   return Object.entries(counts)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, count]) => ({ date, count }));
+    .map(([date, ids]) => ({ date, count: ids.size }));
 };
 
-export const fetchOrderStatusDistribution = async (date: Date, communityId?: string) => {
-  const supabase = getSupabase();
-  const dayStart = startOfDay(date).toISOString();
-  const dayEnd = endOfDay(date).toISOString();
+export const fetchOrderStatusDistribution = async (
+  range: DateRange,
+  communityId?: string,
+) => {
+  const effectiveRange: DateRange = range.from || range.to
+    ? range
+    : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
 
-  let query = supabase
-    .from('orders')
-    .select('status')
-    .gte('created_at', dayStart)
-    .lte('created_at', dayEnd);
-
-  if (communityId) query = query.eq('community_id', communityId);
-
-  const { data } = await query;
+  const orders = await fetchActiveOrdersInRange(
+    effectiveRange,
+    'id, status',
+    communityId,
+  );
 
   const counts: Record<string, number> = {};
-  (data ?? []).forEach((o) => {
+  for (const o of orders as unknown as { status: string }[]) {
     counts[o.status] = (counts[o.status] ?? 0) + 1;
-  });
+  }
 
   return Object.entries(counts).map(([name, value]) => ({
     name: name.replace(/_/g, ' '),
@@ -328,12 +420,13 @@ const ORDER_DETAIL_SELECT = `
 
 export const fetchDashboardKpiDetails = async (
   kpi: DashboardKpiKey,
-  date: Date,
+  range: DateRange,
   communityId?: string,
 ): Promise<DashboardKpiDetails> => {
   const supabase = getSupabase();
-  const dayStart = startOfDay(date).toISOString();
-  const dayEnd = endOfDay(date).toISOString();
+  const effectiveRange: DateRange = range.from || range.to
+    ? range
+    : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
 
   if (
     kpi === 'totalOrders' ||
@@ -343,27 +436,24 @@ export const fetchDashboardKpiDetails = async (
     kpi === 'outForDelivery' ||
     kpi === 'delivered'
   ) {
-    let query = supabase
-      .from('orders')
-      .select(ORDER_DETAIL_SELECT)
-      .gte('created_at', dayStart)
-      .lte('created_at', dayEnd)
-      .order('created_at', { ascending: false })
-      .limit(100);
+    const rows = (await fetchActiveOrdersInRange(
+      effectiveRange,
+      ORDER_DETAIL_SELECT,
+      communityId,
+    )) as unknown as DashboardOrderDetail[];
 
-    if (communityId) query = query.eq('community_id', communityId);
     const statuses = ORDER_KPI_STATUSES[kpi];
-    if (statuses) query = query.in('status', statuses);
+    const filtered = statuses
+      ? rows.filter((o) => statuses.includes(o.status))
+      : rows;
 
-    const { data, error } = await query;
-    if (error) {
-      console.error('[fetchDashboardKpiDetails] orders', error.message);
-      return { kind: 'orders', rows: [] };
-    }
+    filtered.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
 
     return {
       kind: 'orders',
-      rows: castRows<DashboardOrderDetail>(data),
+      rows: filtered.slice(0, 100),
     };
   }
 
@@ -386,25 +476,17 @@ export const fetchDashboardKpiDetails = async (
   }
 
   if (kpi === 'activeCustomers') {
-    let query = supabase
-      .from('orders')
-      .select('customer_id, profiles!orders_customer_id_fkey(full_name, phone)')
-      .gte('created_at', dayStart)
-      .lte('created_at', dayEnd);
-
-    if (communityId) query = query.eq('community_id', communityId);
-
-    const { data, error } = await query;
-    if (error) {
-      console.error('[fetchDashboardKpiDetails] customers', error.message);
-      return { kind: 'customers', rows: [] };
-    }
+    const rows = await fetchActiveOrdersInRange(
+      effectiveRange,
+      'customer_id, profiles!orders_customer_id_fkey(full_name, phone)',
+      communityId,
+    );
 
     const byCustomer: Record<string, DashboardCustomerDetail> = {};
-    for (const row of castRows<{
+    for (const row of rows as unknown as {
       customer_id: string;
       profiles: { full_name: string; phone: string | null } | null;
-    }>(data)) {
+    }[]) {
       const existing = byCustomer[row.customer_id];
       if (existing) {
         existing.order_count += 1;
@@ -464,15 +546,18 @@ export const fetchDashboardKpiDetails = async (
 
 /** Single payload for dashboard — one React Query key / cache entry. */
 export const fetchDashboardBundle = async (
-  date: Date,
-  chartDays: number,
+  range: DateRange,
   communityId?: string,
 ) => {
+  const effectiveRange: DateRange = range.from || range.to
+    ? range
+    : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
+
   const [kpis, overview, statusDist, topCommunities, topPartners, recentOrders, lowWallet] =
     await Promise.all([
-      fetchDashboardKPIs(date, communityId),
-      fetchOrdersOverview(chartDays, communityId),
-      fetchOrderStatusDistribution(date, communityId),
+      fetchDashboardKPIs(effectiveRange, communityId),
+      fetchOrdersOverview(effectiveRange, communityId),
+      fetchOrderStatusDistribution(effectiveRange, communityId),
       fetchTopCommunities(),
       fetchTopPartners(),
       fetchRecentOrders(8, communityId),
