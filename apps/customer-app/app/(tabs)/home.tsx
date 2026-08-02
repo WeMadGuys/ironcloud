@@ -422,6 +422,42 @@ export default function HomeScreen() {
   const handleCancelBooking = () => {
     if (!dayBooking || isCancelling) return;
 
+    const runCancel = async () => {
+      setIsCancelling(true);
+      const cancelledDay = selectedDay;
+      try {
+        await cancelBooking(dayBooking.orderId);
+        // Optimistic UI — don't wait on a full home reload.
+        setDayBooking(null);
+        setBookedDays((prev) => prev.filter((d) => d !== cancelledDay));
+        void refreshBookingState(cancelledDay);
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Could not cancel this booking';
+        if (Platform.OS === 'web') {
+          if (typeof window !== 'undefined') window.alert(message);
+        } else {
+          Alert.alert('Cancel failed', message);
+        }
+        await refreshBookingState(cancelledDay);
+      } finally {
+        setIsCancelling(false);
+      }
+    };
+
+    // RN Web's Alert.alert often does not show multi-button dialogs.
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window === 'undefined' ||
+        window.confirm(
+          'Cancel booking?\n\nThis will cancel your pickup for this day. You can book again anytime.',
+        );
+      if (confirmed) void runCancel();
+      return;
+    }
+
     Alert.alert(
       'Cancel booking?',
       'This will cancel your pickup for this day. You can book again anytime.',
@@ -430,26 +466,8 @@ export default function HomeScreen() {
         {
           text: 'Cancel booking',
           style: 'destructive',
-          onPress: async () => {
-            setIsCancelling(true);
-            const cancelledDay = selectedDay;
-            try {
-              await cancelBooking(dayBooking.orderId);
-              // Optimistic UI — don't wait on a full home reload.
-              setDayBooking(null);
-              setBookedDays((prev) => prev.filter((d) => d !== cancelledDay));
-              void refreshBookingState(cancelledDay);
-            } catch (error) {
-              Alert.alert(
-                'Cancel failed',
-                error instanceof Error
-                  ? error.message
-                  : 'Could not cancel this booking',
-              );
-              await refreshBookingState(cancelledDay);
-            } finally {
-              setIsCancelling(false);
-            }
+          onPress: () => {
+            void runCancel();
           },
         },
       ],

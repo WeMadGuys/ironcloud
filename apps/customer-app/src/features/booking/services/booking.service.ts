@@ -1164,12 +1164,40 @@ const CANCELLABLE_STATUSES = [
 
 /**
  * Cancel a pre-pickup booking so home returns to the slot picker.
+ * Prefer DB RPC (works without apps/web). Fall back to Next API, then mock client path.
  */
 export async function cancelBooking(orderId: string): Promise<void> {
-  if (!IS_MOCK_AUTH) {
-    return cancelBookingViaApi(orderId);
+  if (IS_MOCK_AUTH) {
+    return cancelBookingClientSide(orderId);
   }
-  return cancelBookingClientSide(orderId);
+
+  try {
+    await cancelBookingViaRpc(orderId);
+    return;
+  } catch (rpcError) {
+    try {
+      await cancelBookingViaApi(orderId);
+      return;
+    } catch {
+      throw rpcError instanceof Error
+        ? rpcError
+        : new Error('Failed to cancel booking.');
+    }
+  }
+}
+
+async function cancelBookingViaRpc(orderId: string): Promise<void> {
+  const { error } = await supabase.rpc('cancel_customer_order', {
+    p_order_id: orderId,
+    p_reason: 'Cancelled by customer',
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to cancel booking.');
+  }
+
+  clearActiveBookingCache();
+  clearOrdersCache();
 }
 
 async function cancelBookingViaApi(orderId: string): Promise<void> {

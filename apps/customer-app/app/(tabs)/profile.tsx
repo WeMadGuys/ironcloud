@@ -28,6 +28,7 @@ import {
 } from '@ironcloud/ui';
 
 import { AUTH_PROVIDER } from '../../src/config/auth';
+import { signOut } from '../../src/features/auth/services/auth';
 import { clearOrdersCache } from '../../src/features/orders/services/orders.service';
 import {
   clearAddressCache,
@@ -46,7 +47,6 @@ import {
   clearReferralCache,
   prefetchMyReferral,
 } from '../../src/features/referrals/services/referral.service';
-import { supabase } from '../../src/lib/supabase';
 
 const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
 
@@ -257,7 +257,36 @@ export default function ProfileScreen() {
     }
   };
 
+  const performLogout = async () => {
+    try {
+      if (!IS_MOCK_AUTH) {
+        const result = await signOut();
+        if (result.error) {
+          console.warn('Logout signOut failed:', result.error.message);
+        }
+      }
+    } catch (error) {
+      console.warn('Logout signOut failed:', error);
+    } finally {
+      clearProfileCache();
+      clearReferralCache();
+      clearOrdersCache();
+      clearWalletCache();
+      clearAddressCache();
+      router.replace('/(auth)/login');
+    }
+  };
+
   const handleLogout = () => {
+    // RN Web's Alert.alert often does not show multi-button dialogs.
+    if (Platform.OS === 'web') {
+      const confirmed =
+        typeof window === 'undefined' ||
+        window.confirm('Are you sure you want to logout?');
+      if (confirmed) void performLogout();
+      return;
+    }
+
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
@@ -266,20 +295,8 @@ export default function ProfileScreen() {
         {
           text: 'Logout',
           style: 'destructive',
-          onPress: async () => {
-            try {
-              if (!IS_MOCK_AUTH) {
-                await supabase.auth.signOut();
-              }
-            } catch (error) {
-              console.warn('Logout signOut failed:', error);
-            }
-            clearProfileCache();
-            clearReferralCache();
-            clearOrdersCache();
-            clearWalletCache();
-            clearAddressCache();
-            router.replace('/(auth)/login');
+          onPress: () => {
+            void performLogout();
           },
         },
       ],

@@ -1336,6 +1336,13 @@ export interface Database {
         Args: Record<string, never>;
         Returns: UserRole;
       };
+      cancel_customer_order: {
+        Args: {
+          p_order_id: string;
+          p_reason?: string | null;
+        };
+        Returns: undefined;
+      };
     };
     Enums: {
       user_role: UserRole;

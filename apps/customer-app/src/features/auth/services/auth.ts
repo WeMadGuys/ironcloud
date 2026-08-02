@@ -43,11 +43,32 @@ const exchangeMsg91Session = async (
   accessToken: string,
   phone: string,
 ): Promise<AuthResult<VerifyOtpResponse>> => {
-  const response = await fetch(`${getApiBaseUrl()}/api/auth/msg91-session`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ accessToken, phone }),
-  });
+  const apiBase = getApiBaseUrl();
+  let response: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  try {
+    response = await fetch(`${apiBase}/api/auth/msg91-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accessToken, phone }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const aborted =
+      err instanceof Error &&
+      (err.name === 'AbortError' || err.message.includes('aborted'));
+    return {
+      data: null,
+      error: {
+        message: aborted
+          ? `Login server timed out (${apiBase}). Is web:dev running, and can this device reach it?`
+          : `Cannot reach login server at ${apiBase}. On a phone, localhost won't work — use your PC LAN IP or a tunnel. Keep npm run web:dev running.`,
+      },
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   let payload: {
     error?: string;
@@ -229,10 +250,16 @@ export const verifyOtp = async (
       data: null,
       error: { message: `Unsupported auth provider: ${AUTH_PROVIDER}` },
     };
-  } catch {
+  } catch (err) {
+    console.error('[verifyOtp]', err);
     return {
       data: null,
-      error: { message: 'Verification failed. Please try again.' },
+      error: {
+        message:
+          err instanceof Error
+            ? err.message
+            : 'Verification failed. Please try again.',
+      },
     };
   }
 };
@@ -266,18 +293,23 @@ export const resendOtp = async (
 
 /**
  * Sign out the current user.
+ * Prefer local scope so logout always clears storage even if revoke fails/hangs.
  */
 export const signOut = async (): Promise<
   AuthResult<{ signedOut: true }>
 > => {
   try {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
 
     if (error) {
-      return {
-        data: null,
-        error: { message: error.message, code: error.code },
-      };
+      // Last resort: still try a plain sign-out.
+      const retry = await supabase.auth.signOut({ scope: 'local' });
+      if (retry.error) {
+        return {
+          data: null,
+          error: { message: retry.error.message, code: retry.error.code },
+        };
+      }
     }
 
     return { data: { signedOut: true }, error: null };

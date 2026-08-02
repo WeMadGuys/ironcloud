@@ -19,6 +19,7 @@
     "rider:start": "npm run start --workspace=@ironcloud/rider-app",
     "rider:start:clear": "npm run start:clear --workspace=@ironcloud/rider-app",
     "rider:start:8082": "npm run start:8082:clear --workspace=@ironcloud/rider-app",
+    "rider:start:tunnel": "npm run start:tunnel --workspace=@ironcloud/rider-app",
     "web:dev": "npm run dev --workspace=@ironcloud/web"
   },
   "devDependencies": {
