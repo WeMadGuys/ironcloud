@@ -65,11 +65,16 @@ export const fetchOrders = async (params: OrderListParams) => {
   let query = supabase
     .from('orders')
     .select(`
-      id, order_number, status, total_amount, created_at, payment_method, pickup_slot_id, community_id,
+      id, order_number, status, total_amount, created_at, payment_method, pickup_slot_id, delivery_slot_id, community_id,
       profiles!orders_customer_id_fkey(full_name, phone),
       communities(name),
       addresses(flat_number, tower),
-      pickup_slot:service_slots!pickup_slot_id(window_start, window_end)
+      pickup_slot:service_slots!pickup_slot_id(window_start, window_end),
+      delivery_slot:service_slots!delivery_slot_id(window_start, window_end),
+      rider_jobs(
+        id, job_type, status, scheduled_start, scheduled_end,
+        riders(id, profiles!riders_id_fkey(full_name, phone))
+      )
     `, { count: 'exact' });
 
   if (status) query = query.eq('status', status);

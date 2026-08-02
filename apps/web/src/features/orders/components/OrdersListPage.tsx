@@ -1,11 +1,23 @@
 'use client';
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { Badge, Button, EmptyState, Loader, Pagination, SearchInput, Table } from '@/components';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Loader,
+  Pagination,
+  Picklist,
+  SearchInput,
+  Table,
+} from '@/components';
 import type { OrderStatus, PaymentMethod } from '@ironcloud/db';
-import { fetchCommunityOptions, type CommunityOption } from '@/features/communities/services/communities.service';
+import {
+  fetchCommunityOptions,
+  type CommunityOption,
+} from '@/features/communities/services/communities.service';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { trpc } from '@/lib/trpc';
 import {
@@ -49,19 +61,160 @@ const PAYMENT_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: 'razorpay_direct', label: 'Razorpay' },
 ];
 
-const formatPickupSlot = (order: {
-  pickup_slot?: { window_start: string } | { window_start: string }[] | null;
-}): string => {
-  const slot = order.pickup_slot;
-  const windowStart = Array.isArray(slot) ? slot[0]?.window_start : slot?.window_start;
-  if (!windowStart) return '—';
-  return new Date(windowStart).toLocaleTimeString('en-IN', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+type OrderColumnKey =
+  | 'order'
+  | 'customer'
+  | 'phone'
+  | 'community'
+  | 'address'
+  | 'status'
+  | 'payment'
+  | 'amount'
+  | 'pickup'
+  | 'delivery'
+  | 'rider'
+  | 'pickupRider'
+  | 'deliveryRider'
+  | 'booked';
+
+const COLUMN_LABELS: Record<OrderColumnKey, string> = {
+  order: 'Order',
+  customer: 'Customer',
+  phone: 'Phone',
+  community: 'Community',
+  address: 'Address',
+  status: 'Status',
+  payment: 'Payment',
+  amount: 'Amount',
+  pickup: 'Pickup time',
+  delivery: 'Delivery time',
+  rider: 'Current rider',
+  pickupRider: 'Pickup rider',
+  deliveryRider: 'Delivery rider',
+  booked: 'Booked',
+};
+
+const DEFAULT_COLUMNS: OrderColumnKey[] = [
+  'order',
+  'customer',
+  'community',
+  'status',
+  'payment',
+  'amount',
+  'pickup',
+  'delivery',
+  'rider',
+  'booked',
+];
+
+const STORAGE_KEY = 'ironcloud_orders_columns';
+
+function loadVisibleColumns(): OrderColumnKey[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return DEFAULT_COLUMNS;
+    const parsed = JSON.parse(raw) as string[];
+    if (!Array.isArray(parsed)) return DEFAULT_COLUMNS;
+    const allowed = new Set(Object.keys(COLUMN_LABELS) as OrderColumnKey[]);
+    const next = parsed.filter((k): k is OrderColumnKey =>
+      allowed.has(k as OrderColumnKey),
+    );
+    return next.length > 0 ? next : DEFAULT_COLUMNS;
+  } catch {
+    return DEFAULT_COLUMNS;
+  }
+}
+
+function saveVisibleColumns(keys: OrderColumnKey[]) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(keys));
+  } catch {
+    // ignore
+  }
+}
+
+type SlotEmbed = { window_start: string; window_end?: string } | null;
+type RiderEmbed = {
+  id: string;
+  profiles: { full_name: string | null; phone: string | null } | null;
+} | null;
+type RiderJobEmbed = {
+  id: string;
+  job_type: 'pickup' | 'delivery';
+  status: string;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  riders: RiderEmbed;
 };
 
 type OrderRow = Awaited<ReturnType<typeof fetchOrders>>['data'][number];
+
+function asOne<T>(value: T | T[] | null | undefined): T | null {
+  if (value == null) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+function formatSlotWindow(
+  slot: SlotEmbed | SlotEmbed[] | null | undefined,
+): string {
+  const row = asOne(slot);
+  if (!row?.window_start) return '—';
+  const start = new Date(row.window_start);
+  const end = row.window_end ? new Date(row.window_end) : null;
+  const date = start.toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+  });
+  const timeOpts: Intl.DateTimeFormatOptions = {
+    hour: 'numeric',
+    minute: '2-digit',
+  };
+  const startTime = start.toLocaleTimeString('en-IN', timeOpts);
+  if (!end) return `${date} · ${startTime}`;
+  const endTime = end.toLocaleTimeString('en-IN', timeOpts);
+  return `${date} · ${startTime}–${endTime}`;
+}
+
+function getJobs(order: OrderRow): RiderJobEmbed[] {
+  const jobs = (order as { rider_jobs?: RiderJobEmbed[] | null }).rider_jobs;
+  return Array.isArray(jobs) ? jobs : [];
+}
+
+function riderName(job: RiderJobEmbed | undefined): string {
+  if (!job?.riders) return '—';
+  const rider = asOne(job.riders);
+  return rider?.profiles?.full_name?.trim() || '—';
+}
+
+function openJob(
+  jobs: RiderJobEmbed[],
+  type: 'pickup' | 'delivery',
+): RiderJobEmbed | undefined {
+  const open = jobs.find(
+    (j) => j.job_type === type && ['assigned', 'in_progress'].includes(j.status),
+  );
+  if (open) return open;
+  return jobs
+    .filter((j) => j.job_type === type)
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .at(-1);
+}
+
+function currentRider(order: OrderRow): string {
+  const jobs = getJobs(order);
+  const deliveryStages = [
+    'ready_for_delivery',
+    'delivery_assigned',
+    'out_for_delivery',
+    'delivered',
+    'completed',
+    'rated',
+  ];
+  if (deliveryStages.includes(order.status)) {
+    return riderName(openJob(jobs, 'delivery'));
+  }
+  return riderName(openJob(jobs, 'pickup'));
+}
 
 export const OrdersListPage = () => {
   const [page, setPage] = useState(1);
@@ -77,6 +230,9 @@ export const OrdersListPage = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<OrderStatus | ''>('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [visibleColumns, setVisibleColumns] =
+    useState<OrderColumnKey[]>(loadVisibleColumns);
   const pageSize = 25;
 
   const bulkUpdateMutation = trpc.orders.bulkUpdateStatus.useMutation();
@@ -92,6 +248,25 @@ export const OrdersListPage = () => {
     search || status || communityId || paymentMethod || datePreset !== 'today',
   );
 
+  const statusPickOptions = useMemo(
+    () =>
+      STATUS_OPTIONS.map((s) => ({
+        value: s,
+        label: formatOrderStatus(s),
+      })),
+    [],
+  );
+
+  const communityPickOptions = useMemo(
+    () => communities.map((c) => ({ value: c.id, label: c.name })),
+    [communities],
+  );
+
+  const paymentPickOptions = useMemo(
+    () => PAYMENT_OPTIONS.map((p) => ({ value: p.value, label: p.label })),
+    [],
+  );
+
   useEffect(() => {
     void fetchCommunityOptions().then(setCommunities);
   }, []);
@@ -100,6 +275,10 @@ export const OrdersListPage = () => {
     setPage(1);
     setSelectedIds(new Set());
   }, [dateKey, debouncedSearch, status, communityId, paymentMethod]);
+
+  useEffect(() => {
+    saveVisibleColumns(visibleColumns);
+  }, [visibleColumns]);
 
   const { data: result, isLoading, isFetching } = useQuery({
     queryKey: [
@@ -133,7 +312,8 @@ export const OrdersListPage = () => {
   const refreshing = isFetching && !isLoading;
 
   const pageIds = useMemo(() => data.map((o) => o.id), [data]);
-  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const allPageSelected =
+    pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
   const somePageSelected = pageIds.some((id) => selectedIds.has(id));
 
   const toggleAllPage = () => {
@@ -154,6 +334,16 @@ export const OrdersListPage = () => {
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
+    });
+  };
+
+  const toggleColumn = (key: OrderColumnKey) => {
+    setVisibleColumns((prev) => {
+      if (prev.includes(key)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((k) => k !== key);
+      }
+      return [...prev, key];
     });
   };
 
@@ -182,6 +372,122 @@ export const OrdersListPage = () => {
       },
     );
   };
+
+  const dataColumns = useMemo(() => {
+    const defs: Record<
+      OrderColumnKey,
+      {
+        key: string;
+        header: string;
+        render: (o: OrderRow) => ReactNode;
+      }
+    > = {
+      order: {
+        key: 'order',
+        header: 'Order',
+        render: (o) => (
+          <a href={`/admin/orders/${o.id}`} className={pageStyles.tab}>
+            {o.order_number}
+          </a>
+        ),
+      },
+      customer: {
+        key: 'customer',
+        header: 'Customer',
+        render: (o) =>
+          (o.profiles as { full_name: string } | null)?.full_name ?? '—',
+      },
+      phone: {
+        key: 'phone',
+        header: 'Phone',
+        render: (o) =>
+          (o.profiles as { phone: string | null } | null)?.phone ?? '—',
+      },
+      community: {
+        key: 'community',
+        header: 'Community',
+        render: (o) =>
+          (o.communities as { name: string } | null)?.name ?? '—',
+      },
+      address: {
+        key: 'address',
+        header: 'Address',
+        render: (o) => {
+          const addr = o.addresses as {
+            flat_number: string;
+            tower: string | null;
+          } | null;
+          if (!addr) return '—';
+          return addr.tower
+            ? `${addr.tower} · ${addr.flat_number}`
+            : addr.flat_number;
+        },
+      },
+      status: {
+        key: 'status',
+        header: 'Status',
+        render: (o) => (
+          <Badge variant={getOrderStatusBadge(o.status)}>
+            {formatOrderStatus(o.status)}
+          </Badge>
+        ),
+      },
+      payment: {
+        key: 'payment',
+        header: 'Payment',
+        render: (o) =>
+          o.payment_method === 'razorpay_direct'
+            ? 'Razorpay'
+            : o.payment_method === 'wallet'
+              ? 'Wallet'
+              : o.payment_method,
+      },
+      amount: {
+        key: 'amount',
+        header: 'Amount',
+        render: (o) => formatCurrency(Number(o.total_amount)),
+      },
+      pickup: {
+        key: 'pickup',
+        header: 'Pickup time',
+        render: (o) =>
+          formatSlotWindow(
+            (o as { pickup_slot?: SlotEmbed | SlotEmbed[] | null }).pickup_slot,
+          ),
+      },
+      delivery: {
+        key: 'delivery',
+        header: 'Delivery time',
+        render: (o) =>
+          formatSlotWindow(
+            (o as { delivery_slot?: SlotEmbed | SlotEmbed[] | null })
+              .delivery_slot,
+          ),
+      },
+      rider: {
+        key: 'rider',
+        header: 'Current rider',
+        render: (o) => currentRider(o),
+      },
+      pickupRider: {
+        key: 'pickupRider',
+        header: 'Pickup rider',
+        render: (o) => riderName(openJob(getJobs(o), 'pickup')),
+      },
+      deliveryRider: {
+        key: 'deliveryRider',
+        header: 'Delivery rider',
+        render: (o) => riderName(openJob(getJobs(o), 'delivery')),
+      },
+      booked: {
+        key: 'booked',
+        header: 'Booked',
+        render: (o) => formatRelativeTime(o.created_at),
+      },
+    };
+
+    return visibleColumns.map((key) => defs[key]);
+  }, [visibleColumns]);
 
   if (isLoading && !result) return <Loader />;
 
@@ -235,54 +541,65 @@ export const OrdersListPage = () => {
             />
           </>
         ) : null}
-        <select
-          className={pageStyles.select}
+        <Picklist
           value={status}
-          onChange={(e) => {
-            setStatus(e.target.value as OrderStatus | '');
+          options={statusPickOptions}
+          onChange={(v) => {
+            setStatus(v as OrderStatus | '');
             setPage(1);
           }}
-          aria-label="Filter by status"
-        >
-          <option value="">All statuses</option>
-          {STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>
-              {formatOrderStatus(s)}
-            </option>
-          ))}
-        </select>
-        <select
-          className={pageStyles.select}
+          emptyLabel="All statuses"
+          ariaLabel="Filter by status"
+          placeholder="Search status…"
+        />
+        <Picklist
           value={communityId}
-          onChange={(e) => {
-            setCommunityId(e.target.value);
+          options={communityPickOptions}
+          onChange={(v) => {
+            setCommunityId(v);
             setPage(1);
           }}
-          aria-label="Filter by community"
-        >
-          <option value="">All communities</option>
-          {communities.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className={pageStyles.select}
+          emptyLabel="All communities"
+          ariaLabel="Filter by community"
+          placeholder="Search community…"
+        />
+        <Picklist
           value={paymentMethod}
-          onChange={(e) => {
-            setPaymentMethod(e.target.value as PaymentMethod | '');
+          options={paymentPickOptions}
+          onChange={(v) => {
+            setPaymentMethod(v as PaymentMethod | '');
             setPage(1);
           }}
-          aria-label="Filter by payment method"
-        >
-          <option value="">All payments</option>
-          {PAYMENT_OPTIONS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
+          emptyLabel="All payments"
+          ariaLabel="Filter by payment method"
+          placeholder="Search payment…"
+        />
+
+        <div className={listStyles.columnsWrap}>
+          <button
+            type="button"
+            className={listStyles.columnsBtn}
+            onClick={() => setColumnsOpen((o) => !o)}
+            aria-expanded={columnsOpen}
+          >
+            Columns
+          </button>
+          {columnsOpen ? (
+            <div className={listStyles.columnsMenu} role="menu">
+              {(Object.keys(COLUMN_LABELS) as OrderColumnKey[]).map((key) => (
+                <label key={key} className={listStyles.columnsItem}>
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.includes(key)}
+                    onChange={() => toggleColumn(key)}
+                  />
+                  {COLUMN_LABELS[key]}
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
         {hasActiveFilters && (
           <div className={pageStyles.filtersAction}>
             <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -305,13 +622,17 @@ export const OrdersListPage = () => {
                   setReloadKey((k) => k + 1);
                 },
                 onError: (err) => {
-                  window.alert(err.message || 'Failed to advance delivery day orders.');
+                  window.alert(
+                    err.message || 'Failed to advance delivery day orders.',
+                  );
                 },
               })
             }
             disabled={advanceDeliveryMutation.isPending}
           >
-            {advanceDeliveryMutation.isPending ? 'Running…' : 'Run delivery day advance'}
+            {advanceDeliveryMutation.isPending
+              ? 'Running…'
+              : 'Run delivery day advance'}
           </Button>
         </div>
       </div>
@@ -350,9 +671,15 @@ export const OrdersListPage = () => {
         </div>
       )}
 
-      <div className={refreshing ? pageStyles.listRefreshing : undefined} aria-busy={refreshing}>
+      <div
+        className={refreshing ? pageStyles.listRefreshing : undefined}
+        aria-busy={refreshing}
+      >
         {data.length === 0 ? (
-          <EmptyState title="No orders found" description="Try adjusting your filters." />
+          <EmptyState
+            title="No orders found"
+            description="Try adjusting your filters."
+          />
         ) : (
           <>
             <Table
@@ -364,7 +691,9 @@ export const OrdersListPage = () => {
                       type="checkbox"
                       checked={allPageSelected}
                       ref={(el) => {
-                        if (el) el.indeterminate = somePageSelected && !allPageSelected;
+                        if (el)
+                          el.indeterminate =
+                            somePageSelected && !allPageSelected;
                       }}
                       onChange={toggleAllPage}
                       aria-label="Select all orders on this page"
@@ -379,57 +708,7 @@ export const OrdersListPage = () => {
                     />
                   ),
                 },
-                {
-                  key: 'order',
-                  header: 'Order',
-                  render: (o) => (
-                    <a href={`/admin/orders/${o.id}`} className={pageStyles.tab}>
-                      {o.order_number}
-                    </a>
-                  ),
-                },
-                {
-                  key: 'customer',
-                  header: 'Customer',
-                  render: (o) => (o.profiles as { full_name: string } | null)?.full_name ?? '—',
-                },
-                {
-                  key: 'community',
-                  header: 'Community',
-                  render: (o) => (o.communities as { name: string } | null)?.name ?? '—',
-                },
-                {
-                  key: 'status',
-                  header: 'Status',
-                  render: (o) => (
-                    <Badge variant={getOrderStatusBadge(o.status)}>{formatOrderStatus(o.status)}</Badge>
-                  ),
-                },
-                {
-                  key: 'payment',
-                  header: 'Payment',
-                  render: (o) =>
-                    o.payment_method === 'razorpay_direct'
-                      ? 'Razorpay'
-                      : o.payment_method === 'wallet'
-                        ? 'Wallet'
-                        : o.payment_method,
-                },
-                {
-                  key: 'amount',
-                  header: 'Amount',
-                  render: (o) => formatCurrency(Number(o.total_amount)),
-                },
-                {
-                  key: 'pickup',
-                  header: 'Pickup',
-                  render: (o) => formatPickupSlot(o),
-                },
-                {
-                  key: 'booked',
-                  header: 'Booked',
-                  render: (o) => formatRelativeTime(o.created_at),
-                },
+                ...dataColumns,
               ]}
               data={data}
               keyExtractor={(o) => o.id}

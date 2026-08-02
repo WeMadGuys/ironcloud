@@ -15,4 +15,5 @@ export { Pagination } from './Pagination/Pagination';
 export { OrdersAreaChart, StatusDonutChart, RevenueBarChart, TrendLineChart } from './Chart/Chart';
 export { ToastProvider, useToast } from './Toast/ToastProvider';
 export { FilterBar } from './Filter/FilterBar';
+export { Picklist } from './Picklist/Picklist';
 export { Providers } from './Providers';
