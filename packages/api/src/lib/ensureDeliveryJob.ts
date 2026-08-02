@@ -1,10 +1,5 @@
 import type { TypedSupabaseClient } from '@ironcloud/db';
 
-type DeliverySlot = {
-  window_start: string;
-  window_end: string;
-} | null;
-
 /**
  * Ensure an open delivery rider_job exists for the order.
  * Prefers the pickup rider; falls back to an active community rider.
@@ -63,8 +58,11 @@ export async function ensureDeliveryRiderJob(
     );
   }
 
-  const slot = order.delivery_slot as DeliverySlot;
-  const slotRow = Array.isArray(slot) ? slot[0] ?? null : slot;
+  const rawSlot = order.delivery_slot as
+    | { window_start: string; window_end: string }
+    | { window_start: string; window_end: string }[]
+    | null;
+  const slotRow = Array.isArray(rawSlot) ? rawSlot[0] ?? null : rawSlot;
 
   const { error: insertError } = await supabase.from('rider_jobs').insert({
     order_id: orderId,
