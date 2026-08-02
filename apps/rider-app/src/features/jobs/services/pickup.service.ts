@@ -290,14 +290,92 @@ export async function getOrderEstimatePrefill(orderId: string): Promise<{
   };
 }
 
-export async function confirmPickup(
+/** Prefill from confirmed order_items (after collect / edit). */
+export async function getOrderItemsPrefill(orderId: string): Promise<{
+  counts: Record<string, number>;
+  hasItems: boolean;
+}> {
+  const { data, error } = await (supabase
+    .from('order_items') as ReturnType<typeof supabase.from>)
+    .select('service_id, quantity')
+    .eq('order_id', orderId);
+
+  if (error || !data) {
+    if (error) console.warn('[Pickup] items prefill:', error.message);
+    return { counts: {}, hasItems: false };
+  }
+
+  const counts: Record<string, number> = {};
+  for (const row of data as { service_id: string; quantity: number }[]) {
+    if (row.service_id && row.quantity > 0) {
+      counts[row.service_id] = row.quantity;
+    }
+  }
+
+  return { counts, hasItems: Object.keys(counts).length > 0 };
+}
+
+export async function getOrderPickupDetails(orderId: string): Promise<{
+  orderNumber: string;
+  status: string;
+  specialInstructions: string | null;
+  estimatedAmount: number | null;
+  customerName: string | null;
+  customerPhone: string | null;
+}> {
+  const { data, error } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .select(
+      'order_number, status, special_instructions, estimated_amount, customer:customer_id (full_name, phone)',
+    )
+    .eq('id', orderId)
+    .maybeSingle();
+
+  if (error || !data) {
+    if (error) console.warn('[Pickup] order details:', error.message);
+    return {
+      orderNumber: '',
+      status: '',
+      specialInstructions: null,
+      estimatedAmount: null,
+      customerName: null,
+      customerPhone: null,
+    };
+  }
+
+  const row = data as {
+    order_number: string;
+    status: string;
+    special_instructions: string | null;
+    estimated_amount: number | null;
+    customer: { full_name: string | null; phone: string | null } | null;
+  };
+
+  return {
+    orderNumber: row.order_number,
+    status: row.status,
+    specialInstructions: row.special_instructions,
+    estimatedAmount:
+      row.estimated_amount != null ? Number(row.estimated_amount) : null,
+    customerName: row.customer?.full_name?.trim() || null,
+    customerPhone: row.customer?.phone?.trim() || null,
+  };
+}
+
+async function replaceOrderItems(
   orderId: string,
   communityId: string,
   items: PickupLineItem[],
-): Promise<void> {
-  const riderId = await getRiderId();
-  if (!riderId) throw new Error('Rider not authenticated');
-
+): Promise<{
+  subtotal: number;
+  lineItems: {
+    order_id: string;
+    service_id: string;
+    quantity: number;
+    unit_price: number;
+  }[];
+  nameByService: Record<string, string>;
+}> {
   const pricingCtx = await getOrderPricingContext(orderId);
   const catalog = await getGarmentCatalog({
     communityId: pricingCtx.communityId || communityId,
@@ -325,6 +403,27 @@ export async function confirmPickup(
     0,
   );
 
+  await (supabase.from('order_items') as ReturnType<typeof supabase.from>)
+    .delete()
+    .eq('order_id', orderId);
+
+  const { error: itemsError } = await (supabase
+    .from('order_items') as ReturnType<typeof supabase.from>)
+    .insert(lineItems);
+
+  if (itemsError) throw new Error(itemsError.message);
+
+  return { subtotal, lineItems, nameByService };
+}
+
+export async function confirmPickup(
+  orderId: string,
+  communityId: string,
+  items: PickupLineItem[],
+): Promise<void> {
+  const riderId = await getRiderId();
+  if (!riderId) throw new Error('Rider not authenticated');
+
   const { data: orderBefore } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
     .select('estimated_amount, estimated_garments')
@@ -339,15 +438,11 @@ export async function confirmPickup(
     (orderBefore as { estimated_garments: EstimatedGarment[] | null } | null)
       ?.estimated_garments ?? null;
 
-  await (supabase.from('order_items') as ReturnType<typeof supabase.from>)
-    .delete()
-    .eq('order_id', orderId);
-
-  const { error: itemsError } = await (supabase
-    .from('order_items') as ReturnType<typeof supabase.from>)
-    .insert(lineItems);
-
-  if (itemsError) throw new Error(itemsError.message);
+  const { subtotal, lineItems, nameByService } = await replaceOrderItems(
+    orderId,
+    communityId,
+    items,
+  );
 
   const { error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
@@ -433,6 +528,54 @@ export async function confirmPickup(
   }
 
   await debitWalletAfterPickup(orderId);
+  clearJobsCache();
+}
+
+/**
+ * Correct garment counts after pickup without re-running collect / wallet debit.
+ * Totals update on the order; payment adjustment (if needed) is handled separately by ops.
+ */
+export async function updatePickupItems(
+  orderId: string,
+  communityId: string,
+  items: PickupLineItem[],
+): Promise<void> {
+  const riderId = await getRiderId();
+  if (!riderId) throw new Error('Rider not authenticated');
+
+  const { subtotal, lineItems, nameByService } = await replaceOrderItems(
+    orderId,
+    communityId,
+    items,
+  );
+
+  const { error: orderError } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .update({
+      subtotal,
+      total_amount: subtotal,
+    })
+    .eq('id', orderId);
+
+  if (orderError) throw new Error(orderError.message);
+
+  const garmentCount = lineItems.reduce((s, l) => s + l.quantity, 0);
+  const lines = lineItems
+    .map((item) => `${item.quantity}× ${nameByService[item.service_id] || 'Garment'}`)
+    .join(', ');
+
+  await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
+    order_id: orderId,
+    status: 'picked_up',
+    note: `Pickup items updated\n\n${lines}\n\nAmount: ₹${subtotal}`,
+    actor_id: AUTH_PROVIDER === 'mock' ? MOCK_RIDER_ID : riderId,
+    metadata: {
+      source: 'rider_edit_pickup_items',
+      garment_count: garmentCount,
+      final_amount: subtotal,
+    },
+  });
+
   clearJobsCache();
 }
 

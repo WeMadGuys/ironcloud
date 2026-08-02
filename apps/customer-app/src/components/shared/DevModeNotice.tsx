@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
-import { AUTH_PROVIDER, MOCK_OTP_CODE } from '../../config/auth';
+import { IS_MOCK_AUTH, MOCK_OTP_CODE } from '../../config/auth';
 import { colors, radius, spacing, typography } from '@ironcloud/ui';
 
 type DevModeNoticeProps = {
@@ -18,7 +18,7 @@ export const DevModeNotice = ({
   message,
   showOtpHint = true,
 }: DevModeNoticeProps) => {
-  if (AUTH_PROVIDER !== 'mock') {
+  if (!IS_MOCK_AUTH) {
     return null;
   }
 

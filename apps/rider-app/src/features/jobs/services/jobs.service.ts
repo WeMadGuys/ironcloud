@@ -10,6 +10,18 @@ import {
 
 export type JobFilter = 'all' | 'pickup' | 'delivery' | 'pending' | 'completed' | 'issues';
 
+export type JobItemSummary = {
+  name: string;
+  quantity: number;
+};
+
+type EstimatedGarmentRow = {
+  service_id?: string;
+  serviceId?: string;
+  name?: string;
+  quantity?: number;
+};
+
 export type RiderJobRow = {
   id: string;
   job_type: 'pickup' | 'delivery';
@@ -20,6 +32,12 @@ export type RiderJobRow = {
     order_number: string;
     status: string;
     special_instructions: string | null;
+    estimated_amount: number | null;
+    estimated_garments: EstimatedGarmentRow[] | null;
+    customer: {
+      full_name: string | null;
+      phone: string | null;
+    } | null;
     address: {
       tower: string | null;
       flat_number: string;
@@ -27,7 +45,10 @@ export type RiderJobRow = {
     } | null;
     pickup_slot: { window_start: string; window_end: string } | null;
     delivery_slot: { window_start: string; window_end: string } | null;
-    order_items: { quantity: number }[] | null;
+    order_items: {
+      quantity: number;
+      service: { name: string } | null;
+    }[] | null;
   } | null;
 };
 
@@ -45,6 +66,11 @@ export type FlatJob = {
   specialInstructions: string | null;
   buttonState: FlatButtonState;
   garmentCount: number;
+  /** Confirmed items, else customer estimate — for list preview */
+  itemSummary: JobItemSummary[];
+  itemsFromEstimate: boolean;
+  customerName: string | null;
+  customerPhone: string | null;
 };
 
 export type CommunityJobSummary = {
@@ -81,6 +107,12 @@ const JOB_SELECT = `
     order_number,
     status,
     special_instructions,
+    estimated_amount,
+    estimated_garments,
+    customer:customer_id (
+      full_name,
+      phone
+    ),
     address:address_id (
       tower,
       flat_number,
@@ -88,7 +120,10 @@ const JOB_SELECT = `
     ),
     pickup_slot:pickup_slot_id (window_start, window_end),
     delivery_slot:delivery_slot_id (window_start, window_end),
-    order_items (quantity)
+    order_items (
+      quantity,
+      service:service_id (name)
+    )
   )
 `;
 
@@ -139,14 +174,43 @@ function jobMatchesDay(job: RiderJobRow, dayOffset: number): boolean {
   return isDateOnDay(slotIso, dayOffset);
 }
 
+function resolveItemSummary(order: NonNullable<RiderJobRow['order']>): {
+  itemSummary: JobItemSummary[];
+  garmentCount: number;
+  itemsFromEstimate: boolean;
+} {
+  const confirmed = (order.order_items || [])
+    .filter((item) => (item.quantity || 0) > 0)
+    .map((item) => ({
+      name: item.service?.name || 'Garment',
+      quantity: item.quantity || 0,
+    }));
+
+  if (confirmed.length > 0) {
+    const garmentCount = confirmed.reduce((sum, item) => sum + item.quantity, 0);
+    return { itemSummary: confirmed, garmentCount, itemsFromEstimate: false };
+  }
+
+  const estimate = (order.estimated_garments || [])
+    .map((item) => ({
+      name: item.name || 'Garment',
+      quantity: Number(item.quantity || 0),
+    }))
+    .filter((item) => item.quantity > 0);
+
+  const garmentCount = estimate.reduce((sum, item) => sum + item.quantity, 0);
+  return {
+    itemSummary: estimate,
+    garmentCount,
+    itemsFromEstimate: estimate.length > 0,
+  };
+}
+
 function mapToFlatJob(job: RiderJobRow): FlatJob | null {
   const order = job.order;
   if (!order?.address?.community) return null;
 
-  const garmentCount = (order.order_items || []).reduce(
-    (sum, item) => sum + (item.quantity || 0),
-    0,
-  );
+  const { itemSummary, garmentCount, itemsFromEstimate } = resolveItemSummary(order);
 
   return {
     jobId: job.id,
@@ -162,6 +226,10 @@ function mapToFlatJob(job: RiderJobRow): FlatJob | null {
     specialInstructions: order.special_instructions,
     buttonState: resolveButtonState(job.job_type, job.status, order.status),
     garmentCount,
+    itemSummary,
+    itemsFromEstimate,
+    customerName: order.customer?.full_name?.trim() || null,
+    customerPhone: order.customer?.phone?.trim() || null,
   };
 }
 

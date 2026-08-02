@@ -4,10 +4,22 @@
 
 export type AuthProviderType = 'mock' | 'msg91';
 
-export const AUTH_PROVIDER: AuthProviderType =
-  (process.env.EXPO_PUBLIC_AUTH_PROVIDER as AuthProviderType) || 'mock';
+function resolveAuthProvider(): AuthProviderType {
+  const requested = process.env.EXPO_PUBLIC_AUTH_PROVIDER;
+  // Release / store builds must never use mock OTP.
+  if (!__DEV__) {
+    return 'msg91';
+  }
+  if (requested === 'msg91') return 'msg91';
+  return 'mock';
+}
 
-export const IS_DEVELOPMENT = __DEV__ || AUTH_PROVIDER === 'mock';
+export const AUTH_PROVIDER: AuthProviderType = resolveAuthProvider();
+
+/** True only when mock OTP path is active (dev builds only). */
+export const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
+
+export const IS_DEVELOPMENT = __DEV__;
 
 /**
  * Mock OTP for development — same 4-digit length as MSG91 / customer app.

@@ -27,7 +27,7 @@ import {
   typographyScale,
 } from '@ironcloud/ui';
 
-import { AUTH_PROVIDER } from '../../src/config/auth';
+import { IS_MOCK_AUTH } from '../../src/config/auth';
 import { deleteAccount, signOut } from '../../src/features/auth/services/auth';
 import { clearOrdersCache } from '../../src/features/orders/services/orders.service';
 import {
@@ -48,7 +48,6 @@ import {
   prefetchMyReferral,
 } from '../../src/features/referrals/services/referral.service';
 
-const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
 
 function formatDisplayPhone(phone: string | null | undefined): string {
   if (!phone?.trim()) return 'Phone not set';

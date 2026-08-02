@@ -40,7 +40,13 @@ export const Sidebar = () => {
       </button>
 
       <div className={styles.logo}>
-        <div className={styles.logoIcon}>IC</div>
+        <img
+          src="/logo-mark.png"
+          alt="IronCloud"
+          className={styles.logoIcon}
+          width={36}
+          height={36}
+        />
         {!collapsed && <span className={styles.logoText}>IRON CLOUD ADMIN</span>}
       </div>
 

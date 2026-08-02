@@ -4,20 +4,33 @@
     "slug": "ironcloud",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "ironcloud",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "ios": {
       "bundleIdentifier": "com.ironcloud.app",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow IronCloud to use your camera to take a profile picture.",
+        "NSPhotoLibraryUsageDescription": "Allow IronCloud to access your photos to set a profile picture."
+      }
     },
     "android": {
       "package": "com.ironcloud.app",
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff"
-      }
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.INTERNET"
+      ]
     },
     "plugins": [
       "expo-router",
+      "expo-dev-client",
+      "expo-secure-store",
       [
         "expo-image-picker",
         {
@@ -25,6 +38,11 @@
           "cameraPermission": "Allow IronCloud to use your camera to take a profile picture."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
   }
 }

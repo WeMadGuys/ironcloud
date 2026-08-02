@@ -4,8 +4,10 @@
     "slug": "ironcloud-rider",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "scheme": "ironcloud-rider",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "ios": {
       "bundleIdentifier": "com.ironcloud.rider",
       "supportsTablet": true
@@ -13,11 +15,19 @@
     "android": {
       "package": "com.ironcloud.rider",
       "adaptiveIcon": {
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
       }
     },
     "plugins": [
-      "expo-router"
-    ]
+      "expo-router",
+      "expo-dev-client",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
   }
 }

@@ -1,9 +1,7 @@
 import type { TicketStatus } from '@ironcloud/db';
 
+import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
-
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 export const SUPPORT_CATEGORIES = [
   { value: 'order_issue', label: 'Order issue' },

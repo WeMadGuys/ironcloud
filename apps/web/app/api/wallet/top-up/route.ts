@@ -12,14 +12,26 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: mobileApiCorsHeaders });
 }
 
+function isDevWalletTopUpAllowed(): boolean {
+  // Hard block on hosted production even if the env flag is mis-set.
+  if (
+    process.env.VERCEL_ENV === 'production' ||
+    process.env.NODE_ENV === 'production'
+  ) {
+    return false;
+  }
+  return process.env.ALLOW_DEV_WALLET_TOPUP === 'true';
+}
+
 /**
  * Dev-only direct wallet credit for Expo Go testing (no Razorpay).
- * Set ALLOW_DEV_WALLET_TOPUP=true in server env. Disabled in production.
+ * Set ALLOW_DEV_WALLET_TOPUP=true in local server env only.
+ * Never available when VERCEL_ENV/NODE_ENV is production.
  */
 export async function POST(req: Request) {
   ensureServerEnv();
 
-  if (process.env.ALLOW_DEV_WALLET_TOPUP !== 'true') {
+  if (!isDevWalletTopUpAllowed()) {
     return json(
       {
         error:

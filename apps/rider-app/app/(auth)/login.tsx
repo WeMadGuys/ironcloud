@@ -1,9 +1,13 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Image,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -45,9 +49,28 @@ export default function LoginScreen() {
   const [otp, setOtp] = useState(EMPTY_OTP);
   const [otpError, setOtpError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
 
+  const scrollRef = useRef<ScrollView>(null);
   const otpRefs = useRef<(TextInput | null)[]>(Array.from({ length: OTP_LENGTH }, () => null));
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const scrollFormIntoView = () => {
+    setTimeout(() => {
+      scrollRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+  };
 
   const handlePhoneChange = (text: string) => {
     const digitsOnly = text.replace(/\D/g, '');
@@ -105,7 +128,36 @@ export default function LoginScreen() {
   };
 
   const handleOtpChange = (text: string, index: number) => {
-    const digit = text.replace(/\D/g, '').slice(-1);
+    const cleaned = text.replace(/\D/g, '');
+    if (!cleaned) {
+      const newOtp = [...otp];
+      newOtp[index] = '';
+      setOtp(newOtp);
+      return;
+    }
+
+    // SMS autofill / paste often dumps the full code into one box.
+    if (cleaned.length > 1) {
+      const code =
+        cleaned.length > OTP_LENGTH
+          ? cleaned.slice(-OTP_LENGTH)
+          : cleaned.slice(0, OTP_LENGTH);
+      const digits = code.split('');
+      const newOtp = [...EMPTY_OTP];
+      digits.forEach((d, i) => {
+        newOtp[i] = d;
+      });
+      setOtp(newOtp);
+      if (otpError) setOtpError('');
+      const focusIndex = Math.min(digits.length, OTP_LENGTH) - 1;
+      otpRefs.current[focusIndex]?.blur();
+      if (digits.length < OTP_LENGTH) {
+        otpRefs.current[digits.length]?.focus();
+      }
+      return;
+    }
+
+    const digit = cleaned;
     const newOtp = [...otp];
     newOtp[index] = digit;
     setOtp(newOtp);
@@ -170,195 +222,222 @@ export default function LoginScreen() {
         barStyle="dark-content"
         backgroundColor={colors.surface.background}
       />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
-        <View style={styles.cloudTop} />
-        <View style={styles.cloudBottom} />
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={[
+            styles.scrollContent,
+            keyboardVisible && styles.scrollContentKeyboard,
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          bounces={false}
+        >
+          <View style={styles.cloudTop} />
+          <View style={styles.cloudBottom} />
 
-        <View style={styles.header}>
-          <MaterialCommunityIcons
-            name="iron"
-            size={48}
-            color={colors.brand.primary}
-          />
-          <View style={styles.brandRow}>
-            <Text style={styles.brandIron}>IRON</Text>
-            <Text style={styles.brandCloud}> CLOUD</Text>
-          </View>
-          <View style={styles.brandDivider} />
-          <Text style={styles.riderBadge}>RIDER</Text>
-        </View>
-
-        <View style={styles.heroCopy}>
-          <Text style={styles.headline}>
-            {screenState === 'phone' ? 'Your route starts here.' : 'Verify OTP'}
-          </Text>
-          <Text style={styles.subheadline}>
-            {screenState === 'phone'
-              ? 'Manage pickups and deliveries across your communities.'
-              : `Enter the ${OTP_LENGTH}-digit code sent to your phone`}
-          </Text>
-        </View>
-
-        {screenState === 'phone' && (
-          <View style={styles.heroImageWrap}>
-            <View style={styles.shirtStack}>
-              <View style={[styles.shirtLayer, styles.shirtLightBlue]} />
-              <View style={[styles.shirtLayer, styles.shirtWhite]} />
-              <View style={[styles.shirtLayer, styles.shirtNavy]} />
+          <View style={[styles.header, keyboardVisible && styles.headerCompact]}>
+            <Image
+              source={require('../../assets/images/logo-mark.png')}
+              style={[
+                styles.brandLogo,
+                keyboardVisible && styles.brandLogoCompact,
+              ]}
+              resizeMode="contain"
+              accessibilityLabel="IronCloud Rider"
+            />
+            <View style={styles.brandRow}>
+              <Text style={styles.brandIron}>IRON</Text>
+              <Text style={styles.brandCloud}> CLOUD</Text>
             </View>
+            <View style={styles.brandDivider} />
+            <Text style={styles.riderBadge}>RIDER</Text>
           </View>
-        )}
 
-        <Animated.View style={[styles.formSection, { opacity: fadeAnim }]}>
-          {screenState === 'phone' ? (
-            <>
-              <Text style={styles.inputLabel}>Enter your mobile number</Text>
+          <View style={[styles.heroCopy, keyboardVisible && styles.heroCopyCompact]}>
+            <Text style={[styles.headline, keyboardVisible && styles.headlineCompact]}>
+              {screenState === 'phone' ? 'Your route starts here.' : 'Verify OTP'}
+            </Text>
+            {!keyboardVisible ? (
+              <Text style={styles.subheadline}>
+                {screenState === 'phone'
+                  ? 'Manage pickups and deliveries across your communities.'
+                  : `Enter the ${OTP_LENGTH}-digit code sent to your phone`}
+              </Text>
+            ) : null}
+          </View>
 
-              <View style={[styles.inputContainer, hasError && styles.inputContainerError]}>
-                <Pressable style={styles.countryCode}>
-                  <Text style={styles.countryCodeText}>+91</Text>
-                  <MaterialCommunityIcons
-                    name="chevron-down"
-                    size={18}
-                    color={colors.text.primary}
-                  />
-                </Pressable>
-                <View style={styles.inputDivider} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Mobile Number"
-                  placeholderTextColor={inputs.placeholder.color}
-                  keyboardType="phone-pad"
-                  autoComplete="tel"
-                  value={phoneNumber}
-                  onChangeText={handlePhoneChange}
-                  maxLength={10}
-                />
-              </View>
+          {screenState === 'phone' && !keyboardVisible ? (
+            <View style={styles.heroImageWrap}>
+              <Image
+                source={require('../../assets/images/hero-shirts.png')}
+                style={styles.heroShirts}
+                resizeMode="contain"
+                accessibilityLabel="Freshly pressed shirts"
+              />
+            </View>
+          ) : null}
 
-              {hasError && <Text style={styles.errorText}>{error}</Text>}
+          <Animated.View style={[styles.formSection, { opacity: fadeAnim }]}>
+            {screenState === 'phone' ? (
+              <>
+                <Text style={styles.inputLabel}>Enter your mobile number</Text>
 
-              <Pressable
-                style={[styles.continueButton, loading && styles.continueButtonDisabled]}
-                onPress={handleContinue}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color={colors.brand.onPrimary} />
-                ) : (
-                  <>
-                    <Text style={styles.continueText}>Continue</Text>
+                <View style={[styles.inputContainer, hasError && styles.inputContainerError]}>
+                  <Pressable style={styles.countryCode}>
+                    <Text style={styles.countryCodeText}>+91</Text>
                     <MaterialCommunityIcons
-                      name="arrow-right"
-                      size={20}
-                      color={colors.brand.onPrimary}
+                      name="chevron-down"
+                      size={18}
+                      color={colors.text.primary}
                     />
-                  </>
-                )}
-              </Pressable>
-
-              <View style={styles.trustRow}>
-                <View style={styles.trustIconWrap}>
-                  <MaterialCommunityIcons
-                    name="shield-check-outline"
-                    size={18}
-                    color={colors.brand.accent}
-                  />
-                </View>
-                <View style={styles.trustCopy}>
-                  <Text style={styles.trustTitle}>Secure. Private. Trusted.</Text>
-                  <Text style={styles.trustSubtitle}>
-                    We&apos;ll send you a one-time OTP to get started.
-                  </Text>
-                </View>
-              </View>
-            </>
-          ) : (
-            <>
-              <View style={styles.phoneDisplay}>
-                <Text style={styles.phoneDisplayText}>{formattedPhone}</Text>
-                <Pressable onPress={handleChangeNumber} disabled={loading}>
-                  <Text style={styles.changeNumberText}>Change</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.otpContainer}>
-                {otp.map((digit, index) => (
+                  </Pressable>
+                  <View style={styles.inputDivider} />
                   <TextInput
-                    key={index}
-                    ref={(ref) => {
-                      otpRefs.current[index] = ref;
-                    }}
-                    style={[
-                      styles.otpBox,
-                      digit && styles.otpBoxFilled,
-                      otpError && styles.otpBoxError,
-                    ]}
-                    value={digit}
-                    onChangeText={(text) => handleOtpChange(text, index)}
-                    onKeyPress={({ nativeEvent }) =>
-                      handleOtpKeyPress(nativeEvent.key, index)
-                    }
-                    keyboardType="number-pad"
-                    maxLength={1}
-                    selectTextOnFocus
-                    editable={!loading}
-                  />
-                ))}
-              </View>
-
-              {otpError && <Text style={styles.errorText}>{otpError}</Text>}
-
-              <Pressable
-                style={[styles.continueButton, loading && styles.continueButtonDisabled]}
-                onPress={handleVerifyOtp}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color={colors.brand.onPrimary} />
-                ) : (
-                  <>
-                    <Text style={styles.continueText}>Verify & Continue</Text>
-                    <MaterialCommunityIcons
-                      name="check"
-                      size={20}
-                      color={colors.brand.onPrimary}
-                    />
-                  </>
-                )}
-              </Pressable>
-
-              <View style={styles.resendRow}>
-                <Text style={styles.resendText}>Didn&apos;t receive the code? </Text>
-                <Pressable onPress={handleResendOtp} disabled={loading}>
-                  <Text style={styles.resendLink}>Resend OTP</Text>
-                </Pressable>
-              </View>
-            </>
-          )}
-        </Animated.View>
-
-        {screenState === 'phone' && (
-          <View style={styles.featuresRow}>
-            {FEATURES.map((feature) => (
-              <View key={feature.label} style={styles.featureItem}>
-                <View style={styles.featureIconWrap}>
-                  <MaterialCommunityIcons
-                    name={feature.icon}
-                    size={22}
-                    color={colors.icon.primary}
+                    style={styles.input}
+                    placeholder="Mobile Number"
+                    placeholderTextColor={inputs.placeholder.color}
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                    value={phoneNumber}
+                    onChangeText={handlePhoneChange}
+                    onFocus={scrollFormIntoView}
+                    maxLength={10}
                   />
                 </View>
-                <Text style={styles.featureLabel}>{feature.label}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
+
+                {hasError && <Text style={styles.errorText}>{error}</Text>}
+
+                <Pressable
+                  style={[styles.continueButton, loading && styles.continueButtonDisabled]}
+                  onPress={handleContinue}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={colors.brand.onPrimary} />
+                  ) : (
+                    <>
+                      <Text style={styles.continueText}>Continue</Text>
+                      <MaterialCommunityIcons
+                        name="arrow-right"
+                        size={20}
+                        color={colors.brand.onPrimary}
+                      />
+                    </>
+                  )}
+                </Pressable>
+
+                {!keyboardVisible ? (
+                  <View style={styles.trustRow}>
+                    <View style={styles.trustIconWrap}>
+                      <MaterialCommunityIcons
+                        name="shield-check-outline"
+                        size={18}
+                        color={colors.brand.accent}
+                      />
+                    </View>
+                    <View style={styles.trustCopy}>
+                      <Text style={styles.trustTitle}>Secure. Private. Trusted.</Text>
+                      <Text style={styles.trustSubtitle}>
+                        We&apos;ll send you a one-time OTP to get started.
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <View style={styles.phoneDisplay}>
+                  <Text style={styles.phoneDisplayText}>{formattedPhone}</Text>
+                  <Pressable onPress={handleChangeNumber} disabled={loading}>
+                    <Text style={styles.changeNumberText}>Change</Text>
+                  </Pressable>
+                </View>
+
+                <View style={styles.otpContainer}>
+                  {otp.map((digit, index) => (
+                    <TextInput
+                      key={index}
+                      ref={(ref) => {
+                        otpRefs.current[index] = ref;
+                      }}
+                      style={[
+                        styles.otpBox,
+                        digit && styles.otpBoxFilled,
+                        otpError && styles.otpBoxError,
+                      ]}
+                      value={digit}
+                      onChangeText={(text) => handleOtpChange(text, index)}
+                      onKeyPress={({ nativeEvent }) =>
+                        handleOtpKeyPress(nativeEvent.key, index)
+                      }
+                      onFocus={scrollFormIntoView}
+                      keyboardType="number-pad"
+                      // First box accepts full SMS autofill; others stay single-digit.
+                      maxLength={index === 0 ? OTP_LENGTH : 1}
+                      textContentType={index === 0 ? 'oneTimeCode' : 'none'}
+                      autoComplete={index === 0 ? 'sms-otp' : 'off'}
+                      importantForAutofill={index === 0 ? 'yes' : 'no'}
+                      selectTextOnFocus
+                      editable={!loading}
+                    />
+                  ))}
+                </View>
+
+                {otpError && <Text style={styles.errorText}>{otpError}</Text>}
+
+                <Pressable
+                  style={[styles.continueButton, loading && styles.continueButtonDisabled]}
+                  onPress={handleVerifyOtp}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color={colors.brand.onPrimary} />
+                  ) : (
+                    <>
+                      <Text style={styles.continueText}>Verify & Continue</Text>
+                      <MaterialCommunityIcons
+                        name="check"
+                        size={20}
+                        color={colors.brand.onPrimary}
+                      />
+                    </>
+                  )}
+                </Pressable>
+
+                <View style={styles.resendRow}>
+                  <Text style={styles.resendText}>Didn&apos;t receive the code? </Text>
+                  <Pressable onPress={handleResendOtp} disabled={loading}>
+                    <Text style={styles.resendLink}>Resend OTP</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Animated.View>
+
+          {screenState === 'phone' && !keyboardVisible ? (
+            <View style={styles.featuresRow}>
+              {FEATURES.map((feature) => (
+                <View key={feature.label} style={styles.featureItem}>
+                  <View style={styles.featureIconWrap}>
+                    <MaterialCommunityIcons
+                      name={feature.icon}
+                      size={22}
+                      color={colors.icon.primary}
+                    />
+                  </View>
+                  <Text style={styles.featureLabel}>{feature.label}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -371,10 +450,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface.background,
   },
+  keyboardView: {
+    flex: 1,
+  },
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing['2xl'],
+  },
+  scrollContentKeyboard: {
+    paddingBottom: spacing.lg,
+    justifyContent: 'flex-start',
   },
   cloudTop: {
     position: 'absolute',
@@ -403,25 +489,38 @@ const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
     marginTop: spacing['2xl'],
+    marginBottom: spacing.xs,
+  },
+  headerCompact: {
+    marginTop: spacing.md,
+    marginBottom: 0,
+  },
+  brandLogo: {
+    width: 112,
+    height: 112,
+  },
+  brandLogoCompact: {
+    width: 64,
+    height: 64,
   },
   brandRow: {
     flexDirection: 'row',
-    marginTop: spacing.sm,
+    marginTop: 0,
   },
   brandIron: {
     fontFamily: fonts.poppins.bold,
-    fontSize: 22,
+    fontSize: 24,
     color: colors.brand.primary,
-    letterSpacing: 2.5,
+    letterSpacing: 3,
   },
   brandCloud: {
     fontFamily: fonts.poppins.bold,
-    fontSize: 22,
+    fontSize: 24,
     color: colors.brand.accent,
-    letterSpacing: 2.5,
+    letterSpacing: 3,
   },
   brandDivider: {
-    width: 36,
+    width: 44,
     height: 2,
     backgroundColor: colors.brand.accent,
     marginTop: spacing.sm,
@@ -436,7 +535,11 @@ const styles = StyleSheet.create({
   },
   heroCopy: {
     alignItems: 'center',
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
+  },
+  heroCopyCompact: {
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
   },
   headline: {
     fontFamily: fonts.poppins.bold,
@@ -444,6 +547,10 @@ const styles = StyleSheet.create({
     lineHeight: 35,
     color: colors.text.heading,
     textAlign: 'center',
+  },
+  headlineCompact: {
+    fontSize: 22,
+    lineHeight: 28,
   },
   subheadline: {
     fontFamily: fonts.inter.regular,
@@ -455,37 +562,12 @@ const styles = StyleSheet.create({
   },
   heroImageWrap: {
     alignItems: 'center',
-    marginTop: spacing.xl,
-    marginBottom: spacing['2xl'],
+    marginTop: spacing.lg,
+    marginBottom: spacing.xl,
   },
-  shirtStack: {
-    width: 220,
-    height: 130,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  shirtLayer: {
-    position: 'absolute',
-    width: 200,
-    height: 36,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-  },
-  shirtLightBlue: {
-    backgroundColor: colors.brand.accentSoft,
-    top: 0,
-    zIndex: 3,
-  },
-  shirtWhite: {
-    backgroundColor: colors.surface.card,
-    top: 32,
-    zIndex: 2,
-  },
-  shirtNavy: {
-    backgroundColor: colors.brand.primary,
-    top: 64,
-    zIndex: 1,
+  heroShirts: {
+    width: 168,
+    height: 116,
   },
   formSection: {
     marginBottom: spacing.md,
@@ -505,7 +587,6 @@ const styles = StyleSheet.create({
     backgroundColor: inputs.default.background,
     minHeight: 52,
     paddingHorizontal: spacing.lg,
-    marginBottom: spacing.md,
   },
   inputContainerError: {
     borderColor: colors.status.error.foreground,
@@ -515,8 +596,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.medium,
     fontSize: 12,
     color: colors.status.error.foreground,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
     textAlign: 'center',
   },
   countryCode: {
@@ -549,7 +629,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brand.primary,
     borderRadius: radius.button,
     minHeight: 52,
-    marginTop: spacing.xs,
+    marginTop: spacing.lg,
     paddingHorizontal: spacing['5'],
     ...shadows.button.native,
   },
@@ -641,7 +721,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     gap: spacing.sm,
   },
   otpBox: {

@@ -5,7 +5,6 @@ import {
   mdiChartBar,
   mdiGoogle,
   mdiHandshake,
-  mdiIron,
   mdiShieldCheckOutline,
   mdiViewDashboard,
 } from '@mdi/js';
@@ -86,7 +85,13 @@ export const LoginForm = () => {
 
       <div className={styles.inner}>
         <header className={styles.header}>
-          <Icon path={mdiIron} size={2} color="var(--ic-brand-primary)" />
+          <img
+            src="/logo-mark.png"
+            alt="IronCloud"
+            className={styles.brandLogo}
+            width={120}
+            height={120}
+          />
           <div className={styles.brandRow}>
             <span className={styles.brandIron}>IRON</span>
             <span className={styles.brandCloud}> CLOUD</span>
@@ -103,11 +108,13 @@ export const LoginForm = () => {
         </div>
 
         <div className={styles.heroImageWrap} aria-hidden>
-          <div className={styles.shirtStack}>
-            <div className={`${styles.shirtLayer} ${styles.shirtLightBlue}`} />
-            <div className={`${styles.shirtLayer} ${styles.shirtWhite}`} />
-            <div className={`${styles.shirtLayer} ${styles.shirtNavy}`} />
-          </div>
+          <img
+            src="/hero-shirts.png"
+            alt=""
+            className={styles.heroShirts}
+            width={168}
+            height={116}
+          />
         </div>
 
         {configMissing && (

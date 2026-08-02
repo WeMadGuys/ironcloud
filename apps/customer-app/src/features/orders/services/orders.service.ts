@@ -1,8 +1,7 @@
+import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
 import { createTtlCache } from '../../../lib/ttl-cache';
 
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 const ORDERS_CACHE_TTL_MS = 45_000;
 const ORDERS_LIST_LIMIT = 40;
 

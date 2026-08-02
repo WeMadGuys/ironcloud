@@ -44,31 +44,39 @@
   flex-direction: column;
   align-items: center;
   margin-top: var(--ic-spacing-2xl);
+  margin-bottom: var(--ic-spacing-xs);
+}
+
+.brandLogo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  background: transparent;
 }
 
 .brandRow {
   display: flex;
-  margin-top: var(--ic-spacing-sm);
+  margin-top: 0;
 }
 
 .brandIron {
   font-family: var(--ic-font-display);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--ic-brand-primary);
-  letter-spacing: 2.5px;
+  letter-spacing: 3px;
 }
 
 .brandCloud {
   font-family: var(--ic-font-display);
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--ic-brand-accent);
-  letter-spacing: 2.5px;
+  letter-spacing: 3px;
 }
 
 .brandDivider {
-  width: 36px;
+  width: 44px;
   height: 2px;
   background: var(--ic-brand-accent);
   margin-top: var(--ic-spacing-sm);
@@ -86,7 +94,7 @@
 
 .heroCopy {
   text-align: center;
-  margin-top: var(--ic-spacing-xl);
+  margin-top: var(--ic-spacing-lg);
 }
 
 .headline {
@@ -110,41 +118,14 @@
 .heroImageWrap {
   display: flex;
   justify-content: center;
-  margin: var(--ic-spacing-xl) 0 var(--ic-spacing-2xl);
+  margin: var(--ic-spacing-lg) 0 var(--ic-spacing-xl);
 }
 
-.shirtStack {
-  position: relative;
-  width: 220px;
-  height: 130px;
-}
-
-.shirtLayer {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 200px;
-  height: 36px;
-  border-radius: var(--ic-radius-sm);
-  border: 1px solid var(--ic-border-default);
-}
-
-.shirtLightBlue {
-  top: 0;
-  z-index: 3;
-  background: var(--ic-brand-accent-soft);
-}
-
-.shirtWhite {
-  top: 32px;
-  z-index: 2;
-  background: var(--ic-surface-card);
-}
-
-.shirtNavy {
-  top: 64px;
-  z-index: 1;
-  background: var(--ic-brand-primary);
+.heroShirts {
+  width: 168px;
+  height: 116px;
+  object-fit: contain;
+  background: transparent;
 }
 
 .configBanner {

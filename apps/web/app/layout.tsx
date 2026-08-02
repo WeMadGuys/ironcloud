@@ -19,6 +19,10 @@ const inter = Inter({
 export const metadata = {
   title: 'Iron Cloud Admin',
   description: 'Iron Cloud operations admin portal',
+  icons: {
+    icon: [{ url: '/favicon.png', type: 'image/png' }],
+    apple: [{ url: '/icon.png' }],
+  },
 };
 
 export default function RootLayout({

@@ -6,18 +6,31 @@
 
 export type AuthProviderType = 'mock' | 'msg91';
 
+function resolveAuthProvider(): AuthProviderType {
+  const requested = process.env.EXPO_PUBLIC_AUTH_PROVIDER;
+  // Release / store builds must never use mock OTP (security / review reject).
+  if (!__DEV__) {
+    return 'msg91';
+  }
+  if (requested === 'msg91') return 'msg91';
+  // Default to mock in development when unset or explicitly "mock".
+  return 'mock';
+}
+
 /**
  * Current auth provider type.
- * Set via EXPO_PUBLIC_AUTH_PROVIDER env var, defaults to 'mock' for development.
+ * Release builds always resolve to msg91 regardless of env.
  */
-export const AUTH_PROVIDER: AuthProviderType =
-  (process.env.EXPO_PUBLIC_AUTH_PROVIDER as AuthProviderType) || 'mock';
+export const AUTH_PROVIDER: AuthProviderType = resolveAuthProvider();
+
+/** True only when mock OTP path is active (dev builds only). */
+export const IS_MOCK_AUTH = AUTH_PROVIDER === 'mock';
 
 /**
  * Whether we're in development mode.
- * Shows general dev helpers; mock OTP hint is gated separately on AUTH_PROVIDER.
+ * Shows general dev helpers; mock OTP hint is gated on IS_MOCK_AUTH.
  */
-export const IS_DEVELOPMENT = __DEV__ || AUTH_PROVIDER === 'mock';
+export const IS_DEVELOPMENT = __DEV__;
 
 /**
  * Mock customer user id used across customer-app services in mock auth.

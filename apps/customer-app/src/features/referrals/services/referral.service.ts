@@ -1,7 +1,6 @@
+import { IS_MOCK_AUTH } from '../../../config/auth';
 import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
-
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
 
 /** Keep warm for a short time so reopen feels instant without stale admin config. */
 const CACHE_TTL_MS = 60_000;

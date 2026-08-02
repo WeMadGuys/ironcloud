@@ -1,3 +1,4 @@
+import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { getApiBaseUrl } from '../../../lib/api';
 import { isExpoGo } from '../../../lib/expo-go';
 import { supabase } from '../../../lib/supabase';
@@ -5,8 +6,6 @@ import { createTtlCache } from '../../../lib/ttl-cache';
 import { fetchUserProfile } from '../../profile/services/profile.service';
 import { openRazorpayCheckout } from './razorpay-checkout';
 
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 const WALLET_CACHE_TTL_MS = 30_000;
 
 export type WalletTransaction = {

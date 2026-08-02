@@ -29,15 +29,10 @@
 .logoIcon {
   width: 36px;
   height: 36px;
-  background: var(--ic-brand-accent);
-  border-radius: var(--ic-radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  color: var(--ic-text-inverse);
-  font-weight: 800;
-  font-size: var(--ic-font-size-sm);
+  object-fit: contain;
+  display: block;
+  background: transparent;
 }
 
 .logoText {

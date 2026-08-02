@@ -1,0 +1,38 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "msg91"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "msg91",
+        "EXPO_PUBLIC_API_URL": "https://ironcloud-rho.vercel.app"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_AUTH_PROVIDER": "msg91",
+        "EXPO_PUBLIC_API_URL": "https://ironcloud-rho.vercel.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

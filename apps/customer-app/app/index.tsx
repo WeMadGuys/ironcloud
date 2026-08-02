@@ -4,10 +4,8 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { colors } from '@ironcloud/ui';
 
+import { IS_MOCK_AUTH, MOCK_USER_ID } from '../src/config/auth';
 import { supabase } from '../src/lib/supabase';
-
-const IS_MOCK_AUTH = process.env.EXPO_PUBLIC_AUTH_PROVIDER === 'mock';
-const MOCK_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 type Destination = 'login' | 'home' | null;
 

@@ -203,11 +203,18 @@ export default function HomeScreen() {
     }
     let cancelled = false;
     setSlotsLoading(true);
-    getCommunityPickupSlots(communityId).then((slots) => {
-      if (cancelled) return;
-      setPickupSlots(slots);
-      setSlotsLoading(false);
-    });
+    getCommunityPickupSlots(communityId)
+      .then((slots) => {
+        if (cancelled) return;
+        setPickupSlots(slots);
+      })
+      .catch((error) => {
+        console.error('Error loading pickup slots:', error);
+        if (!cancelled) setPickupSlots([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -702,10 +709,13 @@ export default function HomeScreen() {
             </View>
           ) : pickupSlots.length === 0 ? (
             <View style={styles.slotsEmpty}>
-              <Text style={styles.slotsEmptyTitle}>No pickup slots yet</Text>
+              <Text style={styles.slotsEmptyTitle}>
+                {communityId ? 'No pickup slots yet' : 'Complete your address'}
+              </Text>
               <Text style={styles.slotsEmptyHint}>
-                Pickup times for your community are not configured. Please check back
-                soon.
+                {communityId
+                  ? 'Pickup times for your community are not configured. Please check back soon.'
+                  : 'Add your community and flat in Profile to see available pickup times.'}
               </Text>
             </View>
           ) : availableSlots.length === 0 ? (
