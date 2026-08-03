@@ -322,6 +322,7 @@ export const BoxesListPage = () => {
               page={page}
               pageSize={pageSize}
               total={total}
+              totalPages={Math.max(1, Math.ceil(total / pageSize))}
               onPageChange={setPage}
             />
           </>
