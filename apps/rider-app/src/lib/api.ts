@@ -16,7 +16,10 @@ export const getApiBaseUrl = (): string => {
     debuggerHost &&
       debuggerHost !== 'localhost' &&
       debuggerHost !== '127.0.0.1' &&
-      !debuggerHost.includes('exp.direct'),
+      !debuggerHost.includes('exp.direct') &&
+      // Cloudflare / other public tunnels are not the PC LAN IP
+      !debuggerHost.includes('trycloudflare.com') &&
+      !debuggerHost.includes('ngrok'),
   );
 
   // Physical device: localhost in .env points at the phone, not the PC.

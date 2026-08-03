@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "a4284bf7-b6a6-490f-a3ae-ebf31d63de53"
+      }
+    },
+    "android": {
+      "package": "com.wemadguys.ironcloud"
+    }
+  }
+}

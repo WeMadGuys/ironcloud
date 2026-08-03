@@ -66,6 +66,7 @@ export const fetchOrders = async (params: OrderListParams) => {
     .from('orders')
     .select(`
       id, order_number, status, total_amount, created_at, payment_method, pickup_slot_id, delivery_slot_id, community_id,
+      customer_rating, customer_feedback, feedback_dismissed_at,
       profiles!orders_customer_id_fkey(full_name, phone),
       communities(name),
       addresses(flat_number, tower),

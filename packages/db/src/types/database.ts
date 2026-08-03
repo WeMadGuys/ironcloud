@@ -449,6 +449,9 @@ export interface Database {
           admin_notes: string | null;
           estimated_amount: number | null;
           estimated_garments: Json | null;
+          customer_rating: number | null;
+          customer_feedback: string | null;
+          feedback_dismissed_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -475,6 +478,9 @@ export interface Database {
           admin_notes?: string | null;
           estimated_amount?: number | null;
           estimated_garments?: Json | null;
+          customer_rating?: number | null;
+          customer_feedback?: string | null;
+          feedback_dismissed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -501,6 +507,9 @@ export interface Database {
           admin_notes?: string | null;
           estimated_amount?: number | null;
           estimated_garments?: Json | null;
+          customer_rating?: number | null;
+          customer_feedback?: string | null;
+          feedback_dismissed_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1438,6 +1447,20 @@ export interface Database {
         Args: {
           p_order_id: string;
           p_reason?: string | null;
+        };
+        Returns: undefined;
+      };
+      submit_order_feedback: {
+        Args: {
+          p_order_id: string;
+          p_rating: number;
+          p_feedback?: string | null;
+        };
+        Returns: undefined;
+      };
+      dismiss_order_feedback: {
+        Args: {
+          p_order_id: string;
         };
         Returns: undefined;
       };

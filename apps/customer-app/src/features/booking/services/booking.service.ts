@@ -505,6 +505,9 @@ type OrderRow = {
   total_amount: number;
   estimated_amount: number | null;
   payment_status: 'unpaid' | 'paid' | 'insufficient_funds' | null;
+  customer_rating: number | null;
+  customer_feedback: string | null;
+  feedback_dismissed_at: string | null;
   pickup_slot: { window_start: string; window_end: string } | null;
   delivery_slot: { window_start: string; window_end: string } | null;
   address: {
@@ -545,6 +548,9 @@ const ORDER_SELECT = `
   total_amount,
   estimated_amount,
   payment_status,
+  customer_rating,
+  customer_feedback,
+  feedback_dismissed_at,
   pickup_slot:pickup_slot_id (window_start, window_end),
   delivery_slot:delivery_slot_id (window_start, window_end),
   address:address_id (tower, flat_number, community:community_id (name)),
@@ -795,6 +801,99 @@ export async function getHomeBookingForDay(
 
   if (!match) return null;
   return mapOrderToActiveBooking(match);
+}
+
+const OUT_FOR_DELIVERY_STATUSES = new Set([
+  'delivery_assigned',
+  'out_for_delivery',
+]);
+
+/**
+ * Out-for-delivery booking whose delivery slot falls on today.
+ * Independent of the Home date-strip selection.
+ */
+export async function getTodaysOutForDeliveryBooking(options?: {
+  force?: boolean;
+}): Promise<ActiveBooking | null> {
+  const rows = await fetchActiveOrderRows(options);
+  const { start, end } = getDayBounds(0);
+
+  const matches = rows
+    .filter((row) => {
+      if (!OUT_FOR_DELIVERY_STATUSES.has(row.status)) return false;
+      if (!row.delivery_slot?.window_start) return false;
+      const deliveryStart = new Date(row.delivery_slot.window_start);
+      return deliveryStart >= start && deliveryStart < end;
+    })
+    .sort((a, b) => {
+      const aStart = new Date(a.delivery_slot!.window_start).getTime();
+      const bStart = new Date(b.delivery_slot!.window_start).getTime();
+      return aStart - bStart;
+    });
+
+  if (matches.length === 0) return null;
+  return mapOrderToActiveBooking(matches[0]);
+}
+
+/**
+ * Delivered order today that still needs feedback (not rated, not dismissed).
+ * Independent of the Home date-strip selection.
+ */
+export async function getTodaysDeliveredFeedbackBooking(options?: {
+  force?: boolean;
+}): Promise<ActiveBooking | null> {
+  const rows = await fetchActiveOrderRows(options);
+  const { start, end } = getDayBounds(0);
+
+  const matches = rows
+    .filter((row) => {
+      if (row.status !== 'delivered') return false;
+      if (row.customer_rating != null) return false;
+      if (row.feedback_dismissed_at) return false;
+      if (!row.delivery_slot?.window_start) return false;
+      const deliveryStart = new Date(row.delivery_slot.window_start);
+      return deliveryStart >= start && deliveryStart < end;
+    })
+    .sort((a, b) => {
+      const aStart = new Date(a.delivery_slot!.window_start).getTime();
+      const bStart = new Date(b.delivery_slot!.window_start).getTime();
+      return bStart - aStart;
+    });
+
+  if (matches.length === 0) return null;
+  return mapOrderToActiveBooking(matches[0]);
+}
+
+export async function submitOrderFeedback(
+  orderId: string,
+  rating: number,
+  feedback?: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('submit_order_feedback', {
+    p_order_id: orderId,
+    p_rating: rating,
+    p_feedback: feedback?.trim() ? feedback.trim() : null,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  clearActiveBookingCache();
+  clearOrdersCache();
+}
+
+export async function dismissOrderFeedback(orderId: string): Promise<void> {
+  const { error } = await supabase.rpc('dismiss_order_feedback', {
+    p_order_id: orderId,
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  clearActiveBookingCache();
+  clearOrdersCache();
 }
 
 /**

@@ -75,6 +75,8 @@ type OrderColumnKey =
   | 'rider'
   | 'pickupRider'
   | 'deliveryRider'
+  | 'rating'
+  | 'feedback'
   | 'booked';
 
 const COLUMN_LABELS: Record<OrderColumnKey, string> = {
@@ -91,6 +93,8 @@ const COLUMN_LABELS: Record<OrderColumnKey, string> = {
   rider: 'Current rider',
   pickupRider: 'Pickup rider',
   deliveryRider: 'Delivery rider',
+  rating: 'Rating',
+  feedback: 'Feedback',
   booked: 'Booked',
 };
 
@@ -478,6 +482,32 @@ export const OrdersListPage = () => {
         key: 'deliveryRider',
         header: 'Delivery rider',
         render: (o) => riderName(openJob(getJobs(o), 'delivery')),
+      },
+      rating: {
+        key: 'rating',
+        header: 'Rating',
+        render: (o) => {
+          const rating = (o as { customer_rating?: number | null }).customer_rating;
+          if (rating == null) {
+            return (o as { feedback_dismissed_at?: string | null })
+              .feedback_dismissed_at
+              ? 'Skipped'
+              : '—';
+          }
+          return `${rating}/5`;
+        },
+      },
+      feedback: {
+        key: 'feedback',
+        header: 'Feedback',
+        render: (o) => {
+          const text = (o as { customer_feedback?: string | null })
+            .customer_feedback;
+          if (!text?.trim()) return '—';
+          return text.trim().length > 80
+            ? `${text.trim().slice(0, 80)}…`
+            : text.trim();
+        },
       },
       booked: {
         key: 'booked',

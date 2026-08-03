@@ -42,7 +42,11 @@ import {
   getBookedDayOffsets,
   getDeliveryWindowFromPickup,
   getHomeBookingForDay,
+  getTodaysDeliveredFeedbackBooking,
+  getTodaysOutForDeliveryBooking,
+  dismissOrderFeedback,
   markOrderReadyForRebook,
+  submitOrderFeedback,
   type ActiveBooking,
 } from '../../src/features/booking/services/booking.service';
 import {
@@ -50,6 +54,8 @@ import {
   type CommunityPickupSlot,
 } from '../../src/features/booking/services/communitySlots.service';
 import { ActiveOrderCard } from '../../src/features/booking/components/ActiveOrderCard';
+import { DeliveredFeedbackBanner } from '../../src/features/booking/components/DeliveredFeedbackBanner';
+import { OutForDeliveryBanner } from '../../src/features/booking/components/OutForDeliveryBanner';
 import {
   EstimateOrderCard,
   buildEstimateLines,
@@ -177,6 +183,8 @@ export default function HomeScreen() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [contentLoading, setContentLoading] = useState(false);
   const [dayBooking, setDayBooking] = useState<ActiveBooking | null>(null);
+  const [ofdBooking, setOfdBooking] = useState<ActiveBooking | null>(null);
+  const [feedbackBooking, setFeedbackBooking] = useState<ActiveBooking | null>(null);
   const [bookedDays, setBookedDays] = useState<number[]>([]);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [headerAddress, setHeaderAddress] = useState({
@@ -256,17 +264,30 @@ export default function HomeScreen() {
       setContentLoading(true);
     }
     try {
-      const [booking, bookedOffsets, wallet, addresses, profile, sessionResult] = await Promise.all([
-        getHomeBookingForDay(dayOffset),
-        getBookedDayOffsets(7),
-        getWallet(),
-        listAddresses(),
-        fetchUserProfile(),
-        supabase.auth.getSession(),
-      ]);
+      const [
+        booking,
+        bookedOffsets,
+        ofd,
+        feedback,
+        wallet,
+        addresses,
+        profile,
+        sessionResult,
+      ] = await Promise.all([
+          getHomeBookingForDay(dayOffset),
+          getBookedDayOffsets(7),
+          getTodaysOutForDeliveryBooking(),
+          getTodaysDeliveredFeedbackBooking(),
+          getWallet(),
+          listAddresses(),
+          fetchUserProfile(),
+          supabase.auth.getSession(),
+        ]);
 
       setDayBooking(booking);
       setBookedDays(bookedOffsets);
+      setOfdBooking(ofd);
+      setFeedbackBooking(feedback);
       setWalletBalance(wallet?.balance ?? null);
       setUserId(sessionResult.data.session?.user?.id ?? null);
       setHeaderProfile({
@@ -309,12 +330,16 @@ export default function HomeScreen() {
 
   const refreshBookingState = useCallback(async (dayOffset: number) => {
     try {
-      const [booking, bookedOffsets] = await Promise.all([
+      const [booking, bookedOffsets, ofd, feedback] = await Promise.all([
         getHomeBookingForDay(dayOffset, { force: true }),
         getBookedDayOffsets(7, { force: true }),
+        getTodaysOutForDeliveryBooking({ force: true }),
+        getTodaysDeliveredFeedbackBooking({ force: true }),
       ]);
       setDayBooking(booking);
       setBookedDays(bookedOffsets);
+      setOfdBooking(ofd);
+      setFeedbackBooking(feedback);
     } catch (error) {
       console.error('Error refreshing booking state:', error);
     }
@@ -456,6 +481,23 @@ export default function HomeScreen() {
       );
     }
   };
+
+  const handleSubmitFeedback = useCallback(
+    async (rating: number, feedback: string) => {
+      if (!feedbackBooking) return;
+      await submitOrderFeedback(feedbackBooking.orderId, rating, feedback);
+      setFeedbackBooking(null);
+      await refreshBookingState(selectedDay);
+    },
+    [feedbackBooking, refreshBookingState, selectedDay],
+  );
+
+  const handleDismissFeedback = useCallback(async () => {
+    if (!feedbackBooking) return;
+    await dismissOrderFeedback(feedbackBooking.orderId);
+    setFeedbackBooking(null);
+    await refreshBookingState(selectedDay);
+  }, [feedbackBooking, refreshBookingState, selectedDay]);
 
   const handleCancelBooking = () => {
     if (!dayBooking || isCancelling) return;
@@ -637,6 +679,17 @@ export default function HomeScreen() {
     </View>
   );
 
+  // OFD takes priority; after delivery the same slot becomes the feedback prompt.
+  const statusBanner = ofdBooking ? (
+    <OutForDeliveryBanner booking={ofdBooking} />
+  ) : feedbackBooking ? (
+    <DeliveredFeedbackBanner
+      booking={feedbackBooking}
+      onSubmit={handleSubmitFeedback}
+      onDismiss={handleDismissFeedback}
+    />
+  ) : null;
+
   // Selected day already has a booking — show that day's order card only
   if (dayBooking && !contentLoading) {
     return (
@@ -644,6 +697,7 @@ export default function HomeScreen() {
         <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
         {header}
         {dateStrip}
+        {statusBanner}
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.statusScrollContent}
@@ -672,6 +726,7 @@ export default function HomeScreen() {
         <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
         {header}
         {dateStrip}
+        {statusBanner}
         {contentLoader}
       </SafeAreaView>
     );
@@ -682,6 +737,7 @@ export default function HomeScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={colors.surface.background} />
       {header}
       {dateStrip}
+      {statusBanner}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
