@@ -53,6 +53,8 @@ export type NotificationChannel = 'push' | 'sms' | 'whatsapp' | 'email' | 'in_ap
 export type TicketStatus = 'open' | 'in_progress' | 'escalated' | 'resolved' | 'closed';
 export type SlotType = 'pickup' | 'delivery';
 export type PaymentMethod = 'wallet' | 'razorpay_direct';
+export type BoxStatus = 'AVAILABLE' | 'OCCUPIED';
+export type BoxEventType = 'BOX_ASSIGNED' | 'BOX_RELEASED' | 'WRONG_BOX_SCAN';
 
 export interface Database {
   public: {
@@ -1329,6 +1331,102 @@ export interface Database {
         };
         Relationships: [];
       };
+      boxes: {
+        Row: {
+          id: string;
+          box_code: string;
+          qr_code: string;
+          community_id: string;
+          status: BoxStatus;
+          current_order_id: string | null;
+          is_active: boolean;
+          last_used_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          box_code: string;
+          qr_code: string;
+          community_id: string;
+          status?: BoxStatus;
+          current_order_id?: string | null;
+          is_active?: boolean;
+          last_used_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          box_code?: string;
+          qr_code?: string;
+          community_id?: string;
+          status?: BoxStatus;
+          current_order_id?: string | null;
+          is_active?: boolean;
+          last_used_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      order_boxes: {
+        Row: {
+          id: string;
+          order_id: string;
+          box_id: string;
+          assigned_at: string;
+          released_at: string | null;
+          assigned_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          box_id: string;
+          assigned_at?: string;
+          released_at?: string | null;
+          assigned_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          box_id?: string;
+          assigned_at?: string;
+          released_at?: string | null;
+          assigned_by?: string | null;
+        };
+        Relationships: [];
+      };
+      box_events: {
+        Row: {
+          id: string;
+          box_id: string | null;
+          order_id: string | null;
+          rider_id: string | null;
+          event_type: BoxEventType;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          box_id?: string | null;
+          order_id?: string | null;
+          rider_id?: string | null;
+          event_type: BoxEventType;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          box_id?: string | null;
+          order_id?: string | null;
+          rider_id?: string | null;
+          event_type?: BoxEventType;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1342,6 +1440,38 @@ export interface Database {
           p_reason?: string | null;
         };
         Returns: undefined;
+      };
+      normalize_box_code: {
+        Args: { p_code: string };
+        Returns: string;
+      };
+      resolve_box_scan: {
+        Args: {
+          p_box_code: string;
+          p_order_id?: string | null;
+          p_mode?: string;
+        };
+        Returns: Json;
+      };
+      attach_box_to_order: {
+        Args: {
+          p_order_id: string;
+          p_box_code: string;
+          p_rider_id: string;
+        };
+        Returns: Json;
+      };
+      release_box_from_order: {
+        Args: {
+          p_order_id: string;
+          p_box_code: string;
+          p_rider_id: string;
+        };
+        Returns: Json;
+      };
+      count_active_order_boxes: {
+        Args: { p_order_id: string };
+        Returns: number;
       };
     };
     Enums: {

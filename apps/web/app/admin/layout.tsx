@@ -15,6 +15,7 @@ const PAGE_META: Record<string, { title: string; subtitle?: string }> = {
   [ADMIN_ROUTES.communities]: { title: 'Communities', subtitle: 'Community management and analytics' },
   [ADMIN_ROUTES.partners]: { title: 'Partners', subtitle: 'Partner performance and verification' },
   [ADMIN_ROUTES.riders]: { title: 'Riders', subtitle: 'Live rider status and assignments' },
+  [ADMIN_ROUTES.boxes]: { title: 'Boxes', subtitle: 'Physical box inventory and QR codes' },
   [ADMIN_ROUTES.wallet]: { title: 'Wallet', subtitle: 'Wallet balances and transactions' },
   [ADMIN_ROUTES.finance]: { title: 'Finance', subtitle: 'Revenue, settlements, and invoices' },
   [ADMIN_ROUTES.promotions]: { title: 'Promotions', subtitle: 'Coupons, campaigns, and banners' },

@@ -1,5 +1,6 @@
 import { AUTH_PROVIDER, MOCK_RIDER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
+import { countActiveOrderBoxes } from './box.service';
 import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
 
@@ -37,6 +38,13 @@ export async function getDeliveryItems(orderId: string): Promise<DeliveryItem[]>
 export async function confirmDelivery(orderId: string): Promise<void> {
   const riderId = await getRiderId();
   if (!riderId) throw new Error('Rider not authenticated');
+
+  const activeBoxes = await countActiveOrderBoxes(orderId);
+  if (activeBoxes > 0) {
+    throw new Error(
+      `Release all boxes before completing delivery (${activeBoxes} still assigned).`,
+    );
+  }
 
   const { error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)

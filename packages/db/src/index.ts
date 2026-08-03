@@ -21,6 +21,8 @@ export type {
   TicketStatus,
   SlotType,
   PaymentMethod,
+  BoxStatus,
+  BoxEventType,
 } from './types';
 
 export {
@@ -31,3 +33,12 @@ export {
   type PricingRuleCandidate,
   type PricingScope,
 } from './pricing';
+
+export {
+  createBoxService,
+  type BoxService,
+  type BoxScanMode,
+  type BoxScanResult,
+  type BoxListFilters,
+  type OrderBoxRow,
+} from './queries/boxes/box.service';

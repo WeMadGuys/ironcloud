@@ -6,6 +6,7 @@ import {
   type PricingRuleCandidate,
   type PricingScope,
 } from '@ironcloud/db';
+import { countActiveOrderBoxes } from './box.service';
 import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
 
@@ -423,6 +424,11 @@ export async function confirmPickup(
 ): Promise<void> {
   const riderId = await getRiderId();
   if (!riderId) throw new Error('Rider not authenticated');
+
+  const attachedBoxes = await countActiveOrderBoxes(orderId);
+  if (attachedBoxes < 1) {
+    throw new Error('Attach at least one box before confirming pickup.');
+  }
 
   const { data: orderBefore } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)

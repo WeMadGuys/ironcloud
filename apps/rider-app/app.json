@@ -10,19 +10,29 @@
     "newArchEnabled": false,
     "ios": {
       "bundleIdentifier": "com.ironcloud.rider",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Iron Cloud Rider needs camera access to scan box QR codes at pickup and delivery."
+      }
     },
     "android": {
       "package": "com.ironcloud.rider",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "permissions": ["CAMERA"]
     },
     "plugins": [
       "expo-router",
       "expo-dev-client",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Iron Cloud Rider to scan box QR codes."
+        }
+      ]
     ],
     "extra": {
       "eas": {

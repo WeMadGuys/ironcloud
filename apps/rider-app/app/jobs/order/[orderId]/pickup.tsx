@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { BoxScanResult, OrderBoxRow } from '@ironcloud/db';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +16,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
+import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDetailsCard';
+import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
+import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
+import {
+  attachBoxToOrder,
+  getOrderBoxes,
+  resolveBoxScan,
+} from '../../../../src/features/jobs/services/box.service';
 import {
   confirmPickup,
   getGarmentCatalog,
@@ -45,6 +54,8 @@ function telHref(phone: string | null | undefined): string | null {
   return `tel:+91${digits.slice(-10)}`;
 }
 
+type Step = 'boxes' | 'garments';
+
 export default function PickupScreen() {
   const router = useRouter();
   const { orderId, communityId, flat, mode } = useLocalSearchParams<{
@@ -55,6 +66,7 @@ export default function PickupScreen() {
   }>();
   const isEditMode = mode === 'edit';
 
+  const [step, setStep] = useState<Step>(isEditMode ? 'garments' : 'boxes');
   const [catalog, setCatalog] = useState<GarmentCatalogItem[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [fromCustomerEstimate, setFromCustomerEstimate] = useState(false);
@@ -68,6 +80,18 @@ export default function PickupScreen() {
   const [showContact, setShowContact] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+
+  const [attachedBoxes, setAttachedBoxes] = useState<OrderBoxRow[]>([]);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanResult, setScanResult] = useState<BoxScanResult | null>(null);
+  const [acting, setActing] = useState(false);
+
+  const refreshBoxes = useCallback(async () => {
+    if (!orderId) return;
+    const rows = await getOrderBoxes(orderId, true);
+    setAttachedBoxes(rows);
+  }, [orderId]);
 
   useEffect(() => {
     if (!communityId || !orderId) return;
@@ -86,6 +110,7 @@ export default function PickupScreen() {
         getOrderEstimatePrefill(orderId),
         getOrderItemsPrefill(orderId),
         getOrderPickupDetails(orderId),
+        refreshBoxes(),
       ]);
 
       if (cancelled) return;
@@ -115,7 +140,7 @@ export default function PickupScreen() {
     return () => {
       cancelled = true;
     };
-  }, [communityId, orderId, isEditMode]);
+  }, [communityId, orderId, isEditMode, refreshBoxes]);
 
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
   const runningTotal = catalog.reduce(
@@ -130,8 +155,54 @@ export default function PickupScreen() {
     }));
   };
 
+  const handleScanCode = async (code: string) => {
+    if (!orderId) return;
+    setScanBusy(true);
+    try {
+      const result = await resolveBoxScan(code, { orderId, mode: 'pickup' });
+      setScanResult(result);
+      setScannerOpen(false);
+      if (!result.ok || result.error) {
+        // Still show details card when possible; alert for hard failures with no box
+        if (!result.box) {
+          Alert.alert('Scan failed', result.error || 'Unknown box code');
+        }
+      }
+    } catch (error) {
+      Alert.alert(
+        'Scan failed',
+        error instanceof Error ? error.message : 'Could not resolve box',
+      );
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
+  const handleAttach = async () => {
+    if (!orderId || !scanResult?.box?.boxCode) return;
+    setActing(true);
+    try {
+      await attachBoxToOrder(orderId, scanResult.box.boxCode);
+      await refreshBoxes();
+      setScanResult(null);
+      Alert.alert('Box attached', `${scanResult.box.boxCode} linked to this order.`);
+    } catch (error) {
+      Alert.alert(
+        'Attach failed',
+        error instanceof Error ? error.message : 'Could not attach box',
+      );
+    } finally {
+      setActing(false);
+    }
+  };
+
   const handleConfirm = async () => {
     if (!orderId || !communityId || total === 0) return;
+    if (!isEditMode && attachedBoxes.length === 0) {
+      Alert.alert('Boxes required', 'Attach at least one box before confirming pickup.');
+      setStep('boxes');
+      return;
+    }
     setSubmitting(true);
     try {
       const lines = Object.entries(counts)
@@ -157,17 +228,79 @@ export default function PickupScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <Pressable style={styles.back} onPress={() => router.back()}>
+        <Pressable
+          style={styles.back}
+          onPress={() => {
+            if (step === 'garments' && !isEditMode) {
+              setStep('boxes');
+              return;
+            }
+            router.back();
+          }}
+        >
           <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon.primary} />
         </Pressable>
         <Text style={styles.title}>
-          {isEditMode ? 'Edit items' : 'Collect'} — Flat {flat}
+          {isEditMode
+            ? `Edit items — Flat ${flat}`
+            : step === 'boxes'
+              ? `Boxes — Flat ${flat}`
+              : `Collect — Flat ${flat}`}
         </Text>
         <View style={styles.back} />
       </View>
 
       {loading ? (
         <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
+      ) : step === 'boxes' && !isEditMode ? (
+        <>
+          <ScrollView contentContainerStyle={styles.list}>
+            <View style={styles.metaCard}>
+              {orderNumber ? <Text style={styles.metaOrder}>#{orderNumber}</Text> : null}
+              {orderStatus ? (
+                <Text style={styles.metaStatus}>{formatStatus(orderStatus)}</Text>
+              ) : null}
+              <Text style={styles.metaHint}>
+                Scan and Attach each physical box used for this pickup. You can attach more than
+                one if clothes do not fit in a single box.
+              </Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>
+              Attached boxes ({attachedBoxes.length})
+            </Text>
+            <OrderBoxesList boxes={attachedBoxes} />
+
+            {scanResult ? (
+              <View style={styles.scanResultWrap}>
+                <BoxDetailsCard
+                  result={scanResult}
+                  mode="pickup"
+                  acting={acting}
+                  onAttach={() => void handleAttach()}
+                  onDismiss={() => setScanResult(null)}
+                />
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <Pressable style={styles.scanBtn} onPress={() => setScannerOpen(true)}>
+              <MaterialCommunityIcons name="qrcode-scan" size={20} color={colors.brand.onPrimary} />
+              <Text style={styles.confirmText}>Scan Box QR</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.continueBtn,
+                attachedBoxes.length === 0 && styles.confirmDisabled,
+              ]}
+              disabled={attachedBoxes.length === 0}
+              onPress={() => setStep('garments')}
+            >
+              <Text style={styles.continueText}>Continue to garments</Text>
+            </Pressable>
+          </View>
+        </>
       ) : (
         <>
           <ScrollView contentContainerStyle={styles.list}>
@@ -229,6 +362,12 @@ export default function PickupScreen() {
 
               {specialInstructions ? (
                 <Text style={styles.metaNote}>Note: {specialInstructions}</Text>
+              ) : null}
+
+              {!isEditMode && attachedBoxes.length > 0 ? (
+                <Text style={styles.metaNote}>
+                  Boxes: {attachedBoxes.map((b) => b.boxCode).join(', ')}
+                </Text>
               ) : null}
             </View>
 
@@ -312,6 +451,14 @@ export default function PickupScreen() {
           </View>
         </>
       )}
+
+      <BoxQrScanner
+        visible={scannerOpen}
+        title="Scan box to attach"
+        busy={scanBusy}
+        onClose={() => setScannerOpen(false)}
+        onScan={(code) => void handleScanCode(code)}
+      />
     </SafeAreaView>
   );
 }
@@ -330,9 +477,15 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border.divider,
   },
   back: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  title: { flex: 1, textAlign: 'center', fontFamily: fonts.poppins.semibold, fontSize: 16, color: colors.text.heading },
+  title: {
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
   loader: { marginTop: spacing['2xl'] },
-  list: { padding: spacing.lg, paddingBottom: 120 },
+  list: { padding: spacing.lg, paddingBottom: 160 },
   metaCard: {
     backgroundColor: colors.surface.elevated,
     borderRadius: radius.lg,
@@ -359,6 +512,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.secondary,
     textTransform: 'capitalize',
+  },
+  metaHint: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.text.secondary,
+    marginTop: 4,
+    lineHeight: 18,
   },
   metaNote: {
     fontFamily: fonts.inter.regular,
@@ -418,6 +578,7 @@ const styles = StyleSheet.create({
     color: colors.text.heading,
     marginBottom: spacing.sm,
   },
+  scanResultWrap: { marginTop: spacing.md },
   emptyCatalog: {
     fontFamily: fonts.inter.regular,
     fontSize: 13,
@@ -482,6 +643,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface.background,
     borderTopWidth: 1,
     borderTopColor: colors.border.divider,
+    gap: spacing.sm,
   },
   totalLabel: {
     fontFamily: fonts.inter.medium,
@@ -489,6 +651,28 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginBottom: spacing.sm,
     textAlign: 'center',
+  },
+  scanBtn: {
+    backgroundColor: colors.brand.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  continueBtn: {
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.brand.primary,
+  },
+  continueText: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.brand.primary,
   },
   confirmBtn: {
     backgroundColor: colors.brand.primary,
