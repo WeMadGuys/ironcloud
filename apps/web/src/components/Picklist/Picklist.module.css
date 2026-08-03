@@ -83,6 +83,22 @@
   cursor: pointer;
 }
 
+.optionCheck {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-sm);
+  cursor: pointer;
+  margin: 0;
+}
+
+.checkbox {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  accent-color: var(--ic-brand-primary);
+  cursor: pointer;
+}
+
 .option:hover {
   background: var(--ic-surface-section);
 }

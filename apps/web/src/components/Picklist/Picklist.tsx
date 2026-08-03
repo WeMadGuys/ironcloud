@@ -9,35 +9,61 @@ export type PicklistOption = {
   label: string;
 };
 
-type PicklistProps = {
-  value: string;
+type PicklistBase = {
   options: PicklistOption[];
-  onChange: (value: string) => void;
-  /** Shown when value is empty */
   emptyLabel: string;
   placeholder?: string;
   ariaLabel: string;
   disabled?: boolean;
 };
 
-export function Picklist({
-  value,
-  options,
-  onChange,
-  emptyLabel,
-  placeholder = 'Search…',
-  ariaLabel,
-  disabled = false,
-}: PicklistProps) {
+type SinglePicklistProps = PicklistBase & {
+  multiple?: false;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+type MultiPicklistProps = PicklistBase & {
+  multiple: true;
+  value: string[];
+  onChange: (value: string[]) => void;
+};
+
+export type PicklistProps = SinglePicklistProps | MultiPicklistProps;
+
+export function Picklist(props: PicklistProps) {
+  const {
+    options,
+    emptyLabel,
+    placeholder = 'Search…',
+    ariaLabel,
+    disabled = false,
+  } = props;
+  const multiple = props.multiple === true;
   const listId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
+  const selectedValues = useMemo(() => {
+    if (multiple) return props.value;
+    return props.value ? [props.value] : [];
+  }, [multiple, props.value]);
+
+  const selectedSet = useMemo(
+    () => new Set(selectedValues),
+    [selectedValues],
+  );
+
   const selectedLabel = useMemo(() => {
-    if (!value) return emptyLabel;
-    return options.find((o) => o.value === value)?.label ?? emptyLabel;
-  }, [value, options, emptyLabel]);
+    if (selectedValues.length === 0) return emptyLabel;
+    if (selectedValues.length === 1) {
+      return (
+        options.find((o) => o.value === selectedValues[0])?.label ?? emptyLabel
+      );
+    }
+    return `${selectedValues.length} selected`;
+  }, [selectedValues, options, emptyLabel]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -57,10 +83,30 @@ export function Picklist({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  const select = (next: string) => {
-    onChange(next);
+  const selectSingle = (next: string) => {
+    if (multiple) return;
+    props.onChange(next);
     setOpen(false);
     setQuery('');
+  };
+
+  const toggleMulti = (next: string) => {
+    if (!multiple) return;
+    const exists = selectedSet.has(next);
+    const updated = exists
+      ? props.value.filter((v) => v !== next)
+      : [...props.value, next];
+    props.onChange(updated);
+  };
+
+  const clearAll = () => {
+    if (multiple) {
+      props.onChange([]);
+    } else {
+      props.onChange('');
+      setOpen(false);
+      setQuery('');
+    }
   };
 
   return (
@@ -81,7 +127,12 @@ export function Picklist({
         </span>
       </button>
       {open ? (
-        <div className={styles.menu} role="listbox" id={listId}>
+        <div
+          className={styles.menu}
+          role="listbox"
+          id={listId}
+          aria-multiselectable={multiple || undefined}
+        >
           <input
             className={styles.search}
             type="search"
@@ -94,23 +145,41 @@ export function Picklist({
           <button
             type="button"
             role="option"
-            aria-selected={!value}
-            className={`${styles.option} ${!value ? styles.optionActive : ''}`}
-            onClick={() => select('')}
+            aria-selected={selectedValues.length === 0}
+            className={`${styles.option} ${selectedValues.length === 0 ? styles.optionActive : ''}`}
+            onClick={clearAll}
           >
             {emptyLabel}
           </button>
           {filtered.length === 0 ? (
             <div className={styles.empty}>No matches</div>
+          ) : multiple ? (
+            filtered.map((opt) => {
+              const checked = selectedSet.has(opt.value);
+              return (
+                <label
+                  key={opt.value}
+                  className={`${styles.option} ${styles.optionCheck} ${checked ? styles.optionActive : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    className={styles.checkbox}
+                    checked={checked}
+                    onChange={() => toggleMulti(opt.value)}
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              );
+            })
           ) : (
             filtered.map((opt) => (
               <button
                 key={opt.value}
                 type="button"
                 role="option"
-                aria-selected={value === opt.value}
-                className={`${styles.option} ${value === opt.value ? styles.optionActive : ''}`}
-                onClick={() => select(opt.value)}
+                aria-selected={selectedSet.has(opt.value)}
+                className={`${styles.option} ${selectedSet.has(opt.value) ? styles.optionActive : ''}`}
+                onClick={() => selectSingle(opt.value)}
               >
                 {opt.label}
               </button>

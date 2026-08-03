@@ -224,9 +224,9 @@ export const OrdersListPage = () => {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
-  const [status, setStatus] = useState<OrderStatus | ''>('');
-  const [communityId, setCommunityId] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | ''>('');
+  const [status, setStatus] = useState<OrderStatus[]>([]);
+  const [communityId, setCommunityId] = useState<string[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod[]>([]);
   const [datePreset, setDatePreset] = useState<OrderDatePreset>('today');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
@@ -249,7 +249,11 @@ export const OrdersListPage = () => {
   );
 
   const hasActiveFilters = Boolean(
-    search || status || communityId || paymentMethod || datePreset !== 'today',
+    search ||
+      status.length > 0 ||
+      communityId.length > 0 ||
+      paymentMethod.length > 0 ||
+      datePreset !== 'today',
   );
 
   const statusPickOptions = useMemo(
@@ -301,9 +305,9 @@ export const OrdersListPage = () => {
         page,
         pageSize,
         search: debouncedSearch || undefined,
-        status: status || undefined,
-        communityId: communityId || undefined,
-        paymentMethod: paymentMethod || undefined,
+        status: status.length > 0 ? status : undefined,
+        communityId: communityId.length > 0 ? communityId : undefined,
+        paymentMethod: paymentMethod.length > 0 ? paymentMethod : undefined,
         dateFrom: dateRange.from,
         dateTo: dateRange.to,
       }),
@@ -353,9 +357,9 @@ export const OrdersListPage = () => {
 
   const clearFilters = () => {
     setSearch('');
-    setStatus('');
-    setCommunityId('');
-    setPaymentMethod('');
+    setStatus([]);
+    setCommunityId([]);
+    setPaymentMethod([]);
     setDatePreset('today');
     setCustomFrom('');
     setCustomTo('');
@@ -572,10 +576,11 @@ export const OrdersListPage = () => {
           </>
         ) : null}
         <Picklist
+          multiple
           value={status}
           options={statusPickOptions}
           onChange={(v) => {
-            setStatus(v as OrderStatus | '');
+            setStatus(v as OrderStatus[]);
             setPage(1);
           }}
           emptyLabel="All statuses"
@@ -583,6 +588,7 @@ export const OrdersListPage = () => {
           placeholder="Search status…"
         />
         <Picklist
+          multiple
           value={communityId}
           options={communityPickOptions}
           onChange={(v) => {
@@ -594,10 +600,11 @@ export const OrdersListPage = () => {
           placeholder="Search community…"
         />
         <Picklist
+          multiple
           value={paymentMethod}
           options={paymentPickOptions}
           onChange={(v) => {
-            setPaymentMethod(v as PaymentMethod | '');
+            setPaymentMethod(v as PaymentMethod[]);
             setPage(1);
           }}
           emptyLabel="All payments"

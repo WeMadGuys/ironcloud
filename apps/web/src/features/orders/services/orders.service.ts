@@ -6,9 +6,9 @@ export type OrderListParams = {
   page: number;
   pageSize: number;
   search?: string;
-  status?: OrderStatus;
-  communityId?: string;
-  paymentMethod?: PaymentMethod;
+  status?: OrderStatus | OrderStatus[];
+  communityId?: string | string[];
+  paymentMethod?: PaymentMethod | PaymentMethod[];
   /**
    * Filter by pickup slot window (not booking created_at).
    * Prefer dateFrom/dateTo for ranges; `date` is a single-day shorthand.
@@ -19,6 +19,11 @@ export type OrderListParams = {
   sortKey?: string;
   sortAsc?: boolean;
 };
+
+function asFilterList<T extends string>(value?: T | T[]): T[] {
+  if (value == null) return [];
+  return Array.isArray(value) ? value : [value];
+}
 
 export const fetchOrders = async (params: OrderListParams) => {
   const supabase = getSupabase();
@@ -78,9 +83,24 @@ export const fetchOrders = async (params: OrderListParams) => {
       )
     `, { count: 'exact' });
 
-  if (status) query = query.eq('status', status);
-  if (communityId) query = query.eq('community_id', communityId);
-  if (paymentMethod) query = query.eq('payment_method', paymentMethod);
+  const statuses = asFilterList(status);
+  const communityIds = asFilterList(communityId);
+  const paymentMethods = asFilterList(paymentMethod);
+
+  if (statuses.length === 1) query = query.eq('status', statuses[0]);
+  else if (statuses.length > 1) query = query.in('status', statuses);
+
+  if (communityIds.length === 1) query = query.eq('community_id', communityIds[0]);
+  else if (communityIds.length > 1) {
+    query = query.in('community_id', communityIds);
+  }
+
+  if (paymentMethods.length === 1) {
+    query = query.eq('payment_method', paymentMethods[0]);
+  } else if (paymentMethods.length > 1) {
+    query = query.in('payment_method', paymentMethods);
+  }
+
   if (search) query = query.ilike('order_number', `%${search}%`);
   if (pickupSlotIds) query = query.in('pickup_slot_id', pickupSlotIds);
 
