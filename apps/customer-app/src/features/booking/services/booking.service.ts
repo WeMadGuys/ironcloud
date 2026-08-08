@@ -8,6 +8,7 @@ const MOCK_RIDER_ID = '00000000-0000-0000-0000-000000000002';
 const ACTIVE_ORDERS_CACHE_TTL_MS = 15_000;
 
 const RESOLVE_RIDER_TIMEOUT_MS = 15000;
+const CREATE_BOOKING_TIMEOUT_MS = 30000;
 
 export type HourlyPickupSlot = {
   startHour: number;
@@ -917,6 +918,82 @@ export async function getBookedDayOffsets(
 }
 
 /**
+ * One fetch for home post-book / strip refresh (avoids 4× force queries).
+ */
+export async function getHomeBookingSnapshot(
+  dayOffset: number,
+  options?: { force?: boolean; dayCount?: number },
+): Promise<{
+  dayBooking: ActiveBooking | null;
+  bookedDays: number[];
+  ofdBooking: ActiveBooking | null;
+  feedbackBooking: ActiveBooking | null;
+}> {
+  const dayCount = options?.dayCount ?? 7;
+  const rows = await fetchActiveOrderRows(options);
+  const { start: todayStart, end: todayEnd } = getDayBounds(0);
+
+  const dayRow = rows.find((row) => {
+    const pickupStart = row.pickup_slot
+      ? new Date(row.pickup_slot.window_start)
+      : null;
+    return isPickupOnDay(pickupStart, dayOffset);
+  });
+
+  const bookedDays = new Set<number>();
+  for (const row of rows) {
+    if (!row.pickup_slot?.window_start) continue;
+    const offset = pickupDayOffset(row.pickup_slot.window_start, dayCount);
+    if (offset != null) bookedDays.add(offset);
+  }
+
+  const ofdMatches = rows
+    .filter((row) => {
+      if (!OUT_FOR_DELIVERY_STATUSES.has(row.status)) return false;
+      if (!row.delivery_slot?.window_start) return false;
+      const deliveryStart = new Date(row.delivery_slot.window_start);
+      return deliveryStart >= todayStart && deliveryStart < todayEnd;
+    })
+    .sort((a, b) => {
+      const aStart = new Date(a.delivery_slot!.window_start).getTime();
+      const bStart = new Date(b.delivery_slot!.window_start).getTime();
+      return aStart - bStart;
+    });
+
+  const feedbackMatches = rows
+    .filter((row) => {
+      if (row.status !== 'delivered') return false;
+      if (row.customer_rating != null) return false;
+      if (row.feedback_dismissed_at) return false;
+      if (!row.delivery_slot?.window_start) return false;
+      const deliveryStart = new Date(row.delivery_slot.window_start);
+      return deliveryStart >= todayStart && deliveryStart < todayEnd;
+    })
+    .sort((a, b) => {
+      const aStart = new Date(a.delivery_slot!.window_start).getTime();
+      const bStart = new Date(b.delivery_slot!.window_start).getTime();
+      return bStart - aStart;
+    });
+
+  const [dayBooking, ofdBooking, feedbackBooking] = await Promise.all([
+    dayRow ? mapOrderToActiveBooking(dayRow) : Promise.resolve(null),
+    ofdMatches[0]
+      ? mapOrderToActiveBooking(ofdMatches[0])
+      : Promise.resolve(null),
+    feedbackMatches[0]
+      ? mapOrderToActiveBooking(feedbackMatches[0])
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    dayBooking,
+    bookedDays: [...bookedDays].sort((a, b) => a - b),
+    ofdBooking,
+    feedbackBooking,
+  };
+}
+
+/**
  * Latest active booking across all days (legacy helper).
  */
 export async function getActiveHomeBooking(): Promise<ActiveBooking | null> {
@@ -927,8 +1004,128 @@ export async function getActiveHomeBooking(): Promise<ActiveBooking | null> {
 
 /**
  * Create a booking from home screen selections.
+ * Real auth: one Next.js API call. Mock auth: client-side path for local E2E.
  */
 export async function createBooking(input: CreateBookingInput): Promise<{
+  orderId: string;
+  orderNumber: string;
+}> {
+  if (IS_MOCK_AUTH) {
+    return createBookingClientSide(input);
+  }
+  return createBookingViaApi(input);
+}
+
+async function createBookingViaApi(input: CreateBookingInput): Promise<{
+  orderId: string;
+  orderNumber: string;
+}> {
+  const startHour = input.pickupStartHour;
+  if (!Number.isInteger(startHour) || startHour < 0 || startHour > 23) {
+    throw new Error('Invalid pickup time slot');
+  }
+
+  const pickupWindow = buildWindow(input.dayOffset, startHour, startHour + 1);
+  if (pickupWindow.end.getTime() <= Date.now()) {
+    throw new Error(
+      'This pickup slot has already passed. Please choose another time.',
+    );
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Please sign in again to book a pickup.');
+  }
+
+  const estimateLines = (input.estimatedGarments || []).filter(
+    (line) => line.quantity > 0,
+  );
+
+  const apiBase = getApiBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    CREATE_BOOKING_TIMEOUT_MS,
+  );
+
+  let response: Response;
+  try {
+    response = await fetch(`${apiBase}/api/booking/create`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        dayOffset: input.dayOffset,
+        pickupStartHour: startHour,
+        pickupWindowStart: pickupWindow.start.toISOString(),
+        pickupWindowEnd: pickupWindow.end.toISOString(),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        specialInstructions: input.specialInstructions?.trim() || undefined,
+        ...(estimateLines.length > 0
+          ? {
+              estimatedGarments: estimateLines,
+              estimatedAmount:
+                typeof input.estimatedAmount === 'number'
+                  ? input.estimatedAmount
+                  : estimateLines.reduce(
+                      (sum, line) => sum + line.quantity * line.unitPrice,
+                      0,
+                    ),
+            }
+          : {}),
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    const aborted =
+      (err instanceof Error && err.name === 'AbortError') ||
+      (typeof err === 'object' &&
+        err !== null &&
+        'name' in err &&
+        (err as { name?: string }).name === 'AbortError');
+    throw new Error(
+      aborted
+        ? `Could not create booking (timed out contacting ${apiBase}). Is web:dev reachable?`
+        : `Could not create booking (cannot reach ${apiBase}). Check EXPO_PUBLIC_API_URL.`,
+    );
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  let payload: {
+    error?: string;
+    success?: boolean;
+    orderId?: string;
+    orderNumber?: string;
+  };
+
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('Invalid response while creating booking.');
+  }
+
+  if (!response.ok || !payload.success || !payload.orderId || !payload.orderNumber) {
+    throw new Error(payload.error || 'Failed to create booking');
+  }
+
+  clearActiveBookingCache();
+  clearOrdersCache();
+
+  return {
+    orderId: payload.orderId,
+    orderNumber: payload.orderNumber,
+  };
+}
+
+/** Mock / local fallback — mirrors previous client-orchestrated booking. */
+async function createBookingClientSide(input: CreateBookingInput): Promise<{
   orderId: string;
   orderNumber: string;
 }> {

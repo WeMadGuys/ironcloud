@@ -237,7 +237,10 @@ export default function OrdersScreen() {
           </View>
         )}
 
-        <Pressable style={styles.detailsButton}>
+        <Pressable
+          style={styles.detailsButton}
+          onPress={() => router.push(`/orders/${order.id}`)}
+        >
           <MaterialCommunityIcons
             name="file-document-outline"
             size={18}
@@ -349,6 +352,7 @@ export default function OrdersScreen() {
                     styles.previousItem,
                     index === previousOrders.length - 1 && styles.previousItemLast,
                   ]}
+                  onPress={() => router.push(`/orders/${order.id}`)}
                 >
                   <View style={styles.previousIconWrap}>
                     <MaterialCommunityIcons

@@ -34,8 +34,10 @@ export function createTtlCache<T>(ttlMs: number): TtlCache<T> {
     if (!force) {
       const cached = get();
       if (cached !== null) return cached;
-      if (inflight) return inflight;
     }
+
+    // Dedupe concurrent fetches (including force:true from Promise.all callers).
+    if (inflight) return inflight;
 
     inflight = (async () => {
       const data = await fetcher();

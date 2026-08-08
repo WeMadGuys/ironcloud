@@ -219,6 +219,57 @@ export function clearOrdersCache(): void {
   ordersCache.clear();
 }
 
+/**
+ * Single order for the details screen.
+ * Prefers the list cache, then fetches by id (own orders only).
+ */
+export async function getCustomerOrderById(orderId: string): Promise<Order | null> {
+  const cached = ordersCache.get();
+  if (cached) {
+    const hit =
+      cached.activeOrders.find((o) => o.id === orderId) ||
+      cached.previousOrders.find((o) => o.id === orderId);
+    if (hit) return hit;
+  }
+
+  const userId = await getCurrentUserId();
+  if (!userId) return null;
+
+  const { data, error } = await (supabase
+    .from('orders') as ReturnType<typeof supabase.from>)
+    .select(
+      `
+      id,
+      order_number,
+      status,
+      special_instructions,
+      total_amount,
+      created_at,
+      updated_at,
+      pickup_slot:pickup_slot_id (window_start, window_end),
+      delivery_slot:delivery_slot_id (window_start, window_end),
+      order_items (
+        id,
+        quantity,
+        unit_price,
+        service:service_id (name)
+      ),
+      order_events (status, created_at)
+    `,
+    )
+    .eq('id', orderId)
+    .eq('customer_id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error fetching order:', error);
+    return null;
+  }
+  if (!data) return null;
+
+  return mapOrder(data as Parameters<typeof mapOrder>[0]);
+}
+
 export function getStatusLabel(status: OrderStatus): string {
   const labels: Partial<Record<OrderStatus, string>> = {
     booked: 'Booked',

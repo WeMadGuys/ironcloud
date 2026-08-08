@@ -39,11 +39,8 @@ import {
   cancelBooking,
   createBooking,
   formatHourlySlotLabel,
-  getBookedDayOffsets,
   getDeliveryWindowFromPickup,
-  getHomeBookingForDay,
-  getTodaysDeliveredFeedbackBooking,
-  getTodaysOutForDeliveryBooking,
+  getHomeBookingSnapshot,
   dismissOrderFeedback,
   markOrderReadyForRebook,
   submitOrderFeedback,
@@ -62,7 +59,7 @@ import {
   estimateTotals,
   type EstimateCounts,
 } from '../../src/features/booking/components/EstimateOrderCard';
-import { getGarmentCatalog } from '../../src/features/booking/services/catalog.service';
+import type { GarmentCatalogItem } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
 import { fetchUserProfile, getCachedProfile } from '../../src/features/profile/services/profile.service';
 import { getWallet } from '../../src/features/wallet/services/wallet.service';
@@ -175,6 +172,7 @@ export default function HomeScreen() {
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
   const [estimateCounts, setEstimateCounts] = useState<EstimateCounts>({});
+  const [estimateCatalog, setEstimateCatalog] = useState<GarmentCatalogItem[]>([]);
   const [communityId, setCommunityId] = useState<string | null>(null);
   const [communityCity, setCommunityCity] = useState<string | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
@@ -256,6 +254,10 @@ export default function HomeScreen() {
 
   const hasLoadedOnceRef = useRef(false);
 
+  const handleCatalogLoaded = useCallback((items: GarmentCatalogItem[]) => {
+    setEstimateCatalog(items);
+  }, []);
+
   const loadHomeData = useCallback(async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
     // Soft refresh: keep existing content visible after the first successful load.
     if (mode === 'initial') {
@@ -264,30 +266,19 @@ export default function HomeScreen() {
       setContentLoading(true);
     }
     try {
-      const [
-        booking,
-        bookedOffsets,
-        ofd,
-        feedback,
-        wallet,
-        addresses,
-        profile,
-        sessionResult,
-      ] = await Promise.all([
-          getHomeBookingForDay(dayOffset),
-          getBookedDayOffsets(7),
-          getTodaysOutForDeliveryBooking(),
-          getTodaysDeliveredFeedbackBooking(),
+      const [snapshot, wallet, addresses, profile, sessionResult] =
+        await Promise.all([
+          getHomeBookingSnapshot(dayOffset),
           getWallet(),
           listAddresses(),
           fetchUserProfile(),
           supabase.auth.getSession(),
         ]);
 
-      setDayBooking(booking);
-      setBookedDays(bookedOffsets);
-      setOfdBooking(ofd);
-      setFeedbackBooking(feedback);
+      setDayBooking(snapshot.dayBooking);
+      setBookedDays(snapshot.bookedDays);
+      setOfdBooking(snapshot.ofdBooking);
+      setFeedbackBooking(snapshot.feedbackBooking);
       setWalletBalance(wallet?.balance ?? null);
       setUserId(sessionResult.data.session?.user?.id ?? null);
       setHeaderProfile({
@@ -309,11 +300,11 @@ export default function HomeScreen() {
             .filter(Boolean)
             .join(' • '),
         });
-      } else if (booking) {
+      } else if (snapshot.dayBooking) {
         setCommunityCity(null);
         setHeaderAddress({
-          name: booking.addressName,
-          detail: booking.addressDetail,
+          name: snapshot.dayBooking.addressName,
+          detail: snapshot.dayBooking.addressDetail,
         });
       } else {
         setCommunityId(null);
@@ -330,16 +321,11 @@ export default function HomeScreen() {
 
   const refreshBookingState = useCallback(async (dayOffset: number) => {
     try {
-      const [booking, bookedOffsets, ofd, feedback] = await Promise.all([
-        getHomeBookingForDay(dayOffset, { force: true }),
-        getBookedDayOffsets(7, { force: true }),
-        getTodaysOutForDeliveryBooking({ force: true }),
-        getTodaysDeliveredFeedbackBooking({ force: true }),
-      ]);
-      setDayBooking(booking);
-      setBookedDays(bookedOffsets);
-      setOfdBooking(ofd);
-      setFeedbackBooking(feedback);
+      const snapshot = await getHomeBookingSnapshot(dayOffset, { force: true });
+      setDayBooking(snapshot.dayBooking);
+      setBookedDays(snapshot.bookedDays);
+      setOfdBooking(snapshot.ofdBooking);
+      setFeedbackBooking(snapshot.feedbackBooking);
     } catch (error) {
       console.error('Error refreshing booking state:', error);
     }
@@ -435,15 +421,8 @@ export default function HomeScreen() {
     try {
       const hasEstimates = Object.values(estimateCounts).some((count) => count > 0);
       const estimatedGarments =
-        hasEstimates && communityId
-          ? buildEstimateLines(
-              await getGarmentCatalog({
-                communityId,
-                userId,
-                city: communityCity,
-              }),
-              estimateCounts,
-            )
+        hasEstimates && estimateCatalog.length > 0
+          ? buildEstimateLines(estimateCatalog, estimateCounts)
           : [];
       const { amount: estimatedAmount } = estimateTotals(estimatedGarments);
 
@@ -900,6 +879,7 @@ export default function HomeScreen() {
             city={communityCity}
             counts={estimateCounts}
             onChangeCounts={setEstimateCounts}
+            onCatalogLoaded={handleCatalogLoaded}
           />
 
           <Pressable

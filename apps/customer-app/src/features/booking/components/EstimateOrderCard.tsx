@@ -38,6 +38,8 @@ type Props = {
   city?: string | null;
   counts: EstimateCounts;
   onChangeCounts: (next: EstimateCounts) => void;
+  /** Notify parent when catalog loads so confirm can reuse prices without refetch. */
+  onCatalogLoaded?: (items: GarmentCatalogItem[]) => void;
 };
 
 function CounterRow({
@@ -93,6 +95,7 @@ export function EstimateOrderCard({
   city,
   counts,
   onChangeCounts,
+  onCatalogLoaded,
 }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
@@ -102,6 +105,7 @@ export function EstimateOrderCard({
   useEffect(() => {
     if (!communityId) {
       setCatalog([]);
+      onCatalogLoaded?.([]);
       return;
     }
     let cancelled = false;
@@ -110,12 +114,13 @@ export function EstimateOrderCard({
       if (!cancelled) {
         setCatalog(items);
         setLoading(false);
+        onCatalogLoaded?.(items);
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [communityId, userId, city]);
+  }, [communityId, userId, city, onCatalogLoaded]);
 
   const { primary, more } = useMemo(() => splitCatalog(catalog), [catalog]);
 
