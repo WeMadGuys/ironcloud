@@ -64,21 +64,6 @@
   color: var(--ic-text-heading);
 }
 
-.adminLink {
-  margin-left: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: var(--ic-radius-button);
-  background: var(--ic-brand-primary);
-  color: var(--ic-brand-on-primary);
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.adminLink:hover {
-  background: var(--ic-brand-primary-pressed);
-  color: var(--ic-brand-on-primary);
-}
-
 .menuButton {
   display: inline-flex;
   align-items: center;
@@ -94,10 +79,8 @@
 
 .menuButton:focus-visible,
 .navLink:focus-visible,
-.adminLink:focus-visible,
 .brand:focus-visible,
-.mobileLink:focus-visible,
-.mobileAdmin:focus-visible {
+.mobileLink:focus-visible {
   outline: 2px solid var(--ic-border-focus);
   outline-offset: 2px;
 }
@@ -123,16 +106,6 @@
 
 .mobileLink:hover {
   background: var(--ic-surface-section);
-}
-
-.mobileAdmin {
-  margin-top: 0.5rem;
-  padding: 0.875rem 1rem;
-  text-align: center;
-  border-radius: var(--ic-radius-button);
-  background: var(--ic-brand-primary);
-  color: var(--ic-brand-on-primary);
-  font-weight: 600;
 }
 
 .skipLink {

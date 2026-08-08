@@ -1,5 +1,5 @@
 .content {
-  max-width: 720px;
+  max-width: 800px;
   margin: 0 auto;
   padding: clamp(2.5rem, 5vw, 4rem) 1.5rem 5rem;
 }
@@ -17,9 +17,46 @@
   color: var(--ic-text-primary);
 }
 
+.highlights {
+  margin-top: 2rem;
+  display: grid;
+  gap: 1.15rem;
+  grid-template-columns: 1fr;
+}
+
+.highlight {
+  padding: 1.35rem 1.5rem;
+  background: var(--ic-surface-section);
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-card);
+}
+
+.highlight h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.0625rem;
+  font-weight: 700;
+}
+
+.highlight ul {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: var(--ic-text-primary);
+  line-height: 1.7;
+}
+
+.highlight a {
+  font-weight: 600;
+}
+
 .actions {
   margin-top: 2rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+@media (min-width: 700px) {
+  .highlights {
+    grid-template-columns: 1fr 1fr;
+  }
 }

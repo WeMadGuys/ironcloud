@@ -7,7 +7,6 @@ import Icon from '@mdi/react';
 import { mdiClose, mdiMenu } from '@mdi/js';
 
 import { NAV_LINKS, SITE_NAME } from '@/constants/marketing';
-import { ADMIN_ROUTES } from '@/constants/routes';
 
 import styles from './Navbar.module.css';
 
@@ -58,9 +57,6 @@ export function Navbar() {
               {link.label}
             </Link>
           ))}
-          <Link href={ADMIN_ROUTES.login} className={styles.adminLink}>
-            Admin Login
-          </Link>
         </nav>
 
         <button
@@ -95,13 +91,6 @@ export function Navbar() {
                 {link.label}
               </Link>
             ))}
-            <Link
-              href={ADMIN_ROUTES.login}
-              className={styles.mobileAdmin}
-              onClick={() => setOpen(false)}
-            >
-              Admin Login
-            </Link>
           </nav>
         </div>
       ) : null}

@@ -1,9 +1,12 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import Icon from '@mdi/react';
 
 import {
+  BENEFITS,
   BUSINESS_ADDRESS,
   ENTERPRISE_NAME,
+  HOW_IT_WORKS,
   SITE_NAME,
   SUPPORT_EMAIL,
   SUPPORT_PHONE,
@@ -12,12 +15,13 @@ import {
 } from '@/constants/marketing';
 import { createPageMetadata, getLocalBusinessJsonLd } from '@/lib/seo';
 
+import { ScreenshotCarousel } from '@/components/landing/ScreenshotCarousel';
 import styles from '@/components/landing/HomePage.module.css';
 
 export const metadata = createPageMetadata({
   title: `${SITE_NAME} · Doorstep Ironing`,
   description:
-    'Iron Cloud provides doorstep laundry ironing pickup and delivery. Contact us or review our policies.',
+    'Iron Cloud doorstep ironing pickup and delivery. Schedule in the app, we collect, press, and return.',
   path: '/',
   absolute: true,
 });
@@ -37,18 +41,18 @@ export default function HomePage() {
           <div className={styles.copy}>
             <p className={styles.eyebrow}>{SITE_NAME}</p>
             <h1 id="hero-heading" className={styles.title}>
-              Doorstep ironing pickup &amp; delivery
+              Premium ironing, delivered to your doorstep
             </h1>
             <p className={styles.subtitle}>
-              We collect garments from your apartment, professionally steam-iron them, and return
-              them to your doorstep. Book and pay through the Iron Cloud mobile app.
+              Schedule a pickup in the Iron Cloud app. We collect your clothes, steam-iron them
+              professionally, and return them to your apartment — typically within 24 hours.
             </p>
             <div className={styles.actions}>
               <Link href="/contact" className={styles.primaryBtn}>
                 Contact us
               </Link>
-              <Link href="/privacy-policy" className={styles.secondaryBtn}>
-                Privacy Policy
+              <Link href="/about" className={styles.secondaryBtn}>
+                About us
               </Link>
             </div>
           </div>
@@ -64,6 +68,67 @@ export default function HomePage() {
                 sizes="(max-width: 900px) 100vw, 40vw"
               />
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.band} aria-labelledby="how-heading">
+        <div className={styles.bandInner}>
+          <header className={styles.bandHeader}>
+            <p className={styles.eyebrow}>How it works</p>
+            <h2 id="how-heading" className={styles.bandTitle}>
+              Three simple steps
+            </h2>
+            <p className={styles.bandDesc}>
+              From booking to delivery, the flow is designed for apartment living.
+            </p>
+          </header>
+          <div className={styles.cardGrid3}>
+            {HOW_IT_WORKS.map((step, index) => (
+              <article key={step.title} className={styles.card}>
+                <div className={styles.iconWrap} aria-hidden="true">
+                  <Icon path={step.icon} size={1.1} />
+                </div>
+                <p className={styles.stepLabel}>Step {index + 1}</p>
+                <h3 className={styles.cardTitle}>{step.title}</h3>
+                <p className={styles.cardBody}>{step.description}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <ScreenshotCarousel />
+
+      <section className={styles.bandAlt} aria-labelledby="why-heading">
+        <div className={styles.bandInner}>
+          <header className={styles.bandHeader}>
+            <p className={styles.eyebrow}>Why Iron Cloud</p>
+            <h2 id="why-heading" className={styles.bandTitle}>
+              Built for busy homes
+            </h2>
+            <p className={styles.bandDesc}>
+              Reliable pickup, careful finishing, and clear digital payments.
+            </p>
+          </header>
+          <div className={styles.cardGrid3}>
+            {BENEFITS.map((item) => (
+              <article key={item.title} className={styles.card}>
+                <div className={styles.iconWrap} aria-hidden="true">
+                  <Icon path={item.icon} size={1.05} />
+                </div>
+                <h3 className={styles.cardTitle}>{item.title}</h3>
+                <p className={styles.cardBody}>{item.description}</p>
+              </article>
+            ))}
+          </div>
+          <div className={styles.bandActions}>
+            <Link href="/pricing" className={styles.secondaryBtn}>
+              View pricing
+            </Link>
+            <Link href="/contact" className={styles.primaryBtn}>
+              Get in touch
+            </Link>
           </div>
         </div>
       </section>
@@ -107,8 +172,6 @@ export default function HomePage() {
             <Link href="/refund-policy">Refunds</Link>
             {' · '}
             <Link href="/shipping-policy">Shipping</Link>
-            {' · '}
-            <Link href="/pricing">Pricing</Link>
           </p>
         </div>
       </section>

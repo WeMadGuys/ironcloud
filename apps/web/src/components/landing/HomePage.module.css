@@ -4,7 +4,7 @@
 }
 
 .inner {
-  max-width: 960px;
+  max-width: 1040px;
   margin: 0 auto;
   display: grid;
   gap: 2rem;
@@ -12,7 +12,7 @@
 }
 
 .copy {
-  max-width: 520px;
+  max-width: 540px;
 }
 
 .eyebrow {
@@ -26,7 +26,7 @@
 }
 
 .title {
-  font-size: clamp(1.85rem, 4vw, 2.5rem);
+  font-size: clamp(1.85rem, 4vw, 2.65rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.15;
@@ -40,11 +40,16 @@
   color: var(--ic-text-secondary);
 }
 
-.actions {
+.actions,
+.bandActions {
   margin-top: 1.5rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.bandActions {
+  justify-content: center;
 }
 
 .primaryBtn,
@@ -99,6 +104,98 @@
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.band,
+.bandAlt {
+  padding: clamp(3rem, 6vw, 4.5rem) 1.5rem;
+}
+
+.band {
+  background: var(--ic-surface-section);
+  border-top: 1px solid var(--ic-border-default);
+}
+
+.bandAlt {
+  background: #ffffff;
+}
+
+.bandInner {
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.bandHeader {
+  max-width: 560px;
+  margin: 0 auto 2rem;
+  text-align: center;
+}
+
+.bandTitle {
+  font-size: clamp(1.5rem, 3vw, 1.85rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.bandDesc {
+  margin-top: 0.65rem;
+  color: var(--ic-text-secondary);
+  line-height: 1.6;
+}
+
+.cardGrid3 {
+  display: grid;
+  gap: 1.15rem;
+  grid-template-columns: 1fr;
+}
+
+.card {
+  height: 100%;
+  padding: 1.5rem;
+  background: #ffffff;
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-card);
+  box-shadow: var(--ic-shadow-sm);
+  text-align: left;
+}
+
+.bandAlt .card {
+  background: var(--ic-surface-section);
+}
+
+.iconWrap {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ic-radius-md);
+  background: var(--ic-brand-accent-muted);
+  color: var(--ic-brand-primary);
+  margin-bottom: 1rem;
+}
+
+.stepLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ic-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.cardTitle {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  margin: 0 0 0.45rem;
+}
+
+.cardBody {
+  margin: 0;
+  color: var(--ic-text-secondary);
+  line-height: 1.55;
+  font-size: 0.9375rem;
 }
 
 .info {
@@ -162,6 +259,12 @@
   .dl div {
     grid-template-columns: 7rem 1fr;
     gap: 0.75rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .cardGrid3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
