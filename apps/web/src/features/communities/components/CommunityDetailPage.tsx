@@ -148,6 +148,24 @@ export const CommunityDetailPage = () => {
     onError: (err) => toast(err.message, 'error'),
   });
 
+  const setBlocksEnabledMutation = trpc.communities.update.useMutation({
+    onSuccess: async (_result, variables) => {
+      const enabled = Boolean(variables.blocksEnabled);
+      toast(
+        enabled ? 'Blocks enabled for this community' : 'Blocks disabled — free-text address fields restored',
+        'success',
+      );
+      const communityData = await fetchCommunityById(id);
+      setData(communityData);
+      if (enabled) {
+        await utils.communities.listBlocks.invalidate({ communityId: id });
+      } else {
+        setExpandedBlockId(null);
+      }
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
   useEffect(() => {
     setLoading(true);
     fetchCommunityById(id).then((communityData) => {
@@ -257,7 +275,8 @@ export const CommunityDetailPage = () => {
     createBlockMutation.isPending ||
     updateBlockMutation.isPending ||
     createFlatsMutation.isPending ||
-    updateFlatMutation.isPending;
+    updateFlatMutation.isPending ||
+    setBlocksEnabledMutation.isPending;
   const ridersLoading = assignedQuery.isLoading || assignedQuery.isFetching;
   const pickupSlots = slotsQuery.data ?? [];
   const communityBlocks = blocksQuery.data ?? [];
@@ -529,6 +548,33 @@ export const CommunityDetailPage = () => {
             }
           >
             <div className={assignStyles.assignPanel}>
+              <div className={assignStyles.toggleRow}>
+                <label className={assignStyles.toggleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={blocksEnabled}
+                    disabled={isBlockMutating}
+                    onChange={(e) => {
+                      const community = data.community;
+                      setBlocksEnabledMutation.mutate({
+                        id,
+                        name: community.name,
+                        city: community.city,
+                        pricingTier: community.pricing_tier ?? 'standard',
+                        status: (community.status as
+                          | 'pending'
+                          | 'active'
+                          | 'suspended') || 'active',
+                        blocksEnabled: e.target.checked,
+                      });
+                    }}
+                  />
+                  Enable blocks
+                </label>
+                <p className={assignStyles.toggleHint}>
+                  Customers must pick Block then Flat from the lists below.
+                </p>
+              </div>
               {blocksQuery.isLoading && communityBlocks.length === 0 ? (
                 <p className={assignStyles.statusLine}>Loading blocks…</p>
               ) : communityBlocks.length === 0 ? (
@@ -721,7 +767,44 @@ export const CommunityDetailPage = () => {
               </div>
             </div>
           </Card>
-        ) : null}
+        ) : (
+          <Card
+            title="Blocks & Flats"
+            subtitle="Off — customers type tower/block and flat as free text"
+          >
+            <div className={assignStyles.assignPanel}>
+              <div className={assignStyles.toggleRow}>
+                <label className={assignStyles.toggleLabel}>
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    disabled={isBlockMutating}
+                    onChange={(e) => {
+                      if (!e.target.checked) return;
+                      const community = data.community;
+                      setBlocksEnabledMutation.mutate({
+                        id,
+                        name: community.name,
+                        city: community.city,
+                        pricingTier: community.pricing_tier ?? 'standard',
+                        status: (community.status as
+                          | 'pending'
+                          | 'active'
+                          | 'suspended') || 'active',
+                        blocksEnabled: true,
+                      });
+                    }}
+                  />
+                  Enable blocks
+                </label>
+                <p className={assignStyles.toggleHint}>
+                  Turn this on to define blocks and flats. Customers will then
+                  pick from those lists instead of typing freely.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );
