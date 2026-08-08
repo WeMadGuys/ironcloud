@@ -6,7 +6,7 @@ import type { BoxScanResult } from '@ironcloud/db';
 
 type Props = {
   result: BoxScanResult;
-  mode: 'pickup' | 'delivery';
+  mode: 'pickup' | 'delivery' | 'lookup';
   acting?: boolean;
   onAttach?: () => void;
   onRelease?: () => void;

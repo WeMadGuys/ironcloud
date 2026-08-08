@@ -52,13 +52,14 @@ import {
 } from '../../src/features/booking/services/communitySlots.service';
 import { ActiveOrderCard } from '../../src/features/booking/components/ActiveOrderCard';
 import { DeliveredFeedbackBanner } from '../../src/features/booking/components/DeliveredFeedbackBanner';
-import { OutForDeliveryBanner } from '../../src/features/booking/components/OutForDeliveryBanner';
 import {
   EstimateOrderCard,
   buildEstimateLines,
   estimateTotals,
   type EstimateCounts,
 } from '../../src/features/booking/components/EstimateOrderCard';
+import { GarmentRateCard } from '../../src/features/booking/components/GarmentRateCard';
+import { OutForDeliveryBanner } from '../../src/features/booking/components/OutForDeliveryBanner';
 import type { GarmentCatalogItem } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
 import { fetchUserProfile, getCachedProfile } from '../../src/features/profile/services/profile.service';
@@ -575,6 +576,12 @@ export default function HomeScreen() {
           <Text style={styles.walletLabel}>Wallet</Text>
         </View>
       </Pressable>
+      {/* Garment rates — header icon opens price list sheet */}
+      <GarmentRateCard
+        communityId={communityId}
+        userId={userId}
+        city={communityCity}
+      />
       <Pressable
         style={styles.profileButton}
         onPress={() => router.push('/(tabs)/profile')}

@@ -7,7 +7,7 @@ const boxes = () => createBoxService(supabase as unknown as TypedSupabaseClient)
 
 export async function resolveBoxScan(
   boxCode: string,
-  options: { orderId: string; mode: BoxScanMode },
+  options: { orderId?: string | null; mode: BoxScanMode } = { mode: 'lookup' },
 ) {
   return boxes().resolveBoxScan(boxCode, options);
 }

@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StatusBar,
@@ -21,7 +22,11 @@ import {
   spacing,
   typographyScale,
 } from '@ironcloud/ui';
+import type { BoxScanResult } from '@ironcloud/db';
 
+import { BoxDetailsCard } from '../../src/features/jobs/components/BoxDetailsCard';
+import { BoxQrScanner } from '../../src/features/jobs/components/BoxQrScanner';
+import { resolveBoxScan } from '../../src/features/jobs/services/box.service';
 import {
   getCachedRiderJobs,
   getHomeBundle,
@@ -112,6 +117,9 @@ export default function HomeScreen() {
     jobDayOffsets: [] as number[],
   });
   const [allCommunities, setAllCommunities] = useState<CommunityJobSummary[]>([]);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [lookupResult, setLookupResult] = useState<BoxScanResult | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -164,6 +172,28 @@ export default function HomeScreen() {
     setSelectedDay(index);
   };
 
+  const handleLookupScan = async (code: string) => {
+    setScanBusy(true);
+    try {
+      const result = await resolveBoxScan(code, { mode: 'lookup' });
+      setScannerOpen(false);
+      setLookupResult(result);
+    } catch (error) {
+      setScannerOpen(false);
+      setLookupResult({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Could not look up box',
+        action: 'none',
+        canAct: false,
+        linkedToOrder: false,
+        box: null,
+        order: null,
+      });
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
   const greeting = (() => {
     const h = new Date().getHours();
     if (h < 12) return 'Good Morning';
@@ -192,13 +222,28 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.greetingSub}>Ready to get things pressed.</Text>
           </View>
-          <Pressable
-            style={styles.avatar}
-            onPress={() => router.push('/(tabs)/profile')}
-            hitSlop={8}
-          >
-            <Text style={styles.avatarText}>{profileName[0]}</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              style={styles.scanBtn}
+              onPress={() => setScannerOpen(true)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Scan box QR"
+            >
+              <MaterialCommunityIcons
+                name="qrcode-scan"
+                size={22}
+                color={colors.brand.primary}
+              />
+            </Pressable>
+            <Pressable
+              style={styles.avatar}
+              onPress={() => router.push('/(tabs)/profile')}
+              hitSlop={8}
+            >
+              <Text style={styles.avatarText}>{profileName[0]}</Text>
+            </Pressable>
+          </View>
         </View>
 
         <ScrollView
@@ -286,6 +331,38 @@ export default function HomeScreen() {
           </>
         )}
       </ScrollView>
+
+      <BoxQrScanner
+        visible={scannerOpen}
+        title="Scan box QR"
+        busy={scanBusy}
+        onClose={() => setScannerOpen(false)}
+        onScan={(code) => void handleLookupScan(code)}
+      />
+
+      <Modal
+        visible={lookupResult != null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setLookupResult(null)}
+      >
+        <View style={styles.lookupOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setLookupResult(null)}
+            accessibilityLabel="Dismiss"
+          />
+          <View style={styles.lookupSheet}>
+            {lookupResult ? (
+              <BoxDetailsCard
+                result={lookupResult}
+                mode="lookup"
+                onDismiss={() => setLookupResult(null)}
+              />
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -349,6 +426,21 @@ const styles = StyleSheet.create({
   headerText: { flex: 1, paddingRight: spacing.md },
   greeting: { fontFamily: fonts.poppins.bold, fontSize: 20, color: colors.text.heading },
   greetingSub: { fontFamily: fonts.inter.regular, fontSize: 13, color: colors.text.secondary, marginTop: 2 },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  scanBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   notifWrap: { padding: spacing.xs },
   notifBadge: {
     position: 'absolute',
@@ -371,6 +463,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarText: { fontFamily: fonts.poppins.bold, fontSize: 16, color: colors.brand.onPrimary },
+  lookupOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay.scrim,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  lookupSheet: {
+    width: '100%',
+    maxWidth: 440,
+    alignSelf: 'center',
+  },
   dateStrip: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
   dayItem: { alignItems: 'center', marginRight: spacing.lg },
   dayLabel: { fontFamily: fonts.inter.medium, fontSize: 12, color: colors.text.muted, marginBottom: spacing.xs },
