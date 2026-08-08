@@ -4,25 +4,66 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  APP_BUSINESS_ADDRESS,
+  APP_ENTERPRISE_NAME,
   APP_LEGAL_NAME,
   APP_SUPPORT_EMAIL,
+  APP_SUPPORT_PHONE,
+  APP_SUPPORT_PHONE_TEL,
+  APP_UDYAM_NUMBER,
+  APP_WEBSITE_URL,
 } from '@ironcloud/config/legal';
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
-import { getApiBaseUrl } from '../../src/lib/api';
+type PolicyRow = {
+  title: string;
+  subtitle: string;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
+  route: '/profile/privacy' | '/profile/terms' | '/profile/refund' | '/profile/shipping';
+  webPath: string;
+};
+
+const POLICY_ROWS: PolicyRow[] = [
+  {
+    title: 'Privacy Policy',
+    subtitle: 'How we collect and use your data',
+    icon: 'shield-account-outline',
+    route: '/profile/privacy',
+    webPath: '/privacy-policy',
+  },
+  {
+    title: 'Terms of Service',
+    subtitle: `Rules for using ${APP_LEGAL_NAME}`,
+    icon: 'file-document-outline',
+    route: '/profile/terms',
+    webPath: '/terms-and-conditions',
+  },
+  {
+    title: 'Cancellation & Refund Policy',
+    subtitle: 'Cancellations, refunds, and timelines',
+    icon: 'cash-refund',
+    route: '/profile/refund',
+    webPath: '/refund-policy',
+  },
+  {
+    title: 'Shipping & Delivery Policy',
+    subtitle: 'Pickup and return delivery turnaround',
+    icon: 'truck-delivery-outline',
+    route: '/profile/shipping',
+    webPath: '/shipping-policy',
+  },
+];
 
 export default function AboutScreen() {
   const router = useRouter();
-  const webBase = getApiBaseUrl();
+  const webBase = APP_WEBSITE_URL;
 
-  const openWeb = async (path: string) => {
+  const openWeb = async (path: string, fallback: PolicyRow['route']) => {
     const url = `${webBase}${path}`;
     try {
       await Linking.openURL(url);
     } catch {
-      // Fall back to in-app document if browser cannot open.
-      if (path.includes('privacy')) router.push('/profile/privacy');
-      else router.push('/profile/terms');
+      router.push(fallback);
     }
   };
 
@@ -44,78 +85,66 @@ export default function AboutScreen() {
           community. Use the links below to review our policies.
         </Text>
 
-        <Pressable
-          style={styles.row}
-          onPress={() => router.push('/profile/privacy')}
-        >
-          <MaterialCommunityIcons
-            name="shield-account-outline"
-            size={22}
-            color={colors.brand.primary}
-          />
-          <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>Privacy Policy</Text>
-            <Text style={styles.rowSub}>How we collect and use your data</Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={colors.icon.secondary}
-          />
-        </Pressable>
+        {POLICY_ROWS.map((row) => (
+          <Pressable
+            key={row.route}
+            style={styles.row}
+            onPress={() => router.push(row.route)}
+          >
+            <MaterialCommunityIcons
+              name={row.icon}
+              size={22}
+              color={colors.brand.primary}
+            />
+            <View style={styles.rowText}>
+              <Text style={styles.rowTitle}>{row.title}</Text>
+              <Text style={styles.rowSub}>{row.subtitle}</Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={22}
+              color={colors.icon.secondary}
+            />
+          </Pressable>
+        ))}
 
-        <Pressable style={styles.row} onPress={() => router.push('/profile/terms')}>
-          <MaterialCommunityIcons
-            name="file-document-outline"
-            size={22}
-            color={colors.brand.primary}
-          />
-          <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>Terms of Service</Text>
-            <Text style={styles.rowSub}>Rules for using {APP_LEGAL_NAME}</Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={colors.icon.secondary}
-          />
-        </Pressable>
+        {POLICY_ROWS.map((row) => (
+          <Pressable
+            key={`web-${row.webPath}`}
+            style={styles.row}
+            onPress={() => void openWeb(row.webPath, row.route)}
+          >
+            <MaterialCommunityIcons
+              name="open-in-new"
+              size={22}
+              color={colors.brand.primary}
+            />
+            <View style={styles.rowText}>
+              <Text style={styles.rowTitle}>Open {row.title} in browser</Text>
+              <Text style={styles.rowSub}>
+                {webBase}
+                {row.webPath}
+              </Text>
+            </View>
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={22}
+              color={colors.icon.secondary}
+            />
+          </Pressable>
+        ))}
 
-        <Pressable style={styles.row} onPress={() => void openWeb('/privacy')}>
-          <MaterialCommunityIcons
-            name="open-in-new"
-            size={22}
-            color={colors.brand.primary}
-          />
-          <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>Open Privacy Policy in browser</Text>
-            <Text style={styles.rowSub}>{webBase}/privacy</Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={colors.icon.secondary}
-          />
-        </Pressable>
-
-        <Pressable style={styles.row} onPress={() => void openWeb('/terms')}>
-          <MaterialCommunityIcons
-            name="open-in-new"
-            size={22}
-            color={colors.brand.primary}
-          />
-          <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>Open Terms in browser</Text>
-            <Text style={styles.rowSub}>{webBase}/terms</Text>
-          </View>
-          <MaterialCommunityIcons
-            name="chevron-right"
-            size={22}
-            color={colors.icon.secondary}
-          />
-        </Pressable>
-
-        <Text style={styles.support}>Support: {APP_SUPPORT_EMAIL}</Text>
+        <View style={styles.contactCard}>
+          <Text style={styles.contactTitle}>{APP_ENTERPRISE_NAME}</Text>
+          <Text style={styles.contactLine}>UDYAM: {APP_UDYAM_NUMBER}</Text>
+          <Text style={styles.contactLine}>{APP_BUSINESS_ADDRESS}</Text>
+          <Pressable onPress={() => void Linking.openURL(`mailto:${APP_SUPPORT_EMAIL}`)}>
+            <Text style={styles.contactLink}>{APP_SUPPORT_EMAIL}</Text>
+          </Pressable>
+          <Pressable onPress={() => void Linking.openURL(`tel:${APP_SUPPORT_PHONE_TEL}`)}>
+            <Text style={styles.contactLink}>{APP_SUPPORT_PHONE}</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -185,11 +214,31 @@ const styles = StyleSheet.create({
     color: colors.text.muted,
     marginTop: 2,
   },
-  support: {
-    marginTop: spacing.lg,
+  contactCard: {
+    marginTop: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    gap: spacing.xs,
+  },
+  contactTitle: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+    marginBottom: spacing.xs,
+  },
+  contactLine: {
     fontFamily: fonts.inter.regular,
     fontSize: 13,
-    color: colors.text.muted,
-    textAlign: 'center',
+    lineHeight: 20,
+    color: colors.text.secondary,
+  },
+  contactLink: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 13,
+    color: colors.brand.link,
+    marginTop: spacing.xs,
   },
 });

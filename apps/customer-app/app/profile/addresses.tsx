@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -26,8 +26,13 @@ import {
 
 import {
   getActiveCommunities,
+  getBlockFlats,
+  getCommunityBlocks,
+  getCommunityById,
   searchCommunities,
   type Community,
+  type CommunityBlock,
+  type CommunityFlat,
 } from '../../src/features/communities/services/communities.service';
 import {
   getCachedCustomerAddress,
@@ -44,6 +49,8 @@ export default function AddressesScreen() {
   const [isLoading, setIsLoading] = useState(() => !getCachedCustomerAddress());
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCommunityPicker, setShowCommunityPicker] = useState(false);
+  const [showBlockPicker, setShowBlockPicker] = useState(false);
+  const [showFlatPicker, setShowFlatPicker] = useState(false);
 
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   const [communitySearch, setCommunitySearch] = useState('');
@@ -52,8 +59,15 @@ export default function AddressesScreen() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [tower, setTower] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
+  const [blocks, setBlocks] = useState<CommunityBlock[]>([]);
+  const [flats, setFlats] = useState<CommunityFlat[]>([]);
+  const [selectedBlock, setSelectedBlock] = useState<CommunityBlock | null>(null);
+  const [selectedFlat, setSelectedFlat] = useState<CommunityFlat | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const blocksEnabled = Boolean(selectedCommunity?.blocksEnabled);
 
   const loadAddress = useCallback(async () => {
     try {
@@ -73,6 +87,83 @@ export default function AddressesScreen() {
       loadAddress();
     }, [loadAddress]),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCatalog() {
+      if (!selectedCommunity?.blocksEnabled) {
+        setBlocks([]);
+        setFlats([]);
+        return;
+      }
+
+      setCatalogLoading(true);
+      try {
+        const nextBlocks = await getCommunityBlocks(selectedCommunity.id);
+        if (cancelled) return;
+        setBlocks(nextBlocks);
+
+        setSelectedBlock((prev) => {
+          if (prev && nextBlocks.some((b) => b.id === prev.id)) return prev;
+          const match = nextBlocks.find(
+            (b) => b.name.toLowerCase() === tower.trim().toLowerCase(),
+          );
+          return match ?? null;
+        });
+      } catch (err) {
+        console.error('Error loading blocks:', err);
+        if (!cancelled) setBlocks([]);
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+
+    void loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCommunity?.id, selectedCommunity?.blocksEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFlatsForBlock() {
+      if (!blocksEnabled || !selectedBlock) {
+        setFlats([]);
+        setSelectedFlat(null);
+        return;
+      }
+
+      setCatalogLoading(true);
+      try {
+        const nextFlats = await getBlockFlats(selectedBlock.id);
+        if (cancelled) return;
+        setFlats(nextFlats);
+        setSelectedFlat((prev) => {
+          if (prev && nextFlats.some((f) => f.id === prev.id)) return prev;
+          const match = nextFlats.find(
+            (f) =>
+              f.flatNumber.toLowerCase() === flatNumber.trim().toLowerCase(),
+          );
+          return match ?? null;
+        });
+      } catch (err) {
+        console.error('Error loading flats:', err);
+        if (!cancelled) {
+          setFlats([]);
+          setSelectedFlat(null);
+        }
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+
+    void loadFlatsForBlock();
+    return () => {
+      cancelled = true;
+    };
+  }, [blocksEnabled, selectedBlock?.id]);
 
   const openCommunityPicker = useCallback(async () => {
     setShowCommunityPicker(true);
@@ -128,14 +219,23 @@ export default function AddressesScreen() {
     [allCommunities],
   );
 
-  const openEditModal = () => {
+  const openEditModal = async () => {
+    setSelectedBlock(null);
+    setSelectedFlat(null);
+    setBlocks([]);
+    setFlats([]);
+
     if (address) {
-      setSelectedCommunity({
-        id: address.communityId,
-        name: address.communityName,
-        city: address.city,
-        status: 'active',
-      });
+      const community =
+        (await getCommunityById(address.communityId)) ??
+        ({
+          id: address.communityId,
+          name: address.communityName,
+          city: address.city,
+          status: 'active',
+          blocksEnabled: false,
+        } satisfies Community);
+      setSelectedCommunity(community);
       setTower(address.tower ?? '');
       setFlatNumber(address.flatNumber);
     } else {
@@ -144,6 +244,8 @@ export default function AddressesScreen() {
       setFlatNumber('');
     }
     setShowCommunityPicker(false);
+    setShowBlockPicker(false);
+    setShowFlatPicker(false);
     setCommunitySearch('');
     setCommunities([]);
     setError('');
@@ -154,6 +256,26 @@ export default function AddressesScreen() {
     setSelectedCommunity(community);
     setShowCommunityPicker(false);
     setCommunitySearch('');
+    setSelectedBlock(null);
+    setSelectedFlat(null);
+    setTower('');
+    setFlatNumber('');
+    setBlocks([]);
+    setFlats([]);
+  };
+
+  const handleSelectBlock = (block: CommunityBlock) => {
+    setSelectedBlock(block);
+    setTower(block.name);
+    setSelectedFlat(null);
+    setFlatNumber('');
+    setShowBlockPicker(false);
+  };
+
+  const handleSelectFlat = (flat: CommunityFlat) => {
+    setSelectedFlat(flat);
+    setFlatNumber(flat.flatNumber);
+    setShowFlatPicker(false);
   };
 
   const handleSaveAddress = async () => {
@@ -161,7 +283,17 @@ export default function AddressesScreen() {
       setError('Please select your apartment');
       return;
     }
-    if (!flatNumber.trim()) {
+
+    if (blocksEnabled) {
+      if (!selectedBlock) {
+        setError('Please select your block');
+        return;
+      }
+      if (!selectedFlat) {
+        setError('Please select your flat');
+        return;
+      }
+    } else if (!flatNumber.trim()) {
       setError('Please enter your flat number');
       return;
     }
@@ -171,8 +303,8 @@ export default function AddressesScreen() {
     try {
       const saved = await saveCustomerAddress({
         communityId: selectedCommunity.id,
-        tower,
-        flatNumber,
+        tower: blocksEnabled ? selectedBlock!.name : tower,
+        flatNumber: blocksEnabled ? selectedFlat!.flatNumber : flatNumber,
       });
       setAddress(saved);
       setShowEditModal(false);
@@ -275,6 +407,14 @@ export default function AddressesScreen() {
             setShowCommunityPicker(false);
             return;
           }
+          if (showBlockPicker) {
+            setShowBlockPicker(false);
+            return;
+          }
+          if (showFlatPicker) {
+            setShowFlatPicker(false);
+            return;
+          }
           setShowEditModal(false);
         }}
       >
@@ -358,6 +498,118 @@ export default function AddressesScreen() {
                 />
               )}
             </>
+          ) : showBlockPicker ? (
+            <>
+              <View style={styles.modalHeader}>
+                <Pressable
+                  onPress={() => setShowBlockPicker(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <MaterialCommunityIcons
+                    name="arrow-left"
+                    size={24}
+                    color={colors.icon.primary}
+                  />
+                </Pressable>
+                <Text style={styles.modalTitle}>Select block</Text>
+                <View style={styles.headerSpacer} />
+              </View>
+              {catalogLoading ? (
+                <View style={styles.centered}>
+                  <ActivityIndicator size="small" color={colors.brand.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  data={blocks}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.communityList}
+                  ListEmptyComponent={
+                    <Text style={styles.emptySearch}>No blocks available</Text>
+                  }
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={[
+                        styles.communityItem,
+                        selectedBlock?.id === item.id && styles.communityItemSelected,
+                      ]}
+                      onPress={() => handleSelectBlock(item)}
+                    >
+                      <MaterialCommunityIcons
+                        name="office-building-outline"
+                        size={22}
+                        color={colors.brand.accent}
+                      />
+                      <View style={styles.communityText}>
+                        <Text style={styles.communityName}>{item.name}</Text>
+                      </View>
+                      {selectedBlock?.id === item.id && (
+                        <MaterialCommunityIcons
+                          name="check"
+                          size={20}
+                          color={colors.brand.accent}
+                        />
+                      )}
+                    </Pressable>
+                  )}
+                />
+              )}
+            </>
+          ) : showFlatPicker ? (
+            <>
+              <View style={styles.modalHeader}>
+                <Pressable
+                  onPress={() => setShowFlatPicker(false)}
+                  style={styles.modalCloseButton}
+                >
+                  <MaterialCommunityIcons
+                    name="arrow-left"
+                    size={24}
+                    color={colors.icon.primary}
+                  />
+                </Pressable>
+                <Text style={styles.modalTitle}>Select flat</Text>
+                <View style={styles.headerSpacer} />
+              </View>
+              {catalogLoading ? (
+                <View style={styles.centered}>
+                  <ActivityIndicator size="small" color={colors.brand.primary} />
+                </View>
+              ) : (
+                <FlatList
+                  data={flats}
+                  keyExtractor={(item) => item.id}
+                  contentContainerStyle={styles.communityList}
+                  ListEmptyComponent={
+                    <Text style={styles.emptySearch}>No flats in this block</Text>
+                  }
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={[
+                        styles.communityItem,
+                        selectedFlat?.id === item.id && styles.communityItemSelected,
+                      ]}
+                      onPress={() => handleSelectFlat(item)}
+                    >
+                      <MaterialCommunityIcons
+                        name="home-outline"
+                        size={22}
+                        color={colors.brand.accent}
+                      />
+                      <View style={styles.communityText}>
+                        <Text style={styles.communityName}>{item.flatNumber}</Text>
+                      </View>
+                      {selectedFlat?.id === item.id && (
+                        <MaterialCommunityIcons
+                          name="check"
+                          size={20}
+                          color={colors.brand.accent}
+                        />
+                      )}
+                    </Pressable>
+                  )}
+                />
+              )}
+            </>
           ) : (
             <>
               <View style={styles.modalHeader}>
@@ -404,32 +656,88 @@ export default function AddressesScreen() {
                   />
                 </Pressable>
 
-                <View style={styles.rowFields}>
-                  <View style={styles.halfField}>
-                    <Text style={styles.inputLabel}>Tower / Block</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Optional"
-                        placeholderTextColor={inputs.placeholder.color}
-                        value={tower}
-                        onChangeText={setTower}
-                      />
+                {blocksEnabled ? (
+                  <View style={styles.rowFields}>
+                    <View style={styles.halfField}>
+                      <Text style={styles.inputLabel}>Block</Text>
+                      <Pressable
+                        style={[styles.selectField, styles.selectFieldInRow]}
+                        onPress={() => setShowBlockPicker(true)}
+                        disabled={!selectedCommunity || catalogLoading}
+                      >
+                        <Text
+                          style={[
+                            styles.selectText,
+                            !selectedBlock && styles.placeholderText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {selectedBlock?.name || 'Select block'}
+                        </Text>
+                        <MaterialCommunityIcons
+                          name="chevron-down"
+                          size={20}
+                          color={colors.icon.secondary}
+                        />
+                      </Pressable>
+                    </View>
+                    <View style={styles.halfField}>
+                      <Text style={styles.inputLabel}>Flat</Text>
+                      <Pressable
+                        style={[
+                          styles.selectField,
+                          styles.selectFieldInRow,
+                          !selectedBlock && styles.selectFieldDisabled,
+                        ]}
+                        onPress={() => selectedBlock && setShowFlatPicker(true)}
+                        disabled={!selectedBlock || catalogLoading}
+                      >
+                        <Text
+                          style={[
+                            styles.selectText,
+                            !selectedFlat && styles.placeholderText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {selectedFlat?.flatNumber ||
+                            (selectedBlock ? 'Select flat' : 'Select block first')}
+                        </Text>
+                        <MaterialCommunityIcons
+                          name="chevron-down"
+                          size={20}
+                          color={colors.icon.secondary}
+                        />
+                      </Pressable>
                     </View>
                   </View>
-                  <View style={styles.halfField}>
-                    <Text style={styles.inputLabel}>Flat Number</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="e.g. 1204"
-                        placeholderTextColor={inputs.placeholder.color}
-                        value={flatNumber}
-                        onChangeText={setFlatNumber}
-                      />
+                ) : (
+                  <View style={styles.rowFields}>
+                    <View style={styles.halfField}>
+                      <Text style={styles.inputLabel}>Tower / Block</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="Optional"
+                          placeholderTextColor={inputs.placeholder.color}
+                          value={tower}
+                          onChangeText={setTower}
+                        />
+                      </View>
+                    </View>
+                    <View style={styles.halfField}>
+                      <Text style={styles.inputLabel}>Flat Number</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="e.g. 1204"
+                          placeholderTextColor={inputs.placeholder.color}
+                          value={flatNumber}
+                          onChangeText={setFlatNumber}
+                        />
+                      </View>
                     </View>
                   </View>
-                </View>
+                )}
 
                 {!!error && <Text style={styles.errorText}>{error}</Text>}
 
@@ -643,6 +951,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 52,
     marginBottom: spacing.lg,
+  },
+  selectFieldInRow: {
+    marginBottom: 0,
+  },
+  selectFieldDisabled: {
+    opacity: 0.55,
   },
   inputIcon: {
     marginRight: spacing.sm,

@@ -35,6 +35,11 @@ export const CommunityDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedRiderId, setSelectedRiderId] = useState('');
   const [selectedStartHour, setSelectedStartHour] = useState(8);
+  const [newBlockName, setNewBlockName] = useState('');
+  const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
+  const [newFlatsText, setNewFlatsText] = useState('');
+  const [renameBlockId, setRenameBlockId] = useState<string | null>(null);
+  const [renameBlockValue, setRenameBlockValue] = useState('');
 
   const assignedQuery = trpc.riders.listByCommunity.useQuery(
     { communityId: id },
@@ -46,6 +51,18 @@ export const CommunityDetailPage = () => {
   const slotsQuery = trpc.communities.listPickupSlots.useQuery(
     { communityId: id },
     { enabled: Boolean(id), refetchOnWindowFocus: false },
+  );
+  const blocksEnabled = Boolean(
+    (data?.community as { blocks_enabled?: boolean } | null | undefined)
+      ?.blocks_enabled,
+  );
+  const blocksQuery = trpc.communities.listBlocks.useQuery(
+    { communityId: id },
+    { enabled: Boolean(id) && blocksEnabled, refetchOnWindowFocus: false },
+  );
+  const flatsQuery = trpc.communities.listFlats.useQuery(
+    { blockId: expandedBlockId ?? '' },
+    { enabled: Boolean(expandedBlockId) && blocksEnabled, refetchOnWindowFocus: false },
   );
 
   const assignMutation = trpc.riders.assignCommunity.useMutation({
@@ -83,6 +100,50 @@ export const CommunityDetailPage = () => {
     onSuccess: async () => {
       toast('Pickup slot removed', 'success');
       await utils.communities.listPickupSlots.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const createBlockMutation = trpc.communities.createBlock.useMutation({
+    onSuccess: async () => {
+      toast('Block added', 'success');
+      setNewBlockName('');
+      await utils.communities.listBlocks.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const updateBlockMutation = trpc.communities.updateBlock.useMutation({
+    onSuccess: async () => {
+      toast('Block updated', 'success');
+      setRenameBlockId(null);
+      setRenameBlockValue('');
+      await utils.communities.listBlocks.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const createFlatsMutation = trpc.communities.createFlats.useMutation({
+    onSuccess: async (result) => {
+      toast(
+        result.created === 1
+          ? '1 flat added'
+          : `${result.created} flats added`,
+        'success',
+      );
+      setNewFlatsText('');
+      if (expandedBlockId) {
+        await utils.communities.listFlats.invalidate({ blockId: expandedBlockId });
+      }
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const updateFlatMutation = trpc.communities.updateFlat.useMutation({
+    onSuccess: async () => {
+      if (expandedBlockId) {
+        await utils.communities.listFlats.invalidate({ blockId: expandedBlockId });
+      }
     },
     onError: (err) => toast(err.message, 'error'),
   });
@@ -153,6 +214,32 @@ export const CommunityDetailPage = () => {
     addSlotMutation.mutate({ communityId: id, startHour: selectedStartHour });
   };
 
+  const parseFlatNumbers = (raw: string) =>
+    raw
+      .split(/[\n,]+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+  const handleAddBlock = () => {
+    const name = newBlockName.trim();
+    if (!name) return;
+    createBlockMutation.mutate({ communityId: id, name });
+  };
+
+  const handleAddFlats = () => {
+    if (!expandedBlockId) return;
+    const flatNumbers = parseFlatNumbers(newFlatsText);
+    if (flatNumbers.length === 0) {
+      toast('Enter at least one flat number', 'error');
+      return;
+    }
+    createFlatsMutation.mutate({
+      communityId: id,
+      blockId: expandedBlockId,
+      flatNumbers,
+    });
+  };
+
   if (loading) return <Loader fullPage />;
   if (!data?.community) return <div>Community not found</div>;
 
@@ -166,8 +253,15 @@ export const CommunityDetailPage = () => {
     addSlotMutation.isPending ||
     setSlotActiveMutation.isPending ||
     removeSlotMutation.isPending;
+  const isBlockMutating =
+    createBlockMutation.isPending ||
+    updateBlockMutation.isPending ||
+    createFlatsMutation.isPending ||
+    updateFlatMutation.isPending;
   const ridersLoading = assignedQuery.isLoading || assignedQuery.isFetching;
   const pickupSlots = slotsQuery.data ?? [];
+  const communityBlocks = blocksQuery.data ?? [];
+  const blockFlats = flatsQuery.data ?? [];
   const takenHours = new Set(pickupSlots.map((slot) => slot.start_hour));
   const availableHours = Array.from({ length: 24 }, (_, hour) => hour).filter(
     (hour) => !takenHours.has(hour),
@@ -199,7 +293,9 @@ export const CommunityDetailPage = () => {
       <div className={pageStyles.detailGrid}>
         <Card
           title={data.community.name}
-          subtitle={`${data.community.city} · ${data.community.status}`}
+          subtitle={`${data.community.city} · ${data.community.status}${
+            blocksEnabled ? ' · Blocks enabled' : ''
+          }`}
         >
           <RevenueBarChart data={revenueChart} />
         </Card>
@@ -422,6 +518,210 @@ export const CommunityDetailPage = () => {
             </div>
           </div>
         </Card>
+
+        {blocksEnabled ? (
+          <Card
+            title="Blocks & Flats"
+            subtitle={
+              blocksQuery.isLoading
+                ? 'Loading…'
+                : `${communityBlocks.length} block${communityBlocks.length === 1 ? '' : 's'} · customers pick from active catalog`
+            }
+          >
+            <div className={assignStyles.assignPanel}>
+              {blocksQuery.isLoading && communityBlocks.length === 0 ? (
+                <p className={assignStyles.statusLine}>Loading blocks…</p>
+              ) : communityBlocks.length === 0 ? (
+                <div className={assignStyles.emptyBox}>
+                  <p className={assignStyles.emptyTitle}>No blocks yet</p>
+                  <p className={assignStyles.emptyHint}>
+                    Add blocks below, then open a block to add flats.
+                  </p>
+                </div>
+              ) : (
+                <ul className={assignStyles.assignedList}>
+                  {communityBlocks.map((block) => {
+                    const isExpanded = expandedBlockId === block.id;
+                    const isRenaming = renameBlockId === block.id;
+                    return (
+                      <li key={block.id} className={assignStyles.blockItem}>
+                        <div className={assignStyles.assignedItem}>
+                          <div className={assignStyles.assignedMeta}>
+                            {isRenaming ? (
+                              <input
+                                className={assignStyles.assignSelect}
+                                value={renameBlockValue}
+                                onChange={(e) => setRenameBlockValue(e.target.value)}
+                                aria-label="Rename block"
+                              />
+                            ) : (
+                              <span className={assignStyles.assignedName}>
+                                {block.name}
+                                {block.is_active ? '' : ' · Inactive'}
+                              </span>
+                            )}
+                          </div>
+                          {isRenaming ? (
+                            <>
+                              <Button
+                                size="sm"
+                                disabled={isBlockMutating || !renameBlockValue.trim()}
+                                onClick={() =>
+                                  updateBlockMutation.mutate({
+                                    id: block.id,
+                                    communityId: id,
+                                    name: renameBlockValue.trim(),
+                                  })
+                                }
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={isBlockMutating}
+                                onClick={() => {
+                                  setRenameBlockId(null);
+                                  setRenameBlockValue('');
+                                }}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={isBlockMutating}
+                                onClick={() => {
+                                  setExpandedBlockId(isExpanded ? null : block.id);
+                                  setNewFlatsText('');
+                                }}
+                              >
+                                {isExpanded ? 'Hide flats' : 'Flats'}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={isBlockMutating}
+                                onClick={() => {
+                                  setRenameBlockId(block.id);
+                                  setRenameBlockValue(block.name);
+                                }}
+                              >
+                                Rename
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={isBlockMutating}
+                                onClick={() =>
+                                  updateBlockMutation.mutate({
+                                    id: block.id,
+                                    communityId: id,
+                                    isActive: !block.is_active,
+                                  })
+                                }
+                              >
+                                {block.is_active ? 'Disable' : 'Enable'}
+                              </Button>
+                            </>
+                          )}
+                        </div>
+
+                        {isExpanded ? (
+                          <div className={assignStyles.flatsPanel}>
+                            {flatsQuery.isLoading ? (
+                              <p className={assignStyles.statusLine}>Loading flats…</p>
+                            ) : blockFlats.length === 0 ? (
+                              <p className={assignStyles.emptyHint}>
+                                No flats in this block yet.
+                              </p>
+                            ) : (
+                              <ul className={assignStyles.flatList}>
+                                {blockFlats.map((flat) => (
+                                  <li key={flat.id} className={assignStyles.flatItem}>
+                                    <span>
+                                      {flat.flat_number}
+                                      {flat.is_active ? '' : ' · Inactive'}
+                                    </span>
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      disabled={isBlockMutating}
+                                      onClick={() =>
+                                        updateFlatMutation.mutate({
+                                          id: flat.id,
+                                          blockId: block.id,
+                                          communityId: id,
+                                          isActive: !flat.is_active,
+                                        })
+                                      }
+                                    >
+                                      {flat.is_active ? 'Disable' : 'Enable'}
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                            <label
+                              className={assignStyles.assignLabel}
+                              htmlFor={`add-flats-${block.id}`}
+                            >
+                              Add flats (comma or newline separated)
+                            </label>
+                            <textarea
+                              id={`add-flats-${block.id}`}
+                              className={assignStyles.flatsInput}
+                              rows={3}
+                              value={newFlatsText}
+                              onChange={(e) => setNewFlatsText(e.target.value)}
+                              placeholder="101, 102, 103"
+                            />
+                            <Button
+                              onClick={handleAddFlats}
+                              disabled={isBlockMutating || !newFlatsText.trim()}
+                            >
+                              {createFlatsMutation.isPending ? 'Adding…' : 'Add flats'}
+                            </Button>
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              <div className={assignStyles.assignBox}>
+                <label className={assignStyles.assignLabel} htmlFor="add-block">
+                  Add block
+                </label>
+                <div className={assignStyles.assignControls}>
+                  <input
+                    id="add-block"
+                    className={assignStyles.assignSelect}
+                    value={newBlockName}
+                    onChange={(e) => setNewBlockName(e.target.value)}
+                    placeholder="e.g. Tower A"
+                    disabled={isBlockMutating}
+                  />
+                  <Button
+                    onClick={handleAddBlock}
+                    disabled={isBlockMutating || !newBlockName.trim()}
+                  >
+                    {createBlockMutation.isPending ? 'Adding…' : 'Add block'}
+                  </Button>
+                </div>
+                {blocksQuery.isError ? (
+                  <p className={assignStyles.statusLine}>
+                    Could not load blocks: {blocksQuery.error.message}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

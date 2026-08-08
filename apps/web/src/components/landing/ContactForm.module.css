@@ -1,0 +1,57 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.field label {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--ic-text-heading);
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--ic-border-input);
+  border-radius: var(--ic-radius-input);
+  background: var(--ic-surface-input);
+  color: var(--ic-text-primary);
+  font-family: var(--ic-font-body);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.field input:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid var(--ic-border-focus);
+  outline-offset: 1px;
+}
+
+.submit {
+  align-self: flex-start;
+}
+
+.success {
+  margin: 0;
+  padding: 0.875rem 1rem;
+  border-radius: var(--ic-radius-md);
+  background: var(--ic-status-success-bg);
+  color: var(--ic-status-success-text);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.success a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}

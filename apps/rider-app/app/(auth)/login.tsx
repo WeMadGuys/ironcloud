@@ -29,6 +29,7 @@ import {
 
 import { OTP_LENGTH } from '../../src/config/auth';
 import { resendOtp, sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
+import { LegalConsentNotice } from '../../src/features/legal/components/LegalConsentNotice';
 
 const FEATURES = [
   { icon: 'map-marker-path' as const, label: 'Optimized\nRoutes' },
@@ -331,6 +332,8 @@ export default function LoginScreen() {
                     </>
                   )}
                 </Pressable>
+
+                <LegalConsentNotice />
 
                 {!keyboardVisible ? (
                   <View style={styles.trustRow}>

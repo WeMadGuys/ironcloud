@@ -35,6 +35,7 @@ import {
 } from '../../src/config/auth';
 import { resendOtp, sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
 import { ensureMsg91Initialized } from '../../src/features/auth/services/msg91';
+import { LegalConsentNotice } from '../../src/features/legal/components/LegalConsentNotice';
 import { supabase } from '../../src/lib/supabase';
 
 
@@ -375,6 +376,8 @@ export default function LoginScreen() {
                     color={colors.brand.onPrimary}
                   />
                 </Pressable>
+
+                <LegalConsentNotice />
 
                 {!keyboardVisible ? (
                   <View style={styles.trustRow}>

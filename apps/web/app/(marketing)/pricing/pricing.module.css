@@ -1,0 +1,37 @@
+.content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: clamp(2rem, 4vw, 3rem) 1.5rem 5rem;
+}
+
+.card {
+  padding: 1.75rem;
+  background: #ffffff;
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-card);
+  box-shadow: var(--ic-shadow-sm);
+}
+
+.cardTitle {
+  margin: 0 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--ic-text-primary);
+  line-height: 1.7;
+}
+
+.note {
+  margin: 1.5rem 0 0;
+  color: var(--ic-text-secondary);
+  line-height: 1.6;
+  font-size: 0.9375rem;
+}
+
+.note a {
+  font-weight: 600;
+}

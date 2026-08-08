@@ -29,6 +29,7 @@ const emptyForm = () => ({
   city: '',
   pricingTier: 'standard',
   status: 'active' as 'pending' | 'active' | 'suspended',
+  blocksEnabled: false,
 });
 
 export const CommunitiesListPage = () => {
@@ -87,6 +88,9 @@ export const CommunitiesListPage = () => {
       city: row.city ?? '',
       pricingTier: row.pricing_tier ?? 'standard',
       status: (row.status as 'pending' | 'active' | 'suspended') || 'active',
+      blocksEnabled: Boolean(
+        (row as { blocks_enabled?: boolean | null }).blocks_enabled,
+      ),
     });
     setModalOpen(true);
   };
@@ -102,6 +106,7 @@ export const CommunitiesListPage = () => {
       city: form.city.trim(),
       pricingTier: form.pricingTier,
       status: form.status,
+      blocksEnabled: form.blocksEnabled,
     };
 
     if (editing) {
@@ -281,6 +286,23 @@ export const CommunitiesListPage = () => {
               <option value="pending">Pending</option>
               <option value="suspended">Suspended</option>
             </select>
+          </div>
+          <div className={formStyles.field}>
+            <label className={formStyles.checkLabel} htmlFor="community-blocks-enabled">
+              <input
+                id="community-blocks-enabled"
+                type="checkbox"
+                checked={form.blocksEnabled}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, blocksEnabled: e.target.checked }))
+                }
+              />
+              Enable blocks
+            </label>
+            <p className={formStyles.hint}>
+              When on, customers pick Block then Flat from a catalog. When off,
+              they type tower/block and flat as free text.
+            </p>
           </div>
         </div>
       </CreateEntityModal>

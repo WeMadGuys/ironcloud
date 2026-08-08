@@ -127,6 +127,7 @@ export interface Database {
           geo_boundary: Json | null;
           pricing_tier: string;
           status: string;
+          blocks_enabled: boolean;
           created_at: string;
         };
         Insert: {
@@ -136,6 +137,7 @@ export interface Database {
           geo_boundary?: Json | null;
           pricing_tier?: string;
           status?: string;
+          blocks_enabled?: boolean;
           created_at?: string;
         };
         Update: {
@@ -145,9 +147,64 @@ export interface Database {
           geo_boundary?: Json | null;
           pricing_tier?: string;
           status?: string;
+          blocks_enabled?: boolean;
           created_at?: string;
         };
-          Relationships: [];
+        Relationships: [];
+      };
+      community_blocks: {
+        Row: {
+          id: string;
+          community_id: string;
+          name: string;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          name: string;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          community_id?: string;
+          name?: string;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      community_flats: {
+        Row: {
+          id: string;
+          block_id: string;
+          flat_number: string;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          block_id: string;
+          flat_number: string;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          block_id?: string;
+          flat_number?: string;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
       };
       community_pickup_slots: {
         Row: {

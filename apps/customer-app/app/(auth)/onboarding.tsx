@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -25,8 +25,12 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  getBlockFlats,
+  getCommunityBlocks,
   searchCommunities,
   type Community,
+  type CommunityBlock,
+  type CommunityFlat,
 } from '../../src/features/communities/services/communities.service';
 import {
   completeOnboarding,
@@ -36,6 +40,7 @@ import {
   applyReferralCode,
   validateReferralCode,
 } from '../../src/features/referrals/services/referral.service';
+import { LegalConsentNotice } from '../../src/features/legal/components/LegalConsentNotice';
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -44,10 +49,17 @@ export default function OnboardingScreen() {
   const [communitySearch, setCommunitySearch] = useState('');
   const [communities, setCommunities] = useState<Community[]>([]);
   const [showCommunityModal, setShowCommunityModal] = useState(false);
+  const [showBlockModal, setShowBlockModal] = useState(false);
+  const [showFlatModal, setShowFlatModal] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
 
   const [tower, setTower] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
+  const [blocks, setBlocks] = useState<CommunityBlock[]>([]);
+  const [flats, setFlats] = useState<CommunityFlat[]>([]);
+  const [selectedBlock, setSelectedBlock] = useState<CommunityBlock | null>(null);
+  const [selectedFlat, setSelectedFlat] = useState<CommunityFlat | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [promoCode, setPromoCode] = useState('');
@@ -62,6 +74,8 @@ export default function OnboardingScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [isApplyingReferral, setIsApplyingReferral] = useState(false);
+
+  const blocksEnabled = Boolean(selectedCommunity?.blocksEnabled);
 
   const handleSearchCommunities = useCallback(async (query: string) => {
     setCommunitySearch(query);
@@ -87,8 +101,79 @@ export default function OnboardingScreen() {
     setShowCommunityModal(false);
     setCommunitySearch('');
     setCommunities([]);
+    setSelectedBlock(null);
+    setSelectedFlat(null);
+    setTower('');
+    setFlatNumber('');
+    setBlocks([]);
+    setFlats([]);
     clearError('community');
+    clearError('flatNumber');
   };
+
+  const handleSelectBlock = (block: CommunityBlock) => {
+    setSelectedBlock(block);
+    setTower(block.name);
+    setSelectedFlat(null);
+    setFlatNumber('');
+    setShowBlockModal(false);
+    clearError('flatNumber');
+  };
+
+  const handleSelectFlat = (flat: CommunityFlat) => {
+    setSelectedFlat(flat);
+    setFlatNumber(flat.flatNumber);
+    setShowFlatModal(false);
+    clearError('flatNumber');
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBlocks() {
+      if (!selectedCommunity?.blocksEnabled) {
+        setBlocks([]);
+        return;
+      }
+      setCatalogLoading(true);
+      try {
+        const next = await getCommunityBlocks(selectedCommunity.id);
+        if (!cancelled) setBlocks(next);
+      } catch (error) {
+        console.error('Error loading blocks:', error);
+        if (!cancelled) setBlocks([]);
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+    void loadBlocks();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCommunity?.id, selectedCommunity?.blocksEnabled]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFlats() {
+      if (!blocksEnabled || !selectedBlock) {
+        setFlats([]);
+        return;
+      }
+      setCatalogLoading(true);
+      try {
+        const next = await getBlockFlats(selectedBlock.id);
+        if (!cancelled) setFlats(next);
+      } catch (error) {
+        console.error('Error loading flats:', error);
+        if (!cancelled) setFlats([]);
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+    void loadFlats();
+    return () => {
+      cancelled = true;
+    };
+  }, [blocksEnabled, selectedBlock?.id]);
 
   const handleApplyPromo = async () => {
     if (!promoCode.trim()) return;
@@ -150,7 +235,13 @@ export default function OnboardingScreen() {
     if (!selectedCommunity) {
       newErrors.community = 'Please select your apartment';
     }
-    if (!flatNumber.trim()) {
+    if (blocksEnabled) {
+      if (!selectedBlock) {
+        newErrors.flatNumber = 'Please select your block';
+      } else if (!selectedFlat) {
+        newErrors.flatNumber = 'Please select your flat';
+      }
+    } else if (!flatNumber.trim()) {
       newErrors.flatNumber = 'Please enter your flat number';
     }
     if (!fullName.trim()) {
@@ -173,8 +264,12 @@ export default function OnboardingScreen() {
         },
         address: {
           communityId: selectedCommunity!.id,
-          tower: tower.trim() || undefined,
-          flatNumber: flatNumber.trim(),
+          tower: blocksEnabled
+            ? selectedBlock!.name
+            : tower.trim() || undefined,
+          flatNumber: blocksEnabled
+            ? selectedFlat!.flatNumber
+            : flatNumber.trim(),
         },
         promoCode: promoValidated ? promoCode.trim() : undefined,
       });
@@ -281,55 +376,121 @@ export default function OnboardingScreen() {
 
           {/* Tower & Flat Row */}
           <View style={styles.rowFields}>
-            <View style={styles.halfField}>
-              <Text style={styles.inputLabel}>Tower / Block</Text>
-              <View style={styles.inputContainer}>
-                <MaterialCommunityIcons
-                  name="office-building-outline"
-                  size={20}
-                  color={colors.icon.secondary}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Tower (optional)"
-                  placeholderTextColor={inputs.placeholder.color}
-                  value={tower}
-                  onChangeText={setTower}
-                />
-              </View>
-            </View>
+            {blocksEnabled ? (
+              <>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Block</Text>
+                  <Pressable
+                    style={[
+                      styles.inputContainer,
+                      styles.selectContainer,
+                      errors.flatNumber && !selectedBlock && styles.inputContainerError,
+                    ]}
+                    onPress={() => setShowBlockModal(true)}
+                    disabled={catalogLoading}
+                  >
+                    <Text
+                      style={[
+                        styles.selectText,
+                        !selectedBlock && styles.placeholderText,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {selectedBlock?.name || 'Select block'}
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="chevron-down"
+                      size={20}
+                      color={colors.icon.secondary}
+                    />
+                  </Pressable>
+                </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Flat</Text>
+                  <Pressable
+                    style={[
+                      styles.inputContainer,
+                      styles.selectContainer,
+                      !selectedBlock && styles.selectFieldDisabled,
+                      errors.flatNumber &&
+                        selectedBlock &&
+                        !selectedFlat &&
+                        styles.inputContainerError,
+                    ]}
+                    onPress={() => selectedBlock && setShowFlatModal(true)}
+                    disabled={!selectedBlock || catalogLoading}
+                  >
+                    <Text
+                      style={[
+                        styles.selectText,
+                        !selectedFlat && styles.placeholderText,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {selectedFlat?.flatNumber ||
+                        (selectedBlock ? 'Select flat' : 'Select block first')}
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="chevron-down"
+                      size={20}
+                      color={colors.icon.secondary}
+                    />
+                  </Pressable>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Tower / Block</Text>
+                  <View style={styles.inputContainer}>
+                    <MaterialCommunityIcons
+                      name="office-building-outline"
+                      size={20}
+                      color={colors.icon.secondary}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Tower (optional)"
+                      placeholderTextColor={inputs.placeholder.color}
+                      value={tower}
+                      onChangeText={setTower}
+                    />
+                  </View>
+                </View>
 
-            <View style={styles.halfField}>
-              <Text style={styles.inputLabel}>Flat / House Number</Text>
-              <View
-                style={[
-                  styles.inputContainer,
-                  errors.flatNumber && styles.inputContainerError,
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name="home-outline"
-                  size={20}
-                  color={colors.icon.secondary}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter Flat no."
-                  placeholderTextColor={inputs.placeholder.color}
-                  value={flatNumber}
-                  onChangeText={(text) => {
-                    setFlatNumber(text);
-                    clearError('flatNumber');
-                  }}
-                />
-              </View>
-              {errors.flatNumber ? (
-                <Text style={styles.errorText}>{errors.flatNumber}</Text>
-              ) : null}
-            </View>
+                <View style={styles.halfField}>
+                  <Text style={styles.inputLabel}>Flat / House Number</Text>
+                  <View
+                    style={[
+                      styles.inputContainer,
+                      errors.flatNumber && styles.inputContainerError,
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="home-outline"
+                      size={20}
+                      color={colors.icon.secondary}
+                      style={styles.inputIcon}
+                    />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter Flat no."
+                      placeholderTextColor={inputs.placeholder.color}
+                      value={flatNumber}
+                      onChangeText={(text) => {
+                        setFlatNumber(text);
+                        clearError('flatNumber');
+                      }}
+                    />
+                  </View>
+                </View>
+              </>
+            )}
           </View>
+          {errors.flatNumber ? (
+            <Text style={[styles.errorText, styles.rowError]}>{errors.flatNumber}</Text>
+          ) : null}
 
           {/* Full Name */}
           <View style={styles.fieldGroup}>
@@ -516,6 +677,8 @@ export default function OnboardingScreen() {
             )}
           </Pressable>
 
+          <LegalConsentNotice prefix="By completing setup, you agree to our" />
+
           <View style={styles.safetyRow}>
             <MaterialCommunityIcons
               name="lock-outline"
@@ -601,6 +764,114 @@ export default function OnboardingScreen() {
             }
             contentContainerStyle={styles.communityList}
           />
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={showBlockModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowBlockModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Block</Text>
+            <Pressable
+              onPress={() => setShowBlockModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={colors.icon.primary}
+              />
+            </Pressable>
+          </View>
+          {catalogLoading ? (
+            <View style={styles.emptyList}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={blocks}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.communityList}
+              ListEmptyComponent={
+                <View style={styles.emptyList}>
+                  <Text style={styles.emptyText}>No blocks available</Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.communityItem}
+                  onPress={() => handleSelectBlock(item)}
+                >
+                  <MaterialCommunityIcons
+                    name="office-building-outline"
+                    size={20}
+                    color={colors.icon.secondary}
+                  />
+                  <View style={styles.communityInfo}>
+                    <Text style={styles.communityName}>{item.name}</Text>
+                  </View>
+                </Pressable>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      <Modal
+        visible={showFlatModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowFlatModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Flat</Text>
+            <Pressable
+              onPress={() => setShowFlatModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <MaterialCommunityIcons
+                name="close"
+                size={24}
+                color={colors.icon.primary}
+              />
+            </Pressable>
+          </View>
+          {catalogLoading ? (
+            <View style={styles.emptyList}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={flats}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={styles.communityList}
+              ListEmptyComponent={
+                <View style={styles.emptyList}>
+                  <Text style={styles.emptyText}>No flats in this block</Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.communityItem}
+                  onPress={() => handleSelectFlat(item)}
+                >
+                  <MaterialCommunityIcons
+                    name="home-outline"
+                    size={20}
+                    color={colors.icon.secondary}
+                  />
+                  <View style={styles.communityInfo}>
+                    <Text style={styles.communityName}>{item.flatNumber}</Text>
+                  </View>
+                </Pressable>
+              )}
+            />
+          )}
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -691,6 +962,13 @@ const styles = StyleSheet.create({
   },
   selectContainer: {
     paddingRight: spacing.md,
+  },
+  selectFieldDisabled: {
+    opacity: 0.55,
+  },
+  rowError: {
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
   },
   inputIcon: {
     marginRight: spacing.sm,

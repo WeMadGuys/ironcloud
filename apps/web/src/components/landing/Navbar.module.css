@@ -1,0 +1,178 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  transition:
+    background var(--ic-transition-base),
+    box-shadow var(--ic-transition-base),
+    border-color var(--ic-transition-base);
+}
+
+.transparent {
+  background: transparent;
+  border-bottom: 1px solid transparent;
+}
+
+.solid {
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid var(--ic-border-default);
+  box-shadow: var(--ic-shadow-sm);
+  backdrop-filter: blur(10px);
+}
+
+.inner {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0.875rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--ic-text-heading);
+  font-family: var(--ic-font-display);
+  font-weight: 700;
+  font-size: 1.0625rem;
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--ic-text-heading);
+}
+
+.desktopNav {
+  display: none;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.navLink {
+  padding: 0.5rem 0.875rem;
+  border-radius: var(--ic-radius-button);
+  color: var(--ic-text-primary);
+  font-weight: 500;
+  font-size: 0.9375rem;
+}
+
+.navLink:hover {
+  background: var(--ic-brand-accent-muted);
+  color: var(--ic-text-heading);
+}
+
+.adminLink {
+  margin-left: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: var(--ic-radius-button);
+  background: var(--ic-brand-primary);
+  color: var(--ic-brand-on-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.adminLink:hover {
+  background: var(--ic-brand-primary-pressed);
+  color: var(--ic-brand-on-primary);
+}
+
+.menuButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--ic-border-default);
+  border-radius: var(--ic-radius-button);
+  background: #ffffff;
+  color: var(--ic-text-heading);
+  cursor: pointer;
+}
+
+.menuButton:focus-visible,
+.navLink:focus-visible,
+.adminLink:focus-visible,
+.brand:focus-visible,
+.mobileLink:focus-visible,
+.mobileAdmin:focus-visible {
+  outline: 2px solid var(--ic-border-focus);
+  outline-offset: 2px;
+}
+
+.mobilePanel {
+  border-top: 1px solid var(--ic-border-default);
+  background: #ffffff;
+  padding: 1rem 1.5rem 1.5rem;
+}
+
+.mobileNav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mobileLink {
+  padding: 0.875rem 0.5rem;
+  color: var(--ic-text-heading);
+  font-weight: 500;
+  border-radius: var(--ic-radius-md);
+}
+
+.mobileLink:hover {
+  background: var(--ic-surface-section);
+}
+
+.mobileAdmin {
+  margin-top: 0.5rem;
+  padding: 0.875rem 1rem;
+  text-align: center;
+  border-radius: var(--ic-radius-button);
+  background: var(--ic-brand-primary);
+  color: var(--ic-brand-on-primary);
+  font-weight: 600;
+}
+
+.skipLink {
+  position: absolute;
+  left: 1rem;
+  top: -100%;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--ic-radius-button);
+  background: var(--ic-brand-primary);
+  color: var(--ic-brand-on-primary);
+  font-weight: 600;
+}
+
+.skipLink:focus {
+  top: 0.75rem;
+}
+
+.srOnlyClose {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (min-width: 900px) {
+  .desktopNav {
+    display: flex;
+  }
+
+  .menuButton {
+    display: none;
+  }
+
+  .mobilePanel {
+    display: none;
+  }
+}
