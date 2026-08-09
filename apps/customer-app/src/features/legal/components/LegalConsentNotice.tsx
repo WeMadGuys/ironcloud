@@ -13,6 +13,11 @@ type LegalConsentNoticeProps = {
 const { fontFamily } = typographyScale;
 const fonts = fontFamily.native;
 
+/**
+ * Balanced two-line consent notice (common auth-pattern):
+ *   By continuing, you agree to our
+ *   Terms of Service and Privacy Policy.
+ */
 export function LegalConsentNotice({
   prefix = 'By continuing, you agree to our',
 }: LegalConsentNoticeProps) {
@@ -22,8 +27,8 @@ export function LegalConsentNotice({
 
   return (
     <View style={styles.wrap} accessibilityRole="text">
-      <Text style={styles.text}>
-        {prefix}{' '}
+      <Text style={styles.prefix}>{prefix}</Text>
+      <Text style={styles.links}>
         <Text
           style={styles.link}
           onPress={() => open(APP_TERMS_URL)}
@@ -39,7 +44,6 @@ export function LegalConsentNotice({
         >
           Privacy Policy
         </Text>
-        .
       </Text>
     </View>
   );
@@ -47,19 +51,27 @@ export function LegalConsentNotice({
 
 const styles = StyleSheet.create({
   wrap: {
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.xs,
+    marginTop: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
   },
-  text: {
+  prefix: {
     fontFamily: fonts.inter.regular,
     fontSize: 12,
     lineHeight: 18,
     color: colors.text.muted,
     textAlign: 'center',
   },
+  links: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    lineHeight: 18,
+    color: colors.text.muted,
+    textAlign: 'center',
+    marginTop: 2,
+  },
   link: {
-    fontFamily: fonts.inter.semibold,
+    fontFamily: fonts.inter.medium,
     color: colors.brand.link,
-    textDecorationLine: 'underline',
   },
 });

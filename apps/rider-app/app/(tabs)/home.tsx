@@ -465,7 +465,7 @@ const styles = StyleSheet.create({
   avatarText: { fontFamily: fonts.poppins.bold, fontSize: 16, color: colors.brand.onPrimary },
   lookupOverlay: {
     flex: 1,
-    backgroundColor: colors.overlay.scrim,
+    backgroundColor: colors.surface.overlay,
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },

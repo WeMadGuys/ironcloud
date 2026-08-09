@@ -31,13 +31,6 @@ import { OTP_LENGTH } from '../../src/config/auth';
 import { resendOtp, sendOtp, verifyOtp } from '../../src/features/auth/services/auth';
 import { LegalConsentNotice } from '../../src/features/legal/components/LegalConsentNotice';
 
-const FEATURES = [
-  { icon: 'map-marker-path' as const, label: 'Optimized\nRoutes' },
-  { icon: 'package-variant' as const, label: 'Pickup &\nDelivery' },
-  { icon: 'clock-outline' as const, label: 'On-Time\nSlots' },
-  { icon: 'shield-check-outline' as const, label: 'Secure\nHandoff' },
-];
-
 const EMPTY_OTP = Array.from({ length: OTP_LENGTH }, () => '');
 
 type ScreenState = 'phone' | 'otp';
@@ -334,24 +327,6 @@ export default function LoginScreen() {
                 </Pressable>
 
                 <LegalConsentNotice />
-
-                {!keyboardVisible ? (
-                  <View style={styles.trustRow}>
-                    <View style={styles.trustIconWrap}>
-                      <MaterialCommunityIcons
-                        name="shield-check-outline"
-                        size={18}
-                        color={colors.brand.accent}
-                      />
-                    </View>
-                    <View style={styles.trustCopy}>
-                      <Text style={styles.trustTitle}>Secure. Private. Trusted.</Text>
-                      <Text style={styles.trustSubtitle}>
-                        We&apos;ll send you a one-time OTP to get started.
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
               </>
             ) : (
               <>
@@ -422,23 +397,6 @@ export default function LoginScreen() {
               </>
             )}
           </Animated.View>
-
-          {screenState === 'phone' && !keyboardVisible ? (
-            <View style={styles.featuresRow}>
-              {FEATURES.map((feature) => (
-                <View key={feature.label} style={styles.featureItem}>
-                  <View style={styles.featureIconWrap}>
-                    <MaterialCommunityIcons
-                      name={feature.icon}
-                      size={22}
-                      color={colors.icon.primary}
-                    />
-                  </View>
-                  <Text style={styles.featureLabel}>{feature.label}</Text>
-                </View>
-              ))}
-            </View>
-          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -573,7 +531,7 @@ const styles = StyleSheet.create({
     height: 116,
   },
   formSection: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.xl,
   },
   inputLabel: {
     fontFamily: fonts.inter.semibold,
@@ -587,7 +545,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.border.input,
     borderRadius: radius.input,
-    backgroundColor: inputs.default.background,
+    backgroundColor: colors.surface.elevated,
     minHeight: 52,
     paddingHorizontal: spacing.lg,
   },
@@ -645,62 +603,6 @@ const styles = StyleSheet.create({
     color: colors.brand.onPrimary,
     flex: 1,
     textAlign: 'center',
-  },
-  trustRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: spacing.sm,
-  },
-  trustIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.brand.accentMuted,
-    backgroundColor: colors.brand.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  trustCopy: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  trustTitle: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 13,
-    color: colors.text.primary,
-  },
-  trustSubtitle: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.secondary,
-  },
-  featuresRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing['2xl'],
-    paddingHorizontal: spacing.xs,
-  },
-  featureItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  featureIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    backgroundColor: colors.brand.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.sm.native,
-  },
-  featureLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 12,
-    color: colors.text.primary,
-    textAlign: 'center',
-    lineHeight: 16,
-    marginTop: spacing.sm,
   },
   phoneDisplay: {
     flexDirection: 'row',

@@ -41,11 +41,11 @@ import { supabase } from '../../src/lib/supabase';
 
 const EMPTY_OTP = Array.from({ length: OTP_LENGTH }, () => '');
 
-const FEATURES = [
-  { icon: 'clock-outline' as const, label: '24 Hour\nService' },
-  { icon: 'tshirt-crew-outline' as const, label: 'Premium\nFinish' },
-  { icon: 'truck-outline' as const, label: 'Pickup &\nDelivery' },
-  { icon: 'shield-check-outline' as const, label: 'Quality\nAssured' },
+const BRAND_PROMISES = [
+  { icon: 'clock-outline' as const, label: '24 Hour' },
+  { icon: 'tshirt-crew-outline' as const, label: 'Premium' },
+  { icon: 'truck-outline' as const, label: 'Pickup' },
+  { icon: 'shield-check-outline' as const, label: 'Quality' },
 ];
 
 type ScreenState = 'phone' | 'otp';
@@ -378,24 +378,6 @@ export default function LoginScreen() {
                 </Pressable>
 
                 <LegalConsentNotice />
-
-                {!keyboardVisible ? (
-                  <View style={styles.trustRow}>
-                    <View style={styles.trustIconWrap}>
-                      <MaterialCommunityIcons
-                        name="shield-check-outline"
-                        size={18}
-                        color={colors.brand.accent}
-                      />
-                    </View>
-                    <View style={styles.trustCopy}>
-                      <Text style={styles.trustTitle}>Secure. Private. Trusted.</Text>
-                      <Text style={styles.trustSubtitle}>
-                        We&apos;ll send you a one-time OTP to get started.
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
               </>
             ) : (
               <>
@@ -474,19 +456,19 @@ export default function LoginScreen() {
           </Animated.View>
 
           {screenState === 'phone' && !keyboardVisible ? (
-            <View style={styles.featuresRow}>
-              {FEATURES.map((feature) => (
-                <View key={feature.label} style={styles.featureItem}>
-                  <View style={styles.featureIconWrap}>
+            <View style={styles.promisesFooter}>
+              <View style={styles.promisesRow}>
+                {BRAND_PROMISES.map((item) => (
+                  <View key={item.label} style={styles.promiseItem}>
                     <MaterialCommunityIcons
-                      name={feature.icon}
-                      size={22}
-                      color={colors.icon.primary}
+                      name={item.icon}
+                      size={20}
+                      color={colors.brand.primary}
                     />
+                    <Text style={styles.promiseLabel}>{item.label}</Text>
                   </View>
-                  <Text style={styles.featureLabel}>{feature.label}</Text>
-                </View>
-              ))}
+                ))}
+              </View>
             </View>
           ) : null}
         </ScrollView>
@@ -616,7 +598,7 @@ const styles = StyleSheet.create({
     height: 116,
   },
   formSection: {
-    marginBottom: spacing.md,
+    marginBottom: spacing.xl,
   },
   inputLabel: {
     fontFamily: fonts.inter.semibold,
@@ -630,7 +612,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.border.input,
     borderRadius: radius.input,
-    backgroundColor: inputs.default.background,
+    backgroundColor: colors.surface.elevated,
     minHeight: 52,
     paddingHorizontal: spacing.lg,
   },
@@ -689,61 +671,30 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-  trustRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: spacing.sm,
+  promisesFooter: {
+    marginTop: 'auto',
+    paddingTop: spacing['2xl'],
+    paddingBottom: spacing.sm,
   },
-  trustIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.brand.accentMuted,
-    backgroundColor: colors.brand.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  trustCopy: {
-    flex: 1,
-    marginLeft: spacing.md,
-  },
-  trustTitle: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 13,
-    color: colors.text.primary,
-  },
-  trustSubtitle: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.secondary,
-  },
-  featuresRow: {
+  promisesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: spacing['2xl'],
-    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border.divider,
   },
-  featureItem: {
+  promiseItem: {
     flex: 1,
     alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: 2,
   },
-  featureIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.full,
-    backgroundColor: colors.brand.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.sm.native,
-  },
-  featureLabel: {
+  promiseLabel: {
     fontFamily: fonts.inter.medium,
-    fontSize: 12,
-    color: colors.text.primary,
+    fontSize: 11,
+    lineHeight: 14,
+    color: colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 16,
-    marginTop: spacing.sm,
   },
   phoneDisplay: {
     flexDirection: 'row',
