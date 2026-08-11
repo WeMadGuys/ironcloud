@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+  computeNextScheduledAt,
+  parseCampaignSchedule,
+} from './campaign-schedule';
+
 export type CampaignTarget = {
   community_ids?: string[] | null;
   cities?: string[] | null;
@@ -344,17 +349,19 @@ export async function sendPushCampaign(
 
 /**
  * Pick due scheduled push campaigns and send them.
+ * Recurring campaigns are re-queued with the next scheduled_at.
  */
 export async function processDuePushCampaigns(
   admin: SupabaseClient<any>,
 ): Promise<{ processed: number; results: SendCampaignResult[] }> {
-  const now = new Date().toISOString();
+  const now = new Date();
+  const nowIso = now.toISOString();
   const { data, error } = await admin
     .from('campaigns')
-    .select('id, name, target, payload, scheduled_at, status')
+    .select('id, name, target, payload, scheduled_at, schedule, status')
     .eq('channel', 'push')
     .eq('status', 'scheduled')
-    .lte('scheduled_at', now)
+    .lte('scheduled_at', nowIso)
     .order('scheduled_at', { ascending: true })
     .limit(20);
 
@@ -368,13 +375,31 @@ export async function processDuePushCampaigns(
       .update({ status: 'sending' })
       .eq('id', campaign.id)
       .eq('status', 'scheduled')
-      .select('id, name, target, payload')
+      .select('id, name, target, payload, schedule')
       .maybeSingle();
 
     if (claimError) throw new Error(claimError.message);
     if (!claimed) continue;
 
     const result = await sendPushCampaign(admin, claimed);
+
+    const schedule = parseCampaignSchedule(claimed.schedule);
+    if (schedule && schedule.frequency !== 'once') {
+      const next = computeNextScheduledAt(schedule, now, { skipCurrent: true });
+      if (next) {
+        await admin
+          .from('campaigns')
+          .update({
+            status: 'scheduled',
+            scheduled_at: next.toISOString(),
+            sent_at: new Date().toISOString(),
+            sent_count: result.sent,
+          })
+          .eq('id', campaign.id);
+        result.status = 'sent';
+      }
+    }
+
     results.push(result);
   }
 

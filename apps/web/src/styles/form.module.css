@@ -99,12 +99,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: var(--ic-spacing-sm);
-  max-height: 180px;
+  max-height: 220px;
   overflow-y: auto;
   padding: var(--ic-spacing-sm);
   border: 1px solid var(--ic-border-default);
   border-radius: var(--ic-radius-md);
   background: var(--ic-surface-elevated);
+  -webkit-overflow-scrolling: touch;
 }
 
 .checkLabel {

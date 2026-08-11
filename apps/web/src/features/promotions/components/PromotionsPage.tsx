@@ -28,6 +28,13 @@ import {
   fetchReferralPrograms,
   uploadBannerImage,
 } from '../services/promotions.service';
+import {
+  buildSchedulePayload,
+  computeNextScheduledAt,
+  formatScheduleSummary,
+  parseCampaignSchedule,
+  type CampaignFrequency,
+} from '@/lib/campaign-schedule';
 
 import formStyles from '@/styles/form.module.css';
 import pageStyles from '@/styles/pages.module.css';
@@ -57,15 +64,29 @@ const emptyCampaign = () => ({
   name: '',
   type: 'promo',
   channel: 'push' as 'push' | 'sms' | 'whatsapp' | 'email' | 'in_app',
-  status: 'draft',
+  status: 'scheduled',
   title: '',
   body: '',
   path: '/booking/request',
-  scheduledAt: '',
+  audienceMode: 'all' as 'all' | 'communities' | 'cities' | 'users',
+  frequency: 'once' as CampaignFrequency,
+  scheduleTime: '21:00',
+  scheduleDays: [1, 2, 3, 4, 5] as number[],
+  onceDate: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
   communityIds: [] as string[],
   cities: [] as string[],
   userIds: [] as string[],
 });
+
+const WEEKDAYS = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+] as const;
 
 function campaignPayload(raw: unknown): { title: string; body: string; path: string } {
   if (!raw || typeof raw !== 'object') return { title: '', body: '', path: '' };
@@ -93,6 +114,17 @@ function campaignTarget(raw: unknown): {
     cities: asIds(obj.cities),
     userIds: asIds(obj.user_ids),
   };
+}
+
+function audienceModeFromTarget(t: {
+  communityIds: string[];
+  cities: string[];
+  userIds: string[];
+}): 'all' | 'communities' | 'cities' | 'users' {
+  if (t.userIds.length) return 'users';
+  if (t.communityIds.length) return 'communities';
+  if (t.cities.length) return 'cities';
+  return 'all';
 }
 
 const emptyBanner = () => ({
@@ -171,6 +203,7 @@ export const PromotionsPage = () => {
   const [uploadingBannerImage, setUploadingBannerImage] = useState(false);
   const [userPickerOpen, setUserPickerOpen] = useState(false);
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
+  const [userPickerTarget, setUserPickerTarget] = useState<'banner' | 'campaign'>('banner');
 
   const createCoupon = trpc.promotions.createCoupon.useMutation();
   const updateCoupon = trpc.promotions.updateCoupon.useMutation();
@@ -304,16 +337,67 @@ export const PromotionsPage = () => {
         toast('Push message body is required', 'error');
         return;
       }
-      const scheduledAt = toIsoOrNull(campaignForm.scheduledAt);
       const path = campaignForm.path.trim();
       if (path && !path.startsWith('/')) {
         toast('Navigation path must start with / (e.g. /booking/request)', 'error');
         return;
       }
 
+      let communityIds: string[] | null = null;
+      let cities: string[] | null = null;
+      let userIds: string[] | null = null;
+      if (campaignForm.audienceMode === 'communities') {
+        if (!campaignForm.communityIds.length) {
+          toast('Select at least one community', 'error');
+          return;
+        }
+        communityIds = campaignForm.communityIds;
+      } else if (campaignForm.audienceMode === 'cities') {
+        if (!campaignForm.cities.length) {
+          toast('Select at least one city', 'error');
+          return;
+        }
+        cities = campaignForm.cities;
+      } else if (campaignForm.audienceMode === 'users') {
+        if (!campaignForm.userIds.length) {
+          toast('Select at least one customer', 'error');
+          return;
+        }
+        userIds = campaignForm.userIds;
+      }
+
+      let schedule = null as ReturnType<typeof buildSchedulePayload>;
+      let scheduledAt: string | null = null;
       let status = campaignForm.status;
-      if (scheduledAt && status === 'draft') {
+
+      if (status === 'scheduled' || status === 'sending') {
+        schedule = buildSchedulePayload({
+          frequency: campaignForm.frequency,
+          time: campaignForm.scheduleTime,
+          days: campaignForm.scheduleDays,
+          onceDate: campaignForm.onceDate,
+        });
+        if (!schedule) {
+          toast(
+            campaignForm.frequency === 'once'
+              ? 'Pick a date and valid time for a one-time send'
+              : campaignForm.frequency === 'weekly'
+                ? 'Pick at least one weekday and a valid time'
+                : 'Pick a valid time (HH:mm)',
+            'error',
+          );
+          return;
+        }
+        const next = computeNextScheduledAt(schedule, new Date());
+        if (!next) {
+          toast('Could not compute next send time — check date/time', 'error');
+          return;
+        }
+        scheduledAt = next.toISOString();
         status = 'scheduled';
+      } else {
+        schedule = null;
+        scheduledAt = null;
       }
 
       const payload = {
@@ -323,12 +407,11 @@ export const PromotionsPage = () => {
         title: (campaignForm.title.trim() || campaignForm.name).trim(),
         body: campaignForm.body.trim(),
         path: path || null,
-        communityIds: campaignForm.communityIds.length
-          ? campaignForm.communityIds
-          : null,
-        cities: campaignForm.cities.length ? campaignForm.cities : null,
-        userIds: campaignForm.userIds.length ? campaignForm.userIds : null,
+        communityIds,
+        cities,
+        userIds,
         scheduledAt,
+        schedule,
         status,
       };
 
@@ -810,11 +893,16 @@ export const PromotionsPage = () => {
               },
               {
                 key: 'scheduled',
-                header: 'Scheduled',
-                render: (c) =>
-                  c.scheduled_at
+                header: 'Schedule',
+                render: (c) => {
+                  const summary = formatScheduleSummary(
+                    parseCampaignSchedule(c.schedule),
+                  );
+                  if (summary !== '—') return summary;
+                  return c.scheduled_at
                     ? new Date(c.scheduled_at as string).toLocaleString()
-                    : '—',
+                    : '—';
+                },
               },
               {
                 key: 'status',
@@ -838,6 +926,18 @@ export const PromotionsPage = () => {
                       onClick={() => {
                         const p = campaignPayload(c.payload);
                         const t = campaignTarget(c.target);
+                        const sched =
+                          parseCampaignSchedule(c.schedule) ??
+                          parseCampaignSchedule({
+                            frequency: 'once',
+                            time: '21:00',
+                            once_date: c.scheduled_at
+                              ? new Date(c.scheduled_at as string)
+                                  .toLocaleDateString('en-CA', {
+                                    timeZone: 'Asia/Kolkata',
+                                  })
+                              : '',
+                          });
                         setEditingCampaign(c);
                         setCampaignForm({
                           name: c.name ?? '',
@@ -848,7 +948,13 @@ export const PromotionsPage = () => {
                           title: p.title,
                           body: p.body,
                           path: p.path || '/booking/request',
-                          scheduledAt: toLocalInput(c.scheduled_at),
+                          audienceMode: audienceModeFromTarget(t),
+                          frequency: sched?.frequency ?? 'once',
+                          scheduleTime: sched?.time ?? '21:00',
+                          scheduleDays: sched?.days?.length
+                            ? [...sched.days]
+                            : [1, 2, 3, 4, 5],
+                          onceDate: sched?.once_date ?? '',
                           communityIds: t.communityIds,
                           cities: t.cities,
                           userIds: t.userIds,
@@ -1295,40 +1401,43 @@ export const PromotionsPage = () => {
                 placeholder="Tonight booking reminder"
               />
             </div>
-            <div className={formStyles.field}>
-              <label className={formStyles.label} htmlFor="campaign-type">
-                Type *
-              </label>
-              <input
-                id="campaign-type"
-                className={formStyles.input}
-                value={campaignForm.type}
-                onChange={(e) => setCampaignForm((f) => ({ ...f, type: e.target.value }))}
-                placeholder="promo"
-              />
+            <div className={formStyles.row2}>
+              <div className={formStyles.field}>
+                <label className={formStyles.label} htmlFor="campaign-type">
+                  Type *
+                </label>
+                <input
+                  id="campaign-type"
+                  className={formStyles.input}
+                  value={campaignForm.type}
+                  onChange={(e) => setCampaignForm((f) => ({ ...f, type: e.target.value }))}
+                  placeholder="promo"
+                />
+              </div>
+              <div className={formStyles.field}>
+                <label className={formStyles.label} htmlFor="campaign-channel">
+                  Channel
+                </label>
+                <select
+                  id="campaign-channel"
+                  className={formStyles.select}
+                  value={campaignForm.channel}
+                  onChange={(e) =>
+                    setCampaignForm((f) => ({
+                      ...f,
+                      channel: e.target.value as typeof campaignForm.channel,
+                    }))
+                  }
+                >
+                  <option value="push">Push</option>
+                  <option value="sms">SMS</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="email">Email</option>
+                  <option value="in_app">In-app</option>
+                </select>
+              </div>
             </div>
-            <div className={formStyles.field}>
-              <label className={formStyles.label} htmlFor="campaign-channel">
-                Channel
-              </label>
-              <select
-                id="campaign-channel"
-                className={formStyles.select}
-                value={campaignForm.channel}
-                onChange={(e) =>
-                  setCampaignForm((f) => ({
-                    ...f,
-                    channel: e.target.value as typeof campaignForm.channel,
-                  }))
-                }
-              >
-                <option value="push">Push</option>
-                <option value="sms">SMS</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="email">Email</option>
-                <option value="in_app">In-app</option>
-              </select>
-            </div>
+
             {campaignForm.channel === 'push' ? (
               <>
                 <div className={formStyles.field}>
@@ -1373,30 +1482,125 @@ export const PromotionsPage = () => {
                     }
                     placeholder="/booking/request"
                   />
-                  <p className={formStyles.hint}>
-                    App path opened when the customer taps the notification.
-                  </p>
                 </div>
               </>
             ) : null}
+
             <div className={formStyles.field}>
-              <label className={formStyles.label} htmlFor="campaign-scheduled">
-                Schedule send at
-              </label>
-              <input
-                id="campaign-scheduled"
-                className={formStyles.input}
-                type="datetime-local"
-                value={campaignForm.scheduledAt}
-                onChange={(e) =>
-                  setCampaignForm((f) => ({ ...f, scheduledAt: e.target.value }))
-                }
-              />
+              <span className={formStyles.label}>Audience *</span>
               <p className={formStyles.hint}>
-                Leave empty for draft. Set a time and status Scheduled to send via cron
-                (every 5 min).
+                Choose who should receive this campaign. Leave as Everyone to target all
+                customers with a push token.
               </p>
+              <div className={formStyles.checkRow}>
+                {(
+                  [
+                    ['all', 'Everyone'],
+                    ['communities', 'Communities'],
+                    ['cities', 'Cities'],
+                    ['users', 'Specific customers'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label key={value} className={formStyles.checkLabel}>
+                    <input
+                      type="radio"
+                      name="campaign-audience"
+                      checked={campaignForm.audienceMode === value}
+                      onChange={() =>
+                        setCampaignForm((f) => ({
+                          ...f,
+                          audienceMode: value,
+                          communityIds: value === 'communities' ? f.communityIds : [],
+                          cities: value === 'cities' ? f.cities : [],
+                          userIds: value === 'users' ? f.userIds : [],
+                        }))
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
             </div>
+
+            {campaignForm.audienceMode === 'communities' ? (
+              <div className={formStyles.field}>
+                <span className={formStyles.label}>Communities *</span>
+                {communities.length === 0 ? (
+                  <p className={formStyles.hint}>No active communities found.</p>
+                ) : (
+                  <div className={formStyles.checkGrid}>
+                    {communities.map((c) => (
+                      <label key={c.id} className={formStyles.checkLabel}>
+                        <input
+                          type="checkbox"
+                          checked={campaignForm.communityIds.includes(c.id)}
+                          onChange={() => toggleCommunity(c.id)}
+                        />
+                        {c.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {campaignForm.audienceMode === 'cities' ? (
+              <div className={formStyles.field}>
+                <span className={formStyles.label}>Cities *</span>
+                {cityOptions.length === 0 ? (
+                  <p className={formStyles.hint}>No cities found from communities.</p>
+                ) : (
+                  <div className={formStyles.checkGrid}>
+                    {cityOptions.map((city) => (
+                      <label key={city} className={formStyles.checkLabel}>
+                        <input
+                          type="checkbox"
+                          checked={campaignForm.cities.includes(city)}
+                          onChange={() => toggleCity(city)}
+                        />
+                        {city}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {campaignForm.audienceMode === 'users' ? (
+              <div className={formStyles.field}>
+                <span className={formStyles.label}>Customers *</span>
+                <p className={formStyles.hint}>
+                  {campaignForm.userIds.length
+                    ? `${campaignForm.userIds.length} customer${campaignForm.userIds.length === 1 ? '' : 's'} selected`
+                    : 'No customers selected yet'}
+                </p>
+                <div className={formStyles.rowActions}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setUserPickerTarget('campaign');
+                      setPickerSelectedIds(new Set(campaignForm.userIds));
+                      setUserPickerOpen(true);
+                    }}
+                  >
+                    Select customers
+                  </Button>
+                  {campaignForm.userIds.length > 0 ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setCampaignForm((f) => ({ ...f, userIds: [] }))}
+                    >
+                      Clear users
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="campaign-status">
                 Status
@@ -1404,88 +1608,125 @@ export const PromotionsPage = () => {
               <select
                 id="campaign-status"
                 className={formStyles.select}
-                value={campaignForm.status}
+                value={
+                  campaignForm.status === 'scheduled' || campaignForm.status === 'sending'
+                    ? 'scheduled'
+                    : campaignForm.status === 'sent' || campaignForm.status === 'completed'
+                      ? 'sent'
+                      : campaignForm.status === 'failed'
+                        ? 'failed'
+                        : 'draft'
+                }
                 onChange={(e) =>
                   setCampaignForm((f) => ({ ...f, status: e.target.value }))
                 }
               >
-                <option value="draft">Draft</option>
+                <option value="draft">Draft (do not send)</option>
                 <option value="scheduled">Scheduled</option>
-                <option value="sending">Sending</option>
                 <option value="sent">Sent</option>
                 <option value="failed">Failed</option>
-                <option value="completed">Completed</option>
               </select>
             </div>
-            <div className={formStyles.field}>
-              <span className={formStyles.label}>Audience</span>
-              <p className={formStyles.hint}>
-                Leave all empty to send to everyone with a push token. If specific users
-                are selected, only those users are targeted. Otherwise community and city
-                filters both apply when set.
-              </p>
-            </div>
-            <div className={formStyles.field}>
-              <span className={formStyles.label}>Communities (optional)</span>
-              <div className={formStyles.checkGrid}>
-                {communities.map((c) => (
-                  <label key={c.id} className={formStyles.checkLabel}>
+
+            {(campaignForm.status === 'scheduled' ||
+              campaignForm.status === 'sending') && (
+              <>
+                <div className={formStyles.field}>
+                  <span className={formStyles.label}>Repeat *</span>
+                  <div className={formStyles.checkRow}>
+                    {(
+                      [
+                        ['once', 'Once'],
+                        ['daily', 'Daily'],
+                        ['weekly', 'Weekly'],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <label key={value} className={formStyles.checkLabel}>
+                        <input
+                          type="radio"
+                          name="campaign-frequency"
+                          checked={campaignForm.frequency === value}
+                          onChange={() =>
+                            setCampaignForm((f) => ({ ...f, frequency: value }))
+                          }
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={formStyles.row2}>
+                  {campaignForm.frequency === 'once' ? (
+                    <div className={formStyles.field}>
+                      <label className={formStyles.label} htmlFor="campaign-once-date">
+                        Date * (IST)
+                      </label>
+                      <input
+                        id="campaign-once-date"
+                        className={formStyles.input}
+                        type="date"
+                        value={campaignForm.onceDate}
+                        onChange={(e) =>
+                          setCampaignForm((f) => ({ ...f, onceDate: e.target.value }))
+                        }
+                      />
+                    </div>
+                  ) : null}
+                  <div className={formStyles.field}>
+                    <label className={formStyles.label} htmlFor="campaign-time">
+                      Time * (IST)
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={campaignForm.communityIds.includes(c.id)}
-                      onChange={() => toggleCommunity(c.id)}
+                      id="campaign-time"
+                      className={formStyles.input}
+                      type="time"
+                      value={campaignForm.scheduleTime}
+                      onChange={(e) =>
+                        setCampaignForm((f) => ({
+                          ...f,
+                          scheduleTime: e.target.value,
+                        }))
+                      }
                     />
-                    {c.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className={formStyles.field}>
-              <span className={formStyles.label}>Cities (optional)</span>
-              <div className={formStyles.checkGrid}>
-                {cityOptions.map((city) => (
-                  <label key={city} className={formStyles.checkLabel}>
-                    <input
-                      type="checkbox"
-                      checked={campaignForm.cities.includes(city)}
-                      onChange={() => toggleCity(city)}
-                    />
-                    {city}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className={formStyles.field}>
-              <span className={formStyles.label}>Specific customers (optional)</span>
-              <p className={formStyles.hint}>
-                {campaignForm.userIds.length
-                  ? `${campaignForm.userIds.length} customer${campaignForm.userIds.length === 1 ? '' : 's'} selected`
-                  : 'No customers selected'}
-              </p>
-              <div className={formStyles.rowActions}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    setPickerSelectedIds(new Set(campaignForm.userIds));
-                    setUserPickerOpen(true);
-                  }}
-                >
-                  Select customers
-                </Button>
-                {campaignForm.userIds.length > 0 ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setCampaignForm((f) => ({ ...f, userIds: [] }))}
-                  >
-                    Clear users
-                  </Button>
+                  </div>
+                </div>
+
+                {campaignForm.frequency === 'weekly' ? (
+                  <div className={formStyles.field}>
+                    <span className={formStyles.label}>Weekdays *</span>
+                    <div className={formStyles.checkRow}>
+                      {WEEKDAYS.map((d) => (
+                        <label key={d.value} className={formStyles.checkLabel}>
+                          <input
+                            type="checkbox"
+                            checked={campaignForm.scheduleDays.includes(d.value)}
+                            onChange={() =>
+                              setCampaignForm((f) => ({
+                                ...f,
+                                scheduleDays: f.scheduleDays.includes(d.value)
+                                  ? f.scheduleDays.filter((x) => x !== d.value)
+                                  : [...f.scheduleDays, d.value].sort((a, b) => a - b),
+                              }))
+                            }
+                          />
+                          {d.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 ) : null}
-              </div>
-            </div>
+
+                <p className={formStyles.hint}>
+                  Timezone: Asia/Kolkata (IST). Cron checks every 5 minutes.
+                  {campaignForm.frequency === 'daily'
+                    ? ' Sends every day at this time.'
+                    : campaignForm.frequency === 'weekly'
+                      ? ' Sends on selected weekdays at this time.'
+                      : ' Sends once at the chosen date and time.'}
+                </p>
+              </>
+            )}
           </div>
         )}
 
@@ -1657,6 +1898,7 @@ export const PromotionsPage = () => {
                   variant="secondary"
                   size="sm"
                   onClick={() => {
+                    setUserPickerTarget('banner');
                     setPickerSelectedIds(new Set(bannerForm.userIds));
                     setUserPickerOpen(true);
                   }}
@@ -1887,7 +2129,7 @@ export const PromotionsPage = () => {
             </Button>
             <Button
               onClick={() => {
-                if (tab === 'campaigns') {
+                if (userPickerTarget === 'campaign') {
                   setCampaignForm((f) => ({
                     ...f,
                     userIds: Array.from(pickerSelectedIds),

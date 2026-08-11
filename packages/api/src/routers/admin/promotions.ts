@@ -129,11 +129,22 @@ export const promotionsRouter = router({
         cities: z.array(z.string().min(1)).optional().nullable(),
         userIds: z.array(z.string().uuid()).optional().nullable(),
         scheduledAt: z.string().datetime().optional().nullable(),
+        schedule: z
+          .object({
+            frequency: z.enum(['once', 'daily', 'weekly']),
+            time: z.string().regex(/^\d{1,2}:\d{2}$/),
+            days: z.array(z.number().int().min(0).max(6)).optional().nullable(),
+            once_date: z.string().optional().nullable(),
+            timezone: z.string().optional(),
+          })
+          .optional()
+          .nullable(),
         status: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const scheduledAt = input.scheduledAt ?? null;
+      const schedule = input.schedule ?? null;
       const status =
         input.status?.trim() ||
         (scheduledAt ? 'scheduled' : 'draft');
@@ -170,6 +181,7 @@ export const promotionsRouter = router({
           target,
           payload,
           scheduled_at: scheduledAt,
+          schedule,
           status,
         })
         .select('id')
@@ -203,6 +215,16 @@ export const promotionsRouter = router({
         cities: z.array(z.string().min(1)).optional().nullable(),
         userIds: z.array(z.string().uuid()).optional().nullable(),
         scheduledAt: z.string().datetime().optional().nullable(),
+        schedule: z
+          .object({
+            frequency: z.enum(['once', 'daily', 'weekly']),
+            time: z.string().regex(/^\d{1,2}:\d{2}$/),
+            days: z.array(z.number().int().min(0).max(6)).optional().nullable(),
+            once_date: z.string().optional().nullable(),
+            timezone: z.string().optional(),
+          })
+          .optional()
+          .nullable(),
         status: z.string().optional(),
       }),
     )
@@ -244,6 +266,9 @@ export const promotionsRouter = router({
 
       if (scheduledAt !== undefined) {
         updates.scheduled_at = scheduledAt;
+      }
+      if (input.schedule !== undefined) {
+        updates.schedule = input.schedule;
       }
       if (status) {
         updates.status = status;

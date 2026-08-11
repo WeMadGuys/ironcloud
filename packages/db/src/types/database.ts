@@ -726,6 +726,7 @@ export interface Database {
           payload: Json;
           status: string;
           scheduled_at: string | null;
+          schedule: Json | null;
           sent_count: number;
           sent_at: string | null;
           created_at: string;
@@ -739,6 +740,7 @@ export interface Database {
           payload?: Json;
           status?: string;
           scheduled_at?: string | null;
+          schedule?: Json | null;
           sent_count?: number;
           sent_at?: string | null;
           created_at?: string;
@@ -752,6 +754,7 @@ export interface Database {
           payload?: Json;
           status?: string;
           scheduled_at?: string | null;
+          schedule?: Json | null;
           sent_count?: number;
           sent_at?: string | null;
           created_at?: string;
