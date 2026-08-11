@@ -338,6 +338,7 @@ const createSemanticColors = (p: PaletteShape) =>
     icon: {
       primary: p.brand.navy800,
       secondary: p.neutral.gray500,
+      muted: p.neutral.gray400,
       inactive: p.neutral.gray300,
       inverse: p.neutral.white,
     },

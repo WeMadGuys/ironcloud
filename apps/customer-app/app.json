@@ -24,7 +24,8 @@
       },
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.INTERNET"
+        "android.permission.INTERNET",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -36,6 +37,13 @@
         {
           "photosPermission": "Allow IronCloud to access your photos to set a profile picture.",
           "cameraPermission": "Allow IronCloud to use your camera to take a profile picture."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#0E2A4A"
         }
       ]
     ],

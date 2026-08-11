@@ -117,52 +117,154 @@ export const promotionsRouter = router({
     }),
 
   createCampaign: adminProcedure
-    .input(z.object({
-      name: z.string().min(1),
-      type: z.string(),
-      channel: z.enum(['push', 'sms', 'whatsapp', 'email', 'in_app']),
-      target: z.record(z.unknown()).optional(),
-      payload: z.record(z.unknown()).optional(),
-      scheduledAt: z.string().datetime().optional(),
-    }))
+    .input(
+      z.object({
+        name: z.string().min(1),
+        type: z.string().min(1),
+        channel: z.enum(['push', 'sms', 'whatsapp', 'email', 'in_app']),
+        title: z.string().min(1).optional(),
+        body: z.string().min(1).optional(),
+        path: z.string().optional().nullable(),
+        communityIds: z.array(z.string().uuid()).optional().nullable(),
+        cities: z.array(z.string().min(1)).optional().nullable(),
+        userIds: z.array(z.string().uuid()).optional().nullable(),
+        scheduledAt: z.string().datetime().optional().nullable(),
+        status: z.string().optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
+      const scheduledAt = input.scheduledAt ?? null;
+      const status =
+        input.status?.trim() ||
+        (scheduledAt ? 'scheduled' : 'draft');
+
+      const target = {
+        community_ids:
+          input.communityIds && input.communityIds.length > 0
+            ? input.communityIds
+            : null,
+        cities:
+          input.cities && input.cities.length > 0
+            ? input.cities.map((c) => c.trim()).filter(Boolean)
+            : null,
+        user_ids:
+          input.userIds && input.userIds.length > 0 ? input.userIds : null,
+      };
+
+      const payload = {
+        title: (input.title ?? input.name).trim(),
+        body: (input.body ?? '').trim(),
+        path: input.path?.trim() || null,
+      };
+
+      if (input.channel === 'push' && !payload.body) {
+        throw new Error('Push message body is required');
+      }
+
       const { data, error } = await ctx.supabase
         .from('campaigns')
         .insert({
-          name: input.name,
-          type: input.type,
+          name: input.name.trim(),
+          type: input.type.trim(),
           channel: input.channel,
-          target: input.target ?? {},
-          payload: input.payload ?? {},
-          scheduled_at: input.scheduledAt ?? null,
-          status: input.scheduledAt ? 'scheduled' : 'draft',
+          target,
+          payload,
+          scheduled_at: scheduledAt,
+          status,
         })
         .select('id')
         .single();
 
       if (error) throw new Error(error.message);
 
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'campaign.create',
+        entityType: 'campaign',
+        entityId: data.id,
+        after: { name: input.name, channel: input.channel, status },
+      });
+
       return { id: data.id };
     }),
 
   updateCampaign: adminProcedure
-    .input(z.object({
-      id: z.string().uuid(),
-      name: z.string().min(1),
-      type: z.string().min(1),
-      channel: z.enum(['push', 'sms', 'whatsapp', 'email', 'in_app']),
-      status: z.string().optional(),
-    }))
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        name: z.string().min(1),
+        type: z.string().min(1),
+        channel: z.enum(['push', 'sms', 'whatsapp', 'email', 'in_app']),
+        title: z.string().min(1).optional(),
+        body: z.string().min(1).optional(),
+        path: z.string().optional().nullable(),
+        communityIds: z.array(z.string().uuid()).optional().nullable(),
+        cities: z.array(z.string().min(1)).optional().nullable(),
+        userIds: z.array(z.string().uuid()).optional().nullable(),
+        scheduledAt: z.string().datetime().optional().nullable(),
+        status: z.string().optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
-      const updates = {
+      const scheduledAt =
+        input.scheduledAt === undefined ? undefined : input.scheduledAt;
+      const status = input.status?.trim();
+
+      const target = {
+        community_ids:
+          input.communityIds && input.communityIds.length > 0
+            ? input.communityIds
+            : null,
+        cities:
+          input.cities && input.cities.length > 0
+            ? input.cities.map((c) => c.trim()).filter(Boolean)
+            : null,
+        user_ids:
+          input.userIds && input.userIds.length > 0 ? input.userIds : null,
+      };
+
+      const payload = {
+        title: (input.title ?? input.name).trim(),
+        body: (input.body ?? '').trim(),
+        path: input.path?.trim() || null,
+      };
+
+      if (input.channel === 'push' && !payload.body) {
+        throw new Error('Push message body is required');
+      }
+
+      const updates: Record<string, unknown> = {
         name: input.name.trim(),
         type: input.type.trim(),
         channel: input.channel,
-        ...(input.status ? { status: input.status } : {}),
+        target,
+        payload,
       };
 
-      const { error } = await ctx.supabase.from('campaigns').update(updates).eq('id', input.id);
+      if (scheduledAt !== undefined) {
+        updates.scheduled_at = scheduledAt;
+      }
+      if (status) {
+        updates.status = status;
+      } else if (scheduledAt) {
+        updates.status = 'scheduled';
+      }
+
+      const { error } = await ctx.supabase
+        .from('campaigns')
+        .update(updates)
+        .eq('id', input.id);
       if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'campaign.update',
+        entityType: 'campaign',
+        entityId: input.id,
+        after: updates,
+      });
 
       return { success: true };
     }),

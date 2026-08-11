@@ -639,11 +639,13 @@ export interface Database {
         Row: { partner_id: string; community_id: string };
         Insert: { partner_id: string; community_id: string };
         Update: { partner_id?: string; community_id?: string };
+        Relationships: [];
       };
       partner_orders: {
         Row: { partner_id: string; order_id: string; assigned_at: string };
         Insert: { partner_id: string; order_id: string; assigned_at?: string };
         Update: { partner_id?: string; order_id?: string; assigned_at?: string };
+        Relationships: [];
       };
       settlements: {
         Row: {
@@ -724,6 +726,8 @@ export interface Database {
           payload: Json;
           status: string;
           scheduled_at: string | null;
+          sent_count: number;
+          sent_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -735,6 +739,8 @@ export interface Database {
           payload?: Json;
           status?: string;
           scheduled_at?: string | null;
+          sent_count?: number;
+          sent_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -746,7 +752,39 @@ export interface Database {
           payload?: Json;
           status?: string;
           scheduled_at?: string | null;
+          sent_count?: number;
+          sent_at?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      push_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          expo_push_token: string;
+          platform: string | null;
+          promotions_enabled: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          expo_push_token: string;
+          platform?: string | null;
+          promotions_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          expo_push_token?: string;
+          platform?: string | null;
+          promotions_enabled?: boolean;
+          created_at?: string;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -1036,6 +1074,7 @@ export interface Database {
         Row: { rider_id: string; community_id: string };
         Insert: { rider_id: string; community_id: string };
         Update: { rider_id?: string; community_id?: string };
+        Relationships: [];
       };
       order_items: {
         Row: {

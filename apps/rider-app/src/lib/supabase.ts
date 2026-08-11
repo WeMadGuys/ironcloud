@@ -64,7 +64,7 @@ const createAuthStorage = (): SupportedStorage => {
     },
     removeItem: async (key) => {
       try {
-        await SecureStore.removeItemAsync(key);
+        await SecureStore.deleteItemAsync(key);
       } catch {
         // Ignore
       }

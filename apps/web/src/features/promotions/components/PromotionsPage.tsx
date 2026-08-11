@@ -58,7 +58,42 @@ const emptyCampaign = () => ({
   type: 'promo',
   channel: 'push' as 'push' | 'sms' | 'whatsapp' | 'email' | 'in_app',
   status: 'draft',
+  title: '',
+  body: '',
+  path: '/booking/request',
+  scheduledAt: '',
+  communityIds: [] as string[],
+  cities: [] as string[],
+  userIds: [] as string[],
 });
+
+function campaignPayload(raw: unknown): { title: string; body: string; path: string } {
+  if (!raw || typeof raw !== 'object') return { title: '', body: '', path: '' };
+  const obj = raw as Record<string, unknown>;
+  return {
+    title: typeof obj.title === 'string' ? obj.title : '',
+    body: typeof obj.body === 'string' ? obj.body : '',
+    path: typeof obj.path === 'string' ? obj.path : '',
+  };
+}
+
+function campaignTarget(raw: unknown): {
+  communityIds: string[];
+  cities: string[];
+  userIds: string[];
+} {
+  if (!raw || typeof raw !== 'object') {
+    return { communityIds: [], cities: [], userIds: [] };
+  }
+  const obj = raw as Record<string, unknown>;
+  const asIds = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  return {
+    communityIds: asIds(obj.community_ids ?? obj.communities),
+    cities: asIds(obj.cities),
+    userIds: asIds(obj.user_ids),
+  };
+}
 
 const emptyBanner = () => ({
   title: '',
@@ -265,15 +300,41 @@ export const PromotionsPage = () => {
         toast('Name and type are required', 'error');
         return;
       }
+      if (campaignForm.channel === 'push' && !campaignForm.body.trim()) {
+        toast('Push message body is required', 'error');
+        return;
+      }
+      const scheduledAt = toIsoOrNull(campaignForm.scheduledAt);
+      const path = campaignForm.path.trim();
+      if (path && !path.startsWith('/')) {
+        toast('Navigation path must start with / (e.g. /booking/request)', 'error');
+        return;
+      }
+
+      let status = campaignForm.status;
+      if (scheduledAt && status === 'draft') {
+        status = 'scheduled';
+      }
+
+      const payload = {
+        name: campaignForm.name.trim(),
+        type: campaignForm.type.trim(),
+        channel: campaignForm.channel,
+        title: (campaignForm.title.trim() || campaignForm.name).trim(),
+        body: campaignForm.body.trim(),
+        path: path || null,
+        communityIds: campaignForm.communityIds.length
+          ? campaignForm.communityIds
+          : null,
+        cities: campaignForm.cities.length ? campaignForm.cities : null,
+        userIds: campaignForm.userIds.length ? campaignForm.userIds : null,
+        scheduledAt,
+        status,
+      };
+
       if (editingCampaign) {
         updateCampaign.mutate(
-          {
-            id: editingCampaign.id,
-            name: campaignForm.name.trim(),
-            type: campaignForm.type.trim(),
-            channel: campaignForm.channel,
-            status: campaignForm.status,
-          },
+          { id: editingCampaign.id, ...payload },
           {
             onSuccess: () => {
               toast('Campaign updated', 'success');
@@ -284,21 +345,14 @@ export const PromotionsPage = () => {
           },
         );
       } else {
-        createCampaign.mutate(
-          {
-            name: campaignForm.name.trim(),
-            type: campaignForm.type.trim(),
-            channel: campaignForm.channel,
+        createCampaign.mutate(payload, {
+          onSuccess: () => {
+            toast('Campaign created', 'success');
+            closeModal();
+            load();
           },
-          {
-            onSuccess: () => {
-              toast('Campaign created', 'success');
-              closeModal();
-              load();
-            },
-            onError: (err) => toast(err.message, 'error'),
-          },
-        );
+          onError: (err) => toast(err.message, 'error'),
+        });
       }
       return;
     }
@@ -540,6 +594,15 @@ export const PromotionsPage = () => {
       }));
       return;
     }
+    if (tab === 'campaigns') {
+      setCampaignForm((f) => ({
+        ...f,
+        communityIds: f.communityIds.includes(id)
+          ? f.communityIds.filter((x) => x !== id)
+          : [...f.communityIds, id],
+      }));
+      return;
+    }
     setCouponForm((f) => ({
       ...f,
       communityIds: f.communityIds.includes(id)
@@ -560,6 +623,15 @@ export const PromotionsPage = () => {
     }
     if (tab === 'banners') {
       setBannerForm((f) => ({
+        ...f,
+        cities: f.cities.includes(city)
+          ? f.cities.filter((x) => x !== city)
+          : [...f.cities, city],
+      }));
+      return;
+    }
+    if (tab === 'campaigns') {
+      setCampaignForm((f) => ({
         ...f,
         cities: f.cities.includes(city)
           ? f.cities.filter((x) => x !== city)
@@ -700,12 +772,60 @@ export const PromotionsPage = () => {
           <Table
             columns={[
               { key: 'name', header: 'Name', render: (c) => c.name },
-              { key: 'type', header: 'Type', render: (c) => c.type },
+              {
+                key: 'message',
+                header: 'Message',
+                render: (c) => {
+                  const p = campaignPayload(c.payload);
+                  return p.body || p.title || '—';
+                },
+              },
               { key: 'channel', header: 'Channel', render: (c) => c.channel },
+              {
+                key: 'audience',
+                header: 'Audience',
+                render: (c) => {
+                  const t = campaignTarget(c.target);
+                  if (!t.userIds.length && !t.communityIds.length && !t.cities.length) {
+                    return 'Everyone';
+                  }
+                  const bits: string[] = [];
+                  if (t.userIds.length) {
+                    bits.push(
+                      `${t.userIds.length} user${t.userIds.length === 1 ? '' : 's'}`,
+                    );
+                  }
+                  if (t.communityIds.length) {
+                    bits.push(
+                      `${t.communityIds.length} community${t.communityIds.length === 1 ? '' : 'ies'}`,
+                    );
+                  }
+                  if (t.cities.length) {
+                    bits.push(
+                      `${t.cities.length} cit${t.cities.length === 1 ? 'y' : 'ies'}`,
+                    );
+                  }
+                  return bits.join(' · ');
+                },
+              },
+              {
+                key: 'scheduled',
+                header: 'Scheduled',
+                render: (c) =>
+                  c.scheduled_at
+                    ? new Date(c.scheduled_at as string).toLocaleString()
+                    : '—',
+              },
               {
                 key: 'status',
                 header: 'Status',
                 render: (c) => <Badge>{c.status}</Badge>,
+              },
+              {
+                key: 'sent',
+                header: 'Sent',
+                render: (c) =>
+                  typeof c.sent_count === 'number' ? c.sent_count : '—',
               },
               {
                 key: 'actions',
@@ -716,12 +836,22 @@ export const PromotionsPage = () => {
                       variant="secondary"
                       size="sm"
                       onClick={() => {
+                        const p = campaignPayload(c.payload);
+                        const t = campaignTarget(c.target);
                         setEditingCampaign(c);
                         setCampaignForm({
                           name: c.name ?? '',
                           type: c.type ?? 'promo',
-                          channel: (c.channel as typeof campaignForm.channel) || 'push',
+                          channel:
+                            (c.channel as typeof campaignForm.channel) || 'push',
                           status: c.status ?? 'draft',
+                          title: p.title,
+                          body: p.body,
+                          path: p.path || '/booking/request',
+                          scheduledAt: toLocalInput(c.scheduled_at),
+                          communityIds: t.communityIds,
+                          cities: t.cities,
+                          userIds: t.userIds,
                         });
                         setModalOpen(true);
                       }}
@@ -966,7 +1096,14 @@ export const PromotionsPage = () => {
         onSubmit={handleSave}
         submitLabel={isEditing ? 'Save' : 'Create'}
         submitting={submitting}
-        size={tab === 'banners' || tab === 'coupons' || tab === 'referrals' ? 'wide' : 'default'}
+        size={
+          tab === 'banners' ||
+          tab === 'coupons' ||
+          tab === 'referrals' ||
+          tab === 'campaigns'
+            ? 'wide'
+            : 'default'
+        }
       >
         {tab === 'coupons' && (
           <div className={formStyles.stack}>
@@ -1155,7 +1292,7 @@ export const PromotionsPage = () => {
                 className={formStyles.input}
                 value={campaignForm.name}
                 onChange={(e) => setCampaignForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Campaign name"
+                placeholder="Tonight booking reminder"
               />
             </div>
             <div className={formStyles.field}>
@@ -1192,24 +1329,163 @@ export const PromotionsPage = () => {
                 <option value="in_app">In-app</option>
               </select>
             </div>
-            {editingCampaign && (
-              <div className={formStyles.field}>
-                <label className={formStyles.label} htmlFor="campaign-status">
-                  Status
-                </label>
-                <select
-                  id="campaign-status"
-                  className={formStyles.select}
-                  value={campaignForm.status}
-                  onChange={(e) => setCampaignForm((f) => ({ ...f, status: e.target.value }))}
-                >
-                  <option value="draft">Draft</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="active">Active</option>
-                  <option value="completed">Completed</option>
-                </select>
+            {campaignForm.channel === 'push' ? (
+              <>
+                <div className={formStyles.field}>
+                  <label className={formStyles.label} htmlFor="campaign-title">
+                    Notification title
+                  </label>
+                  <input
+                    id="campaign-title"
+                    className={formStyles.input}
+                    value={campaignForm.title}
+                    onChange={(e) =>
+                      setCampaignForm((f) => ({ ...f, title: e.target.value }))
+                    }
+                    placeholder="Defaults to campaign name"
+                  />
+                </div>
+                <div className={formStyles.field}>
+                  <label className={formStyles.label} htmlFor="campaign-body">
+                    Message *
+                  </label>
+                  <textarea
+                    id="campaign-body"
+                    className={formStyles.textarea}
+                    rows={3}
+                    value={campaignForm.body}
+                    onChange={(e) =>
+                      setCampaignForm((f) => ({ ...f, body: e.target.value }))
+                    }
+                    placeholder="Wanna book ironing for tomorrow?"
+                  />
+                </div>
+                <div className={formStyles.field}>
+                  <label className={formStyles.label} htmlFor="campaign-path">
+                    Navigation path
+                  </label>
+                  <input
+                    id="campaign-path"
+                    className={formStyles.input}
+                    value={campaignForm.path}
+                    onChange={(e) =>
+                      setCampaignForm((f) => ({ ...f, path: e.target.value }))
+                    }
+                    placeholder="/booking/request"
+                  />
+                  <p className={formStyles.hint}>
+                    App path opened when the customer taps the notification.
+                  </p>
+                </div>
+              </>
+            ) : null}
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="campaign-scheduled">
+                Schedule send at
+              </label>
+              <input
+                id="campaign-scheduled"
+                className={formStyles.input}
+                type="datetime-local"
+                value={campaignForm.scheduledAt}
+                onChange={(e) =>
+                  setCampaignForm((f) => ({ ...f, scheduledAt: e.target.value }))
+                }
+              />
+              <p className={formStyles.hint}>
+                Leave empty for draft. Set a time and status Scheduled to send via cron
+                (every 5 min).
+              </p>
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="campaign-status">
+                Status
+              </label>
+              <select
+                id="campaign-status"
+                className={formStyles.select}
+                value={campaignForm.status}
+                onChange={(e) =>
+                  setCampaignForm((f) => ({ ...f, status: e.target.value }))
+                }
+              >
+                <option value="draft">Draft</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="sending">Sending</option>
+                <option value="sent">Sent</option>
+                <option value="failed">Failed</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Audience</span>
+              <p className={formStyles.hint}>
+                Leave all empty to send to everyone with a push token. If specific users
+                are selected, only those users are targeted. Otherwise community and city
+                filters both apply when set.
+              </p>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Communities (optional)</span>
+              <div className={formStyles.checkGrid}>
+                {communities.map((c) => (
+                  <label key={c.id} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={campaignForm.communityIds.includes(c.id)}
+                      onChange={() => toggleCommunity(c.id)}
+                    />
+                    {c.name}
+                  </label>
+                ))}
               </div>
-            )}
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Cities (optional)</span>
+              <div className={formStyles.checkGrid}>
+                {cityOptions.map((city) => (
+                  <label key={city} className={formStyles.checkLabel}>
+                    <input
+                      type="checkbox"
+                      checked={campaignForm.cities.includes(city)}
+                      onChange={() => toggleCity(city)}
+                    />
+                    {city}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className={formStyles.field}>
+              <span className={formStyles.label}>Specific customers (optional)</span>
+              <p className={formStyles.hint}>
+                {campaignForm.userIds.length
+                  ? `${campaignForm.userIds.length} customer${campaignForm.userIds.length === 1 ? '' : 's'} selected`
+                  : 'No customers selected'}
+              </p>
+              <div className={formStyles.rowActions}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setPickerSelectedIds(new Set(campaignForm.userIds));
+                    setUserPickerOpen(true);
+                  }}
+                >
+                  Select customers
+                </Button>
+                {campaignForm.userIds.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setCampaignForm((f) => ({ ...f, userIds: [] }))}
+                  >
+                    Clear users
+                  </Button>
+                ) : null}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1611,10 +1887,17 @@ export const PromotionsPage = () => {
             </Button>
             <Button
               onClick={() => {
-                setBannerForm((f) => ({
-                  ...f,
-                  userIds: Array.from(pickerSelectedIds),
-                }));
+                if (tab === 'campaigns') {
+                  setCampaignForm((f) => ({
+                    ...f,
+                    userIds: Array.from(pickerSelectedIds),
+                  }));
+                } else {
+                  setBannerForm((f) => ({
+                    ...f,
+                    userIds: Array.from(pickerSelectedIds),
+                  }));
+                }
                 setUserPickerOpen(false);
               }}
             >

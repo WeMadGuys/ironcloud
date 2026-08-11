@@ -26,6 +26,7 @@ import {
   saveNotificationPrefs,
   type NotificationPrefs,
 } from '../../src/features/notifications/services/notifications.service';
+import { syncPushRegistration } from '../../src/features/notifications/services/push.service';
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -69,6 +70,9 @@ export default function NotificationsScreen() {
 
     setPrefs(next);
     await saveNotificationPrefs(next);
+    if (key === 'pushEnabled' || key === 'promotions') {
+      void syncPushRegistration();
+    }
   };
 
   return (

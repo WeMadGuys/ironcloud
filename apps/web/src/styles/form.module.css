@@ -18,7 +18,8 @@
 }
 
 .input,
-.select {
+.select,
+.textarea {
   width: 100%;
   min-height: 40px;
   padding: var(--ic-spacing-sm) var(--ic-spacing-md);
@@ -32,8 +33,14 @@
   transition: border-color var(--ic-transition-fast);
 }
 
+.textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
 .input:focus,
-.select:focus {
+.select:focus,
+.textarea:focus {
   border-color: var(--ic-border-focus);
 }
 

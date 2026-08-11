@@ -29,13 +29,14 @@ export async function getNotificationPrefs(): Promise<NotificationPrefs> {
     const raw = await SecureStore.getItemAsync(PREFS_KEY);
     if (!raw) {
       memoryPrefs = DEFAULT_PREFS;
-      return memoryPrefs;
+      return DEFAULT_PREFS;
     }
-    memoryPrefs = { ...DEFAULT_PREFS, ...JSON.parse(raw) };
-    return memoryPrefs;
+    const next: NotificationPrefs = { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+    memoryPrefs = next;
+    return next;
   } catch {
     memoryPrefs = DEFAULT_PREFS;
-    return memoryPrefs;
+    return DEFAULT_PREFS;
   }
 }
 
