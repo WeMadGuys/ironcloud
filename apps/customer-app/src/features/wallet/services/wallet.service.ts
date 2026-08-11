@@ -7,6 +7,7 @@ import { fetchUserProfile } from '../../profile/services/profile.service';
 import { openRazorpayCheckout } from './razorpay-checkout';
 
 const WALLET_CACHE_TTL_MS = 30_000;
+const COUPONS_CACHE_TTL_MS = 120_000;
 
 export type WalletTransaction = {
   id: string;
@@ -34,14 +35,20 @@ export type ApplicableWalletCoupon = {
 };
 
 const walletCache = createTtlCache<WalletInfo>(WALLET_CACHE_TTL_MS);
+const couponsCache = createTtlCache<ApplicableWalletCoupon[]>(COUPONS_CACHE_TTL_MS);
 let walletInflight: Promise<WalletInfo | null> | null = null;
 
 export function getCachedWallet(): WalletInfo | null {
   return walletCache.get();
 }
 
+export function getCachedApplicableWalletCoupons(): ApplicableWalletCoupon[] | null {
+  return couponsCache.get();
+}
+
 export function clearWalletCache(): void {
   walletCache.clear();
+  couponsCache.clear();
   walletInflight = null;
 }
 
@@ -174,28 +181,32 @@ export async function getWalletTransactions(
   }));
 }
 
-export async function listApplicableWalletCoupons(): Promise<ApplicableWalletCoupon[]> {
-  const token = await getAccessToken();
-  if (!token) {
-    throw new Error('Please sign in to view coupons.');
-  }
+export async function listApplicableWalletCoupons(options?: {
+  force?: boolean;
+}): Promise<ApplicableWalletCoupon[]> {
+  return couponsCache.getOrFetch(async () => {
+    const token = await getAccessToken();
+    if (!token) {
+      throw new Error('Please sign in to view coupons.');
+    }
 
-  const apiBase = getApiBaseUrl();
-  const response = await fetch(`${apiBase}/api/wallet/applicable-coupons`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
-  });
+    const apiBase = getApiBaseUrl();
+    const response = await fetch(`${apiBase}/api/wallet/applicable-coupons`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-  const payload = (await response.json().catch(() => ({}))) as {
-    coupons?: ApplicableWalletCoupon[];
-    error?: string;
-  };
+    const payload = (await response.json().catch(() => ({}))) as {
+      coupons?: ApplicableWalletCoupon[];
+      error?: string;
+    };
 
-  if (!response.ok) {
-    throw new Error(payload.error || 'Could not load coupons.');
-  }
+    if (!response.ok) {
+      throw new Error(payload.error || 'Could not load coupons.');
+    }
 
-  return payload.coupons ?? [];
+    return payload.coupons ?? [];
+  }, options?.force);
 }
 
 export async function topUpWallet(params: {

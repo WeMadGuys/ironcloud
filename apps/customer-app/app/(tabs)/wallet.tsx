@@ -27,6 +27,7 @@ import {
   calcClientWalletBonus,
   canApplyWalletCoupon,
   formatTransactionDate,
+  getCachedApplicableWalletCoupons,
   getCachedWallet,
   getWallet,
   getWalletTransactions,
@@ -47,8 +48,12 @@ export default function WalletScreen() {
   const [isLoading, setIsLoading] = useState(() => !cachedWallet);
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [addAmount, setAddAmount] = useState('');
-  const [applicableCoupons, setApplicableCoupons] = useState<ApplicableWalletCoupon[]>([]);
-  const [couponsLoading, setCouponsLoading] = useState(false);
+  const [applicableCoupons, setApplicableCoupons] = useState<ApplicableWalletCoupon[]>(
+    () => getCachedApplicableWalletCoupons() ?? [],
+  );
+  const [couponsLoading, setCouponsLoading] = useState(
+    () => !getCachedApplicableWalletCoupons(),
+  );
   const [selectedCouponCode, setSelectedCouponCode] = useState<string | null>(null);
   const [isToppingUp, setIsToppingUp] = useState(false);
 
@@ -60,7 +65,15 @@ export default function WalletScreen() {
     if (!showAddMoney) return;
 
     let cancelled = false;
-    setCouponsLoading(true);
+    const cached = getCachedApplicableWalletCoupons();
+    if (cached) {
+      setApplicableCoupons(cached);
+      setCouponsLoading(false);
+    } else {
+      setCouponsLoading(true);
+    }
+
+    // Refresh quietly (or fetch if cache miss). Deduped by service TTL cache.
     listApplicableWalletCoupons()
       .then((coupons) => {
         if (cancelled) return;
@@ -68,7 +81,9 @@ export default function WalletScreen() {
       })
       .catch(() => {
         if (cancelled) return;
-        setApplicableCoupons([]);
+        if (!getCachedApplicableWalletCoupons()) {
+          setApplicableCoupons([]);
+        }
       })
       .finally(() => {
         if (cancelled) return;
@@ -96,6 +111,19 @@ export default function WalletScreen() {
   async function loadWalletData() {
     try {
       if (!getCachedWallet()) setIsLoading(true);
+
+      const couponsPrefetch = listApplicableWalletCoupons()
+        .then((coupons) => {
+          setApplicableCoupons(coupons);
+          setCouponsLoading(false);
+        })
+        .catch(() => {
+          if (!getCachedApplicableWalletCoupons()) {
+            setApplicableCoupons([]);
+          }
+          setCouponsLoading(false);
+        });
+
       const walletInfo = await getWallet();
       const txns = await getWalletTransactions(20, {
         walletId: walletInfo?.id,
@@ -105,6 +133,7 @@ export default function WalletScreen() {
         setBalance(walletInfo.balance);
       }
       setTransactions(txns);
+      await couponsPrefetch;
     } catch (error) {
       console.error('Error loading wallet data:', error);
     } finally {
@@ -252,50 +281,6 @@ export default function WalletScreen() {
               color={colors.brand.onPrimary}
             />
             <Text style={styles.addMoneyText}>Add Money</Text>
-          </Pressable>
-        </View>
-
-        {/* Quick Actions */}
-        <View style={styles.quickActions}>
-          <Pressable style={styles.quickAction}>
-            <View style={[styles.quickActionIcon, styles.quickActionSend]}>
-              <MaterialCommunityIcons
-                name="send"
-                size={22}
-                color={colors.brand.accent}
-              />
-            </View>
-            <Text style={styles.quickActionLabel}>Send</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction}>
-            <View style={[styles.quickActionIcon, styles.quickActionHistory]}>
-              <MaterialCommunityIcons
-                name="history"
-                size={22}
-                color={colors.status.info.foreground}
-              />
-            </View>
-            <Text style={styles.quickActionLabel}>History</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction}>
-            <View style={[styles.quickActionIcon, styles.quickActionOffers]}>
-              <MaterialCommunityIcons
-                name="tag-outline"
-                size={22}
-                color={colors.status.warning.foreground}
-              />
-            </View>
-            <Text style={styles.quickActionLabel}>Offers</Text>
-          </Pressable>
-          <Pressable style={styles.quickAction}>
-            <View style={[styles.quickActionIcon, styles.quickActionHelp]}>
-              <MaterialCommunityIcons
-                name="help-circle-outline"
-                size={22}
-                color={colors.status.success.foreground}
-              />
-            </View>
-            <Text style={styles.quickActionLabel}>Help</Text>
           </Pressable>
         </View>
 
@@ -626,40 +611,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.brand.onPrimary,
     marginLeft: spacing.xs,
-  },
-  quickActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  quickAction: {
-    alignItems: 'center',
-  },
-  quickActionIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xs,
-  },
-  quickActionSend: {
-    backgroundColor: colors.brand.accentMuted,
-  },
-  quickActionHistory: {
-    backgroundColor: colors.status.info.background,
-  },
-  quickActionOffers: {
-    backgroundColor: colors.status.warning.background,
-  },
-  quickActionHelp: {
-    backgroundColor: colors.status.success.background,
-  },
-  quickActionLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 12,
-    color: colors.text.primary,
   },
   transactionsSection: {
     paddingHorizontal: spacing.lg,
