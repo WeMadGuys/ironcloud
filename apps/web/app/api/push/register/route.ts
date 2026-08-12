@@ -13,9 +13,9 @@ export async function OPTIONS() {
 }
 
 /**
- * test*
  * Upsert or remove the signed-in customer's Expo push token.
  * Body: { token, platform?, promotionsEnabled?, remove? }
+ * Vercel deploy probe: 2026-08-12T22:04
  */
 export async function POST(req: Request) {
   const auth = await authenticateMobileRequest(req);
