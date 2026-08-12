@@ -13,6 +13,7 @@ export async function OPTIONS() {
 }
 
 /**
+ * test*
  * Upsert or remove the signed-in customer's Expo push token.
  * Body: { token, platform?, promotionsEnabled?, remove? }
  */
