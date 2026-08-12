@@ -21,14 +21,14 @@
       },
       "env": {
         "EXPO_PUBLIC_AUTH_PROVIDER": "msg91",
-        "EXPO_PUBLIC_API_URL": "https://ironcloud-rho.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://www.ironcloud.co.in"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_AUTH_PROVIDER": "msg91",
-        "EXPO_PUBLIC_API_URL": "https://ironcloud-rho.vercel.app"
+        "EXPO_PUBLIC_API_URL": "https://www.ironcloud.co.in"
       }
     }
   },
