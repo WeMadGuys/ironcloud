@@ -31,20 +31,20 @@ function projectId(): string | undefined {
   );
 }
 
-async function accessToken(): Promise<string | null> {
+async function sessionAccessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
   return data.session?.access_token ?? null;
 }
 
-async function postRegister(body: Record<string, unknown>): Promise<void> {
-  const token = await accessToken();
-  if (!token) return;
-
+async function postRegister(
+  accessToken: string,
+  body: Record<string, unknown>,
+): Promise<void> {
   const res = await fetch(`${getApiBaseUrl()}/api/push/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(body),
   });
@@ -57,13 +57,22 @@ async function postRegister(body: Record<string, unknown>): Promise<void> {
 
 /**
  * Request permission, get Expo push token, upsert to backend.
- * No-ops on web / when push disabled / when native modules missing.
+ * Requires a session access token — never registers while logged out.
  */
-export async function registerForPushNotifications(): Promise<string | null> {
+export async function registerForPushNotifications(options?: {
+  accessToken?: string | null;
+}): Promise<string | null> {
   if (Platform.OS === 'web') return null;
+
+  const accessToken = options?.accessToken?.trim() || (await sessionAccessToken());
+  if (!accessToken) {
+    console.warn('[Push] skipped: no session token (user not logged in)');
+    return null;
+  }
 
   const prefs = await getNotificationPrefs();
   if (!prefs.pushEnabled) {
+    console.warn('[Push] skipped: push disabled in prefs');
     return null;
   }
 
@@ -98,6 +107,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     finalStatus = requested.status;
   }
   if (finalStatus !== 'granted') {
+    console.warn('[Push] skipped: notification permission not granted');
     return null;
   }
 
@@ -120,22 +130,33 @@ export async function registerForPushNotifications(): Promise<string | null> {
     );
   }
 
-  const push = await Notifications.getExpoPushTokenAsync({
-    projectId: easProjectId,
-  });
+  try {
+    const push = await Notifications.getExpoPushTokenAsync({
+      projectId: easProjectId,
+    });
 
-  await postRegister({
-    token: push.data,
-    platform: Platform.OS,
-    promotionsEnabled: prefs.promotions && prefs.pushEnabled,
-  });
+    await postRegister(accessToken, {
+      token: push.data,
+      platform: Platform.OS,
+      promotionsEnabled: prefs.promotions && prefs.pushEnabled,
+    });
 
-  return push.data;
+    return push.data;
+  } catch (err) {
+    console.warn('[Push] getExpoPushTokenAsync failed:', err);
+    return null;
+  }
 }
 
 /** Sync promotions flag or remove token when push is disabled. */
 export async function syncPushRegistration(): Promise<void> {
   if (Platform.OS === 'web') return;
+
+  const accessToken = await sessionAccessToken();
+  if (!accessToken) {
+    console.warn('[Push] skipped sync: no session token');
+    return;
+  }
 
   const prefs = await getNotificationPrefs();
   if (!prefs.pushEnabled) {
@@ -147,14 +168,14 @@ export async function syncPushRegistration(): Promise<void> {
       const push = await Notifications.getExpoPushTokenAsync({
         projectId: easProjectId,
       });
-      await postRegister({ token: push.data, remove: true });
-    } catch {
-      // ignore — token may be unavailable without permission
+      await postRegister(accessToken, { token: push.data, remove: true });
+    } catch (err) {
+      console.warn('[Push] token remove failed:', err);
     }
     return;
   }
 
-  await registerForPushNotifications();
+  await registerForPushNotifications({ accessToken });
 }
 
 export function extractNotificationPath(data: unknown): string | null {

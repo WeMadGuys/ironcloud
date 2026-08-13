@@ -25,6 +25,12 @@ import {
 
 SplashScreen.preventAutoHideAsync();
 
+function sessionAccessToken(session: unknown): string | null {
+  if (!session || typeof session !== 'object') return null;
+  const token = (session as { access_token?: unknown }).access_token;
+  return typeof token === 'string' && token.trim() ? token : null;
+}
+
 export default function RootLayout() {
   const router = useRouter();
   const [fontsLoaded, fontError] = useFonts({
@@ -51,10 +57,7 @@ export default function RootLayout() {
 
     let cancelled = false;
 
-    const setupPush = async () => {
-      await registerForPushNotifications();
-      if (cancelled) return;
-
+    const attachTapListener = async () => {
       try {
         const Notifications = await import('expo-notifications');
         responseSub.current?.remove();
@@ -81,13 +84,26 @@ export default function RootLayout() {
       }
     };
 
-    const { data: authSub } = onAuthStateChange((event) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        void setupPush();
+    const registerIfSignedIn = (session: unknown) => {
+      const accessToken = sessionAccessToken(session);
+      if (!accessToken) return;
+      void registerForPushNotifications({ accessToken }).catch((err) => {
+        console.warn('[Push] register from auth event failed:', err);
+      });
+    };
+
+    void attachTapListener();
+
+    const { data: authSub } = onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'INITIAL_SESSION'
+      ) {
+        registerIfSignedIn(session);
       }
     });
-
-    void setupPush();
 
     return () => {
       cancelled = true;

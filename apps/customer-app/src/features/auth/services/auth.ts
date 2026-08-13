@@ -6,6 +6,7 @@ import {
 } from '../../../config/auth';
 import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
+import { registerForPushNotifications } from '../../notifications/services/push.service';
 import { msg91RetryOtp, msg91SendOtp, msg91VerifyOtp } from './msg91';
 
 export type AuthError = {
@@ -121,6 +122,13 @@ const exchangeMsg91Session = async (
       },
     };
   }
+
+  // Register with the token we just set — do not wait on getSession() in an auth listener.
+  void registerForPushNotifications({
+    accessToken: sessionData.session.access_token,
+  }).catch((err) => {
+    console.warn('[Push] register after login failed:', err);
+  });
 
   return {
     data: {
