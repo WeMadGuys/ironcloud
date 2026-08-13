@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { writeAuditLog } from '../../lib/audit';
+import { sendPushCampaign } from '../../lib/push-campaigns';
 import { adminProcedure, router } from '../../trpc/init';
 
 const couponScope = z.enum(['order', 'wallet_topup']);
@@ -300,6 +301,54 @@ export const promotionsRouter = router({
       const { error } = await ctx.supabase.from('campaigns').delete().eq('id', input.id);
       if (error) throw new Error(error.message);
       return { success: true };
+    }),
+
+  /** Manually send a push campaign immediately (no cron / schedule). */
+  sendCampaignNow: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { data: campaign, error } = await ctx.supabase
+        .from('campaigns')
+        .select('id, name, channel, target, payload, status')
+        .eq('id', input.id)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+      if (!campaign) throw new Error('Campaign not found');
+      if (campaign.channel !== 'push') {
+        throw new Error('Only push campaigns can be sent now');
+      }
+
+      const { data: claimed, error: claimError } = await ctx.supabase
+        .from('campaigns')
+        .update({ status: 'sending' })
+        .eq('id', input.id)
+        .select('id, name, target, payload')
+        .maybeSingle();
+
+      if (claimError) throw new Error(claimError.message);
+      if (!claimed) throw new Error('Could not claim campaign for sending');
+
+      try {
+        const result = await sendPushCampaign(ctx.supabase, claimed);
+
+        await writeAuditLog({
+          supabase: ctx.supabase,
+          actorId: ctx.userId,
+          action: 'campaign.send_now',
+          entityType: 'campaign',
+          entityId: input.id,
+          after: result,
+        });
+
+        return result;
+      } catch (err) {
+        await ctx.supabase
+          .from('campaigns')
+          .update({ status: campaign.status || 'draft' })
+          .eq('id', input.id);
+        throw err;
+      }
     }),
 
   createBanner: adminProcedure
