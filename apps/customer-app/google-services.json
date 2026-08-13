@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "834506020177",
+    "project_id": "ironcloud-42a14",
+    "storage_bucket": "ironcloud-42a14.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:834506020177:android:7d89b6115c276cf7252f70",
+        "android_client_info": {
+          "package_name": "com.ironcloud.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAaCREz_78uxat00l9YSimy8VIMpuguJaI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

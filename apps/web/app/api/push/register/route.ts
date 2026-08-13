@@ -30,12 +30,25 @@ export async function POST(req: Request) {
     platform?: string;
     promotionsEnabled?: boolean;
     remove?: boolean;
+    diagnostic?: boolean;
+    stage?: string;
+    message?: string;
   } = {};
 
   try {
     body = (await req.json()) as typeof body;
   } catch {
     return json({ error: 'Invalid JSON body.' }, 400);
+  }
+
+  if (body.diagnostic === true) {
+    console.warn('[push-client]', {
+      userId: user.id,
+      stage: typeof body.stage === 'string' ? body.stage : 'unknown',
+      message: typeof body.message === 'string' ? body.message.slice(0, 500) : '',
+      platform: typeof body.platform === 'string' ? body.platform : null,
+    });
+    return json({ success: true, diagnostic: true });
   }
 
   const token = typeof body.token === 'string' ? body.token.trim() : '';

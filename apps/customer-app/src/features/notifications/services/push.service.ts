@@ -36,6 +36,11 @@ async function sessionAccessToken(): Promise<string | null> {
   return data.session?.access_token ?? null;
 }
 
+function errorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return String(err);
+}
+
 async function postRegister(
   accessToken: string,
   body: Record<string, unknown>,
@@ -52,6 +57,24 @@ async function postRegister(
   if (!res.ok) {
     const text = await res.text();
     console.warn('[Push] register failed:', res.status, text.slice(0, 200));
+  }
+}
+
+/** Logged-in skips/failures show up in Vercel as POST /api/push/register. */
+async function reportPushIssue(
+  accessToken: string,
+  stage: string,
+  message: string,
+): Promise<void> {
+  try {
+    await postRegister(accessToken, {
+      diagnostic: true,
+      stage,
+      message: message.slice(0, 500),
+      platform: Platform.OS,
+    });
+  } catch {
+    // Diagnostic only — never block login.
   }
 }
 
@@ -73,14 +96,19 @@ export async function registerForPushNotifications(options?: {
   const prefs = await getNotificationPrefs();
   if (!prefs.pushEnabled) {
     console.warn('[Push] skipped: push disabled in prefs');
+    await reportPushIssue(accessToken, 'prefs', 'push disabled in prefs');
     return null;
   }
 
   const ok = await loadNativeModules();
-  if (!ok || !Notifications || !Device) return null;
+  if (!ok || !Notifications || !Device) {
+    await reportPushIssue(accessToken, 'native', 'expo-notifications / expo-device unavailable');
+    return null;
+  }
 
   if (!Device.isDevice) {
     console.warn('[Push] Physical device required for remote push');
+    await reportPushIssue(accessToken, 'device', 'emulator — physical device required');
     return null;
   }
 
@@ -108,19 +136,21 @@ export async function registerForPushNotifications(options?: {
   }
   if (finalStatus !== 'granted') {
     console.warn('[Push] skipped: notification permission not granted');
+    await reportPushIssue(accessToken, 'permission', `status=${finalStatus}`);
     return null;
   }
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'default',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: Notifications.AndroidImportance.HIGH,
     });
   }
 
   const easProjectId = projectId();
   if (!easProjectId) {
     console.warn('[Push] Missing EAS projectId in app.json extra.eas');
+    await reportPushIssue(accessToken, 'config', 'missing extra.eas.projectId');
     return null;
   }
 
@@ -144,6 +174,7 @@ export async function registerForPushNotifications(options?: {
     return push.data;
   } catch (err) {
     console.warn('[Push] getExpoPushTokenAsync failed:', err);
+    await reportPushIssue(accessToken, 'token', errorMessage(err));
     return null;
   }
 }
