@@ -35,6 +35,16 @@ export {
 } from './pricing';
 
 export {
+  MAX_KG_QUANTITY,
+  MAX_PIECE_QUANTITY,
+  assertServiceQuantities,
+  clampServiceQuantity,
+  isWeightService,
+  maxQuantityForService,
+  serviceQuantityError,
+} from './quantity-limits';
+
+export {
   createBoxService,
   type BoxService,
   type BoxScanMode,

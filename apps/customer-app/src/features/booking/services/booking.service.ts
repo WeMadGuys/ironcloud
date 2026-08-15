@@ -1,3 +1,5 @@
+import { assertServiceQuantities } from '@ironcloud/db';
+
 import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
 import { getApiBaseUrl } from '../../../lib/api';
@@ -1044,6 +1046,7 @@ async function createBookingViaApi(input: CreateBookingInput): Promise<{
   const estimateLines = (input.estimatedGarments || []).filter(
     (line) => line.quantity > 0,
   );
+  assertServiceQuantities(estimateLines);
 
   const apiBase = getApiBaseUrl();
   const controller = new AbortController();
@@ -1241,6 +1244,7 @@ async function createBookingClientSide(input: CreateBookingInput): Promise<{
   const estimateLines = (input.estimatedGarments || []).filter(
     (line) => line.quantity > 0,
   );
+  assertServiceQuantities(estimateLines);
   const estimatedAmount =
     typeof input.estimatedAmount === 'number' && estimateLines.length > 0
       ? input.estimatedAmount

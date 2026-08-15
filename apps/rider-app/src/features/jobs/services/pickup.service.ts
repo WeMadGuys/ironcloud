@@ -3,6 +3,7 @@ import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import {
   pickBestUnitPrices,
+  assertServiceQuantities,
   type PricingRuleCandidate,
   type PricingScope,
 } from '@ironcloud/db';
@@ -13,6 +14,7 @@ import { getRiderId } from './job-utils';
 export type GarmentCatalogItem = {
   serviceId: string;
   name: string;
+  unit: string;
   unitPrice: number;
 };
 
@@ -290,7 +292,7 @@ export async function getGarmentCatalog(opts: {
 
   const { data: services, error } = await (supabase
     .from('services') as ReturnType<typeof supabase.from>)
-    .select('id, name')
+    .select('id, name, unit')
     .eq('is_active', true)
     .order('name');
 
@@ -317,9 +319,10 @@ export async function getGarmentCatalog(opts: {
     { userId, communityId, city },
   );
 
-  return (services as { id: string; name: string }[]).map((service) => ({
+  return (services as { id: string; name: string; unit?: string | null }[]).map((service) => ({
     serviceId: service.id,
     name: service.name,
+    unit: service.unit?.trim() || 'piece',
     unitPrice: priceMap.get(service.id) ?? 0,
   }));
 }
@@ -460,6 +463,7 @@ async function buildPickupLineItems(
     userId: pricingCtx.customerId,
     city: pricingCtx.city,
   });
+  const catalogById = Object.fromEntries(catalog.map((c) => [c.serviceId, c]));
   const priceByService = Object.fromEntries(catalog.map((c) => [c.serviceId, c.unitPrice]));
   const nameByService = Object.fromEntries(catalog.map((c) => [c.serviceId, c.name]));
 
@@ -475,6 +479,14 @@ async function buildPickupLineItems(
   if (lineItems.length === 0) {
     throw new Error('Add at least one garment');
   }
+
+  assertServiceQuantities(
+    lineItems.map((item) => ({
+      quantity: item.quantity,
+      name: catalogById[item.service_id]?.name,
+      unit: catalogById[item.service_id]?.unit,
+    })),
+  );
 
   const subtotal = lineItems.reduce(
     (sum, item) => sum + item.quantity * Number(item.unit_price),

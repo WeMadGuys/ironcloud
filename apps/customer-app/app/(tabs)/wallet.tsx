@@ -29,7 +29,6 @@ import {
 import {
   calcClientWalletBonus,
   canApplyWalletCoupon,
-  formatTransactionDate,
   getCachedApplicableWalletOffers,
   getCachedWallet,
   getWallet,
@@ -40,9 +39,11 @@ import {
   type PendingReferralOffer,
   type WalletTransaction,
 } from '../../src/features/wallet/services/wallet.service';
+import { TransactionRow } from '../../src/features/wallet/components/TransactionRow';
 import { isExpoGo } from '../../src/lib/expo-go';
 
 const QUICK_AMOUNTS = [100, 200, 500, 1000];
+const RECENT_TRANSACTION_LIMIT = 5;
 
 export default function WalletScreen() {
   const router = useRouter();
@@ -91,7 +92,7 @@ export default function WalletScreen() {
         });
 
       const walletInfo = await getWallet({ force });
-      const txns = await getWalletTransactions(20, {
+      const txns = await getWalletTransactions(RECENT_TRANSACTION_LIMIT, {
         walletId: walletInfo?.id,
       });
 
@@ -178,56 +179,6 @@ export default function WalletScreen() {
       setSelectedCouponCode(null);
     }
   }, [addAmount, applicableCoupons, selectedCouponCode]);
-
-  const getTransactionIcon = (type: WalletTransaction['type']) => {
-    switch (type) {
-      case 'recharge':
-        return 'plus-circle';
-      case 'debit':
-        return 'minus-circle';
-      case 'refund':
-        return 'arrow-u-left-top';
-      case 'cashback':
-        return 'gift';
-      default:
-        return 'cash';
-    }
-  };
-
-  const getTransactionColor = (type: WalletTransaction['type']) => {
-    switch (type) {
-      case 'recharge':
-      case 'refund':
-      case 'cashback':
-        return colors.status.success.foreground;
-      case 'debit':
-        return colors.status.error.foreground;
-      default:
-        return colors.text.primary;
-    }
-  };
-
-  const formatAmount = (type: WalletTransaction['type'], amount: number) => {
-    const prefix = type === 'debit' ? '-' : '+';
-    return `${prefix}₹${amount}`;
-  };
-
-  const getDefaultDescription = (type: WalletTransaction['type']) => {
-    switch (type) {
-      case 'recharge':
-        return 'Wallet Recharge';
-      case 'debit':
-        return 'Order Payment';
-      case 'refund':
-        return 'Refund';
-      case 'cashback':
-        return 'Cashback';
-      case 'expiry':
-        return 'Points Expired';
-      default:
-        return 'Transaction';
-    }
-  };
 
   const selectedCoupon =
     applicableCoupons.find((c) => c.code === selectedCouponCode) ?? null;
@@ -319,7 +270,10 @@ export default function WalletScreen() {
             </View>
             <View>
               <Text style={styles.balanceLabel}>Available Balance</Text>
-              <Text style={styles.balanceAmount}>₹{balance}</Text>
+              <Text style={styles.balanceAmount}>
+                <Text style={styles.balanceCurrency}>₹</Text>
+                {balance}
+              </Text>
             </View>
           </View>
           <Pressable
@@ -339,7 +293,7 @@ export default function WalletScreen() {
         <View style={styles.transactionsSection}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Recent Transactions</Text>
-            <Pressable>
+            <Pressable onPress={() => router.push('/wallet/transactions')}>
               <Text style={styles.seeAllText}>See All</Text>
             </Pressable>
           </View>
@@ -361,42 +315,11 @@ export default function WalletScreen() {
               </View>
             ) : (
               transactions.map((transaction, index) => (
-                <View
+                <TransactionRow
                   key={transaction.id}
-                  style={[
-                    styles.transactionItem,
-                    index === transactions.length - 1 && styles.transactionItemLast,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.transactionIconWrap,
-                      { backgroundColor: `${getTransactionColor(transaction.type)}15` },
-                    ]}
-                  >
-                    <MaterialCommunityIcons
-                      name={getTransactionIcon(transaction.type)}
-                      size={22}
-                      color={getTransactionColor(transaction.type)}
-                    />
-                  </View>
-                  <View style={styles.transactionContent}>
-                    <Text style={styles.transactionDescription}>
-                      {transaction.description || getDefaultDescription(transaction.type)}
-                    </Text>
-                    <Text style={styles.transactionDate}>
-                      {formatTransactionDate(transaction.createdAt)}
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.transactionAmount,
-                      { color: getTransactionColor(transaction.type) },
-                    ]}
-                  >
-                    {formatAmount(transaction.type, transaction.amount)}
-                  </Text>
-                </View>
+                  transaction={transaction}
+                  isLast={index === transactions.length - 1}
+                />
               ))
             )}
           </View>
@@ -438,6 +361,7 @@ export default function WalletScreen() {
                 value={addAmount}
                 onChangeText={setAddAmount}
                 maxLength={5}
+                underlineColorAndroid="transparent"
               />
             </View>
 
@@ -568,7 +492,10 @@ export default function WalletScreen() {
             {validAmount > 0 && (
               <View style={styles.creditSummary}>
                 <Text style={styles.creditSummaryLabel}>Wallet will be credited</Text>
-                <Text style={styles.creditSummaryValue}>₹{creditTotal}</Text>
+                <Text style={styles.creditSummaryValue}>
+                  <Text style={styles.creditSummaryCurrency}>₹</Text>
+                  {creditTotal}
+                </Text>
                 {extraTotal > 0 ? (
                   <Text style={styles.creditSummaryBonus}>
                     {bonusAmount > 0 && referralBonus > 0
@@ -605,9 +532,21 @@ export default function WalletScreen() {
                 <ActivityIndicator size="small" color={colors.brand.onPrimary} />
               ) : (
                 <Text style={styles.addMoneyCtaText}>
-                  {validAmount
-                    ? `Add ₹${validAmount}${extraTotal > 0 ? ` · Get ₹${creditTotal}` : ''}`
-                    : 'Enter Amount'}
+                  {validAmount ? (
+                    <>
+                      Add <Text style={styles.ctaCurrency}>₹</Text>
+                      {validAmount}
+                      {extraTotal > 0 ? (
+                        <>
+                          {' · Get '}
+                          <Text style={styles.ctaCurrency}>₹</Text>
+                          {creditTotal}
+                        </>
+                      ) : null}
+                    </>
+                  ) : (
+                    'Enter Amount'
+                  )}
                 </Text>
               )}
             </Pressable>
@@ -689,6 +628,9 @@ const styles = StyleSheet.create({
     fontSize: 32,
     color: colors.brand.onPrimary,
   },
+  balanceCurrency: {
+    fontFamily: fonts.inter.bold,
+  },
   addMoneyButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -730,43 +672,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
     overflow: 'hidden',
-  },
-  transactionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.divider,
-  },
-  transactionItemLast: {
-    borderBottomWidth: 0,
-  },
-  transactionIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  transactionContent: {
-    flex: 1,
-  },
-  transactionDescription: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 14,
-    color: colors.text.primary,
-    marginBottom: 2,
-  },
-  transactionDate: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.muted,
-  },
-  transactionAmount: {
-    fontFamily: fonts.poppins.semibold,
-    fontSize: 15,
   },
   loadingContainer: {
     padding: spacing['2xl'],
@@ -835,17 +740,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   currencySymbol: {
-    fontFamily: fonts.poppins.bold,
-    fontSize: 40,
+    fontFamily: fonts.inter.bold,
+    fontSize: 48,
+    lineHeight: 56,
     color: colors.text.heading,
-    marginRight: spacing.xs,
+    includeFontPadding: false,
   },
   amountInput: {
     fontFamily: fonts.poppins.bold,
     fontSize: 48,
+    lineHeight: 56,
     color: colors.text.heading,
-    minWidth: 100,
-    textAlign: 'center',
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    margin: 0,
+    minWidth: 28,
+    textAlign: 'left',
+    includeFontPadding: false,
   },
   quickAmounts: {
     flexDirection: 'row',
@@ -992,6 +903,9 @@ const styles = StyleSheet.create({
     color: colors.text.heading,
     marginTop: 4,
   },
+  creditSummaryCurrency: {
+    fontFamily: fonts.inter.bold,
+  },
   creditSummaryBonus: {
     fontFamily: fonts.inter.regular,
     fontSize: 12,
@@ -1018,5 +932,8 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.semibold,
     fontSize: 16,
     color: colors.brand.onPrimary,
+  },
+  ctaCurrency: {
+    fontFamily: fonts.inter.bold,
   },
 });

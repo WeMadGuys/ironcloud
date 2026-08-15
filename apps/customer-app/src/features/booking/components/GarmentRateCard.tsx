@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { isWeightService } from '@ironcloud/db';
 import {
   colors,
   radius,
@@ -60,8 +61,13 @@ function RateRow({
         </Text>
       </View>
       <View style={styles.rateRight}>
-        <Text style={styles.ratePrice}>₹{item.unitPrice}</Text>
-        <Text style={styles.rateUnit}>/ pc</Text>
+        <Text style={styles.ratePrice}>
+          <Text style={styles.rateCurrency}>₹</Text>
+          {item.unitPrice}
+        </Text>
+        <Text style={styles.rateUnit}>
+          {isWeightService(item) ? '/ kg' : '/ pc'}
+        </Text>
       </View>
     </View>
   );
@@ -319,6 +325,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.semibold,
     fontSize: 18,
     color: colors.text.heading,
+  },
+  rateCurrency: {
+    fontFamily: fonts.inter.bold,
   },
   rateUnit: {
     fontFamily: fonts.inter.regular,

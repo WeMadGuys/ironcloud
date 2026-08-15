@@ -617,7 +617,14 @@ export default function HomeScreen() {
         />
         <View style={styles.walletInfo}>
           <Text style={styles.walletBalance}>
-            {walletBalance != null ? `₹${walletBalance}` : '—'}
+            {walletBalance != null ? (
+              <>
+                <Text style={styles.walletCurrency}>₹</Text>
+                {walletBalance}
+              </>
+            ) : (
+              '—'
+            )}
           </Text>
           <Text style={styles.walletLabel}>Wallet</Text>
         </View>
@@ -1129,6 +1136,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text.heading,
     lineHeight: 18,
+  },
+  walletCurrency: {
+    fontFamily: fonts.inter.bold,
   },
   walletLabel: {
     fontFamily: fonts.inter.regular,

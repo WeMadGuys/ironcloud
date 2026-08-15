@@ -1,5 +1,11 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import type { BoxScanResult, OrderBoxRow } from '@ironcloud/db';
+import {
+  clampServiceQuantity,
+  isWeightService,
+  maxQuantityForService,
+  type BoxScanResult,
+  type OrderBoxRow,
+} from '@ironcloud/db';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -150,9 +156,10 @@ export default function PickupScreen() {
   );
 
   const adjust = (serviceId: string, delta: number) => {
+    const item = catalog.find((entry) => entry.serviceId === serviceId);
     setCounts((prev) => ({
       ...prev,
-      [serviceId]: Math.max(0, (prev[serviceId] || 0) + delta),
+      [serviceId]: clampServiceQuantity((prev[serviceId] || 0) + delta, item ?? {}),
     }));
   };
 
@@ -423,26 +430,51 @@ export default function PickupScreen() {
                 No services available. Check pricing / services setup.
               </Text>
             ) : (
-              catalog.map((item) => (
-                <View key={item.serviceId} style={styles.row}>
-                  <View style={styles.rowLeft}>
-                    <MaterialCommunityIcons name="hanger" size={20} color={colors.icon.secondary} />
-                    <View style={styles.rowText}>
-                      <Text style={styles.rowName}>{item.name}</Text>
-                      <Text style={styles.rowPrice}>₹{item.unitPrice} each</Text>
+              catalog.map((item) => {
+                const count = counts[item.serviceId] || 0;
+                const atMin = count <= 0;
+                const atMax = count >= maxQuantityForService(item);
+                const unitSuffix = isWeightService(item) ? '/ kg' : 'each';
+
+                return (
+                  <View key={item.serviceId} style={styles.row}>
+                    <View style={styles.rowLeft}>
+                      <MaterialCommunityIcons name="hanger" size={20} color={colors.icon.secondary} />
+                      <View style={styles.rowText}>
+                        <Text style={styles.rowName}>{item.name}</Text>
+                        <Text style={styles.rowPrice}>
+                          ₹{item.unitPrice} {unitSuffix}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.counter}>
+                      <Pressable
+                        style={styles.counterBtn}
+                        onPress={() => adjust(item.serviceId, -1)}
+                        disabled={atMin}
+                      >
+                        <MaterialCommunityIcons
+                          name="minus"
+                          size={18}
+                          color={atMin ? colors.icon.inactive : colors.brand.primary}
+                        />
+                      </Pressable>
+                      <Text style={styles.counterValue}>{count}</Text>
+                      <Pressable
+                        style={styles.counterBtn}
+                        onPress={() => adjust(item.serviceId, 1)}
+                        disabled={atMax}
+                      >
+                        <MaterialCommunityIcons
+                          name="plus"
+                          size={18}
+                          color={atMax ? colors.icon.inactive : colors.brand.primary}
+                        />
+                      </Pressable>
                     </View>
                   </View>
-                  <View style={styles.counter}>
-                    <Pressable style={styles.counterBtn} onPress={() => adjust(item.serviceId, -1)}>
-                      <MaterialCommunityIcons name="minus" size={18} color={colors.brand.primary} />
-                    </Pressable>
-                    <Text style={styles.counterValue}>{counts[item.serviceId] || 0}</Text>
-                    <Pressable style={styles.counterBtn} onPress={() => adjust(item.serviceId, 1)}>
-                      <MaterialCommunityIcons name="plus" size={18} color={colors.brand.primary} />
-                    </Pressable>
-                  </View>
-                </View>
-              ))
+                );
+              })
             )}
           </ScrollView>
 

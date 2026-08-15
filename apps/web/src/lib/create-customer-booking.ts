@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { serviceQuantityError } from '@ironcloud/db';
 
 import { resolvePickupRiderForCommunity } from '@/lib/resolve-pickup-rider';
 
@@ -332,6 +333,15 @@ export async function createCustomerBooking(
   const estimateLines = (input.estimatedGarments || []).filter(
     (line) => line.quantity > 0,
   );
+  for (const line of estimateLines) {
+    const quantityError = serviceQuantityError({
+      name: line.name,
+      quantity: line.quantity,
+    });
+    if (quantityError) {
+      return { success: false, error: quantityError, status: 400 };
+    }
+  }
   const estimatedAmount =
     typeof input.estimatedAmount === 'number' && estimateLines.length > 0
       ? input.estimatedAmount

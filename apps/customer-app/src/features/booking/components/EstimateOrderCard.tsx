@@ -16,6 +16,11 @@ import {
   spacing,
   typographyScale,
 } from '@ironcloud/ui';
+import {
+  clampServiceQuantity,
+  isWeightService,
+  maxQuantityForService,
+} from '@ironcloud/db';
 
 import {
   getGarmentCatalog,
@@ -53,6 +58,10 @@ function CounterRow({
   onAdjust: (delta: number) => void;
   isLast?: boolean;
 }) {
+  const atMin = count <= 0;
+  const atMax = count >= maxQuantityForService(item);
+  const unitSuffix = isWeightService(item) ? '/ kg' : 'each';
+
   return (
     <View style={[styles.counterRow, isLast && styles.counterRowLast]}>
       <View style={styles.counterLeft}>
@@ -64,25 +73,36 @@ function CounterRow({
         />
         <View style={styles.counterText}>
           <Text style={styles.rowName}>{item.name}</Text>
-          <Text style={styles.rowPrice}>₹{item.unitPrice} each</Text>
+          <Text style={styles.rowPrice}>
+            ₹{item.unitPrice} {unitSuffix}
+          </Text>
         </View>
       </View>
       <View style={styles.counter}>
         <Pressable
           style={styles.counterBtn}
           onPress={() => onAdjust(-1)}
-          disabled={count <= 0}
+          disabled={atMin}
           hitSlop={8}
         >
           <MaterialCommunityIcons
             name="minus"
             size={18}
-            color={count <= 0 ? colors.icon.inactive : colors.brand.primary}
+            color={atMin ? colors.icon.inactive : colors.brand.primary}
           />
         </Pressable>
         <Text style={styles.counterValue}>{count}</Text>
-        <Pressable style={styles.counterBtn} onPress={() => onAdjust(1)} hitSlop={8}>
-          <MaterialCommunityIcons name="plus" size={18} color={colors.brand.primary} />
+        <Pressable
+          style={styles.counterBtn}
+          onPress={() => onAdjust(1)}
+          disabled={atMax}
+          hitSlop={8}
+        >
+          <MaterialCommunityIcons
+            name="plus"
+            size={18}
+            color={atMax ? colors.icon.inactive : colors.brand.primary}
+          />
         </Pressable>
       </View>
     </View>
@@ -136,8 +156,12 @@ export function EstimateOrderCard({
   }, [catalog, counts]);
 
   const adjust = (serviceId: string, delta: number) => {
+    const item = catalog.find((entry) => entry.serviceId === serviceId);
     const current = counts[serviceId] || 0;
-    onChangeCounts({ ...counts, [serviceId]: Math.max(0, current + delta) });
+    onChangeCounts({
+      ...counts,
+      [serviceId]: clampServiceQuantity(current + delta, item ?? {}),
+    });
   };
 
   const closeSheet = () => {

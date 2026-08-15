@@ -13,6 +13,7 @@ type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 export type GarmentCatalogItem = {
   serviceId: string;
   name: string;
+  unit: string;
   unitPrice: number;
   icon: IconName;
 };
@@ -93,7 +94,7 @@ export async function getGarmentCatalog(opts: {
 
   const { data: services, error } = await (supabase
     .from('services') as ReturnType<typeof supabase.from>)
-    .select('id, name')
+    .select('id, name, unit')
     .eq('is_active', true)
     .order('name');
 
@@ -120,9 +121,10 @@ export async function getGarmentCatalog(opts: {
     { userId, communityId, city },
   );
 
-  return (services as { id: string; name: string }[]).map((service) => ({
+  return (services as { id: string; name: string; unit?: string | null }[]).map((service) => ({
     serviceId: service.id,
     name: service.name,
+    unit: service.unit?.trim() || 'piece',
     unitPrice: priceMap.get(service.id) ?? 0,
     icon: garmentIcon(service.name),
   }));
