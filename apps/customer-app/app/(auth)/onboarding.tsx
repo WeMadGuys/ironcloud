@@ -212,10 +212,13 @@ export default function OnboardingScreen() {
       if (result.valid) {
         setReferralValidated(true);
         const friendReward = result.program?.refereeReward;
+        const minTopup = result.program?.minTopup;
         setReferralMessage(
-          friendReward != null
-            ? `Valid! You'll get ₹${friendReward} after your first qualifying recharge.`
-            : 'Referral code applied.',
+          friendReward != null && minTopup != null
+            ? `Valid! Recharge ₹${minTopup}+ to get ₹${friendReward} on your first top-up.`
+            : friendReward != null
+              ? `Valid! You'll get ₹${friendReward} after your first qualifying recharge.`
+              : 'Referral code applied.',
         );
       } else {
         setReferralValidated(false);

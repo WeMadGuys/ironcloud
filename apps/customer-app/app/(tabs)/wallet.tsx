@@ -30,13 +30,14 @@ import {
   calcClientWalletBonus,
   canApplyWalletCoupon,
   formatTransactionDate,
-  getCachedApplicableWalletCoupons,
+  getCachedApplicableWalletOffers,
   getCachedWallet,
   getWallet,
   getWalletTransactions,
   listApplicableWalletCoupons,
   topUpWallet,
   type ApplicableWalletCoupon,
+  type PendingReferralOffer,
   type WalletTransaction,
 } from '../../src/features/wallet/services/wallet.service';
 import { isExpoGo } from '../../src/lib/expo-go';
@@ -46,20 +47,31 @@ const QUICK_AMOUNTS = [100, 200, 500, 1000];
 export default function WalletScreen() {
   const router = useRouter();
   const cachedWallet = getCachedWallet();
+  const cachedOffers = getCachedApplicableWalletOffers();
   const [balance, setBalance] = useState(cachedWallet?.balance ?? 0);
   const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(() => !cachedWallet);
   const [showAddMoney, setShowAddMoney] = useState(false);
   const [addAmount, setAddAmount] = useState('');
   const [applicableCoupons, setApplicableCoupons] = useState<ApplicableWalletCoupon[]>(
-    () => getCachedApplicableWalletCoupons() ?? [],
+    () => cachedOffers?.coupons ?? [],
   );
-  const [couponsLoading, setCouponsLoading] = useState(
-    () => !getCachedApplicableWalletCoupons(),
+  const [referralOffer, setReferralOffer] = useState<PendingReferralOffer | null>(
+    () => cachedOffers?.referralOffer ?? null,
   );
+  const [couponsLoading, setCouponsLoading] = useState(() => !cachedOffers);
   const [selectedCouponCode, setSelectedCouponCode] = useState<string | null>(null);
   const [isToppingUp, setIsToppingUp] = useState(false);
   const [pullRefreshing, setPullRefreshing] = useState(false);
+
+  const applyOffers = useCallback(
+    (offers: { coupons: ApplicableWalletCoupon[]; referralOffer: PendingReferralOffer | null }) => {
+      setApplicableCoupons(offers.coupons);
+      setReferralOffer(offers.referralOffer);
+      setCouponsLoading(false);
+    },
+    [],
+  );
 
   const loadWalletData = useCallback(async (force = true) => {
     try {
@@ -67,13 +79,13 @@ export default function WalletScreen() {
       if (!getCachedWallet()) setIsLoading(true);
 
       const couponsPrefetch = listApplicableWalletCoupons()
-        .then((coupons) => {
-          setApplicableCoupons(coupons);
-          setCouponsLoading(false);
+        .then((offers) => {
+          applyOffers(offers);
         })
         .catch(() => {
-          if (!getCachedApplicableWalletCoupons()) {
+          if (!getCachedApplicableWalletOffers()) {
             setApplicableCoupons([]);
+            setReferralOffer(null);
           }
           setCouponsLoading(false);
         });
@@ -93,7 +105,7 @@ export default function WalletScreen() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [applyOffers]);
 
   const handlePullRefresh = useCallback(async () => {
     setPullRefreshing(true);
@@ -124,24 +136,24 @@ export default function WalletScreen() {
     if (!showAddMoney) return;
 
     let cancelled = false;
-    const cached = getCachedApplicableWalletCoupons();
+    const cached = getCachedApplicableWalletOffers();
     if (cached) {
-      setApplicableCoupons(cached);
-      setCouponsLoading(false);
+      applyOffers(cached);
     } else {
       setCouponsLoading(true);
     }
 
     // Refresh quietly (or fetch if cache miss). Deduped by service TTL cache.
     listApplicableWalletCoupons()
-      .then((coupons) => {
+      .then((offers) => {
         if (cancelled) return;
-        setApplicableCoupons(coupons);
+        applyOffers(offers);
       })
       .catch(() => {
         if (cancelled) return;
-        if (!getCachedApplicableWalletCoupons()) {
+        if (!getCachedApplicableWalletOffers()) {
           setApplicableCoupons([]);
+          setReferralOffer(null);
         }
       })
       .finally(() => {
@@ -152,7 +164,7 @@ export default function WalletScreen() {
     return () => {
       cancelled = true;
     };
-  }, [showAddMoney]);
+  }, [applyOffers, showAddMoney]);
 
   useEffect(() => {
     if (!selectedCouponCode) return;
@@ -225,12 +237,17 @@ export default function WalletScreen() {
     selectedCoupon && canApplyWalletCoupon(selectedCoupon, validAmount)
       ? calcClientWalletBonus(selectedCoupon, validAmount)
       : 0;
-  const creditTotal = Math.round((validAmount + bonusAmount) * 100) / 100;
+  const referralUnlocked =
+    referralOffer != null && validAmount >= Number(referralOffer.minTopup);
+  const referralBonus = referralUnlocked ? Number(referralOffer.reward) : 0;
+  const extraTotal = Math.round((bonusAmount + referralBonus) * 100) / 100;
+  const creditTotal = Math.round((validAmount + extraTotal) * 100) / 100;
 
   const closeAddMoney = () => {
     setShowAddMoney(false);
     setAddAmount('');
     setApplicableCoupons([]);
+    setReferralOffer(null);
     setSelectedCouponCode(null);
   };
 
@@ -455,58 +472,96 @@ export default function WalletScreen() {
                   color={colors.brand.primary}
                   style={styles.couponsLoader}
                 />
-              ) : applicableCoupons.length === 0 ? (
+              ) : applicableCoupons.length === 0 && !referralOffer ? (
                 <Text style={styles.couponsEmpty}>No coupons available right now</Text>
               ) : (
-                applicableCoupons.map((coupon) => {
-                  const selected = selectedCouponCode === coupon.code;
-                  const canApply = canApplyWalletCoupon(coupon, validAmount);
-                  const needMore =
-                    coupon.minAmount != null && validAmount < Number(coupon.minAmount);
-                  return (
+                <>
+                  {referralOffer ? (
                     <View
-                      key={coupon.id}
                       style={[
                         styles.couponRow,
-                        selected && styles.couponRowSelected,
-                        !canApply && styles.couponRowDisabled,
+                        referralUnlocked && styles.couponRowSelected,
+                        !referralUnlocked && styles.couponRowDisabled,
                       ]}
                     >
                       <View style={styles.couponText}>
-                        <Text style={styles.couponCode}>{coupon.code}</Text>
-                        <Text style={styles.couponLabel}>{coupon.label}</Text>
-                        {needMore ? (
+                        <Text style={styles.couponCode}>REFERRAL</Text>
+                        <Text style={styles.couponLabel}>{referralOffer.label}</Text>
+                        {!referralUnlocked ? (
                           <Text style={styles.couponHint}>
-                            Enter ₹{coupon.minAmount} or more to apply
+                            Enter ₹{referralOffer.minTopup} or more to unlock
                           </Text>
                         ) : null}
                       </View>
-                      <Pressable
+                      <View
                         style={[
                           styles.couponApplyBtn,
-                          selected && styles.couponApplyBtnSelected,
-                          !canApply && styles.couponApplyBtnDisabled,
+                          referralUnlocked && styles.couponApplyBtnSelected,
+                          !referralUnlocked && styles.couponApplyBtnDisabled,
                         ]}
-                        disabled={!canApply}
-                        onPress={() =>
-                          setSelectedCouponCode((prev) =>
-                            prev === coupon.code ? null : coupon.code,
-                          )
-                        }
                       >
                         <Text
                           style={[
                             styles.couponApplyText,
-                            selected && styles.couponApplyTextSelected,
-                            !canApply && styles.couponApplyTextDisabled,
+                            referralUnlocked && styles.couponApplyTextSelected,
+                            !referralUnlocked && styles.couponApplyTextDisabled,
                           ]}
                         >
-                          {selected ? 'Applied' : 'Apply'}
+                          {referralUnlocked ? 'Auto-applied' : 'Locked'}
                         </Text>
-                      </Pressable>
+                      </View>
                     </View>
-                  );
-                })
+                  ) : null}
+                  {applicableCoupons.map((coupon) => {
+                    const selected = selectedCouponCode === coupon.code;
+                    const canApply = canApplyWalletCoupon(coupon, validAmount);
+                    const needMore =
+                      coupon.minAmount != null && validAmount < Number(coupon.minAmount);
+                    return (
+                      <View
+                        key={coupon.id}
+                        style={[
+                          styles.couponRow,
+                          selected && styles.couponRowSelected,
+                          !canApply && styles.couponRowDisabled,
+                        ]}
+                      >
+                        <View style={styles.couponText}>
+                          <Text style={styles.couponCode}>{coupon.code}</Text>
+                          <Text style={styles.couponLabel}>{coupon.label}</Text>
+                          {needMore ? (
+                            <Text style={styles.couponHint}>
+                              Enter ₹{coupon.minAmount} or more to apply
+                            </Text>
+                          ) : null}
+                        </View>
+                        <Pressable
+                          style={[
+                            styles.couponApplyBtn,
+                            selected && styles.couponApplyBtnSelected,
+                            !canApply && styles.couponApplyBtnDisabled,
+                          ]}
+                          disabled={!canApply}
+                          onPress={() =>
+                            setSelectedCouponCode((prev) =>
+                              prev === coupon.code ? null : coupon.code,
+                            )
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.couponApplyText,
+                              selected && styles.couponApplyTextSelected,
+                              !canApply && styles.couponApplyTextDisabled,
+                            ]}
+                          >
+                            {selected ? 'Applied' : 'Apply'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    );
+                  })}
+                </>
               )}
             </View>
 
@@ -514,9 +569,13 @@ export default function WalletScreen() {
               <View style={styles.creditSummary}>
                 <Text style={styles.creditSummaryLabel}>Wallet will be credited</Text>
                 <Text style={styles.creditSummaryValue}>₹{creditTotal}</Text>
-                {bonusAmount > 0 ? (
+                {extraTotal > 0 ? (
                   <Text style={styles.creditSummaryBonus}>
-                    ₹{validAmount} + ₹{bonusAmount} bonus
+                    {bonusAmount > 0 && referralBonus > 0
+                      ? `₹${validAmount} + ₹${bonusAmount} coupon + ₹${referralBonus} referral`
+                      : referralBonus > 0
+                        ? `₹${validAmount} + ₹${referralBonus} referral bonus`
+                        : `₹${validAmount} + ₹${bonusAmount} bonus`}
                   </Text>
                 ) : null}
               </View>
@@ -547,7 +606,7 @@ export default function WalletScreen() {
               ) : (
                 <Text style={styles.addMoneyCtaText}>
                   {validAmount
-                    ? `Add ₹${validAmount}${bonusAmount > 0 ? ` · Get ₹${creditTotal}` : ''}`
+                    ? `Add ₹${validAmount}${extraTotal > 0 ? ` · Get ₹${creditTotal}` : ''}`
                     : 'Enter Amount'}
                 </Text>
               )}

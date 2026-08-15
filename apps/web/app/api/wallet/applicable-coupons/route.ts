@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+import { getPendingRefereeOffer } from '@/lib/referrals';
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 import {
   isListedWalletCoupon,
@@ -99,14 +100,18 @@ export async function GET(req: Request) {
 
     const target = await resolveCustomerTarget(admin, user.id);
 
-    const { data: coupons, error } = await admin
-      .from('coupons')
-      .select(
-        'id, code, discount_type, discount_value, max_discount, usage_limit, used_count, valid_from, valid_to, community_ids, applicable_on, cities, min_amount',
-      )
-      .contains('applicable_on', ['wallet_topup'])
-      .order('created_at', { ascending: false });
+    const [couponsResult, referralOffer] = await Promise.all([
+      admin
+        .from('coupons')
+        .select(
+          'id, code, discount_type, discount_value, max_discount, usage_limit, used_count, valid_from, valid_to, community_ids, applicable_on, cities, min_amount',
+        )
+        .contains('applicable_on', ['wallet_topup'])
+        .order('created_at', { ascending: false }),
+      getPendingRefereeOffer(admin, user.id),
+    ]);
 
+    const { data: coupons, error } = couponsResult;
     if (error) return json({ error: error.message }, 500);
 
     const rows = (coupons ?? []) as WalletCouponRow[];
@@ -138,7 +143,7 @@ export async function GET(req: Request) {
         label: offerLabel(c),
       }));
 
-    return json({ coupons: listed, target });
+    return json({ coupons: listed, referralOffer, target });
   } catch (err) {
     console.error('[wallet/applicable-coupons]', err);
     return json({ error: 'Unexpected server error.' }, 500);

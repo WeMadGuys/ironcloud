@@ -380,6 +380,54 @@ async function creditWalletCashback(
   return { txnId: (txn as { id: string }).id, balance };
 }
 
+export type PendingRefereeOffer = {
+  minTopup: number;
+  reward: number;
+  label: string;
+};
+
+export function formatRefereeOfferLabel(minTopup: number, reward: number): string {
+  return `Recharge ₹${minTopup}+ to get ₹${reward}`;
+}
+
+/** Pending welcome bonus for a referee, if they have not yet been rewarded. */
+export async function getPendingRefereeOffer(
+  admin: AdminClient,
+  refereeId: string,
+): Promise<PendingRefereeOffer | null> {
+  const { data: attribution } = await admin
+    .from('referral_attributions')
+    .select(
+      'id, program:program_id (referee_reward_amount, min_referee_topup_amount)',
+    )
+    .eq('referee_id', refereeId)
+    .eq('status', 'pending')
+    .maybeSingle();
+
+  if (!attribution) return null;
+
+  type ProgramBits = {
+    referee_reward_amount: number;
+    min_referee_topup_amount: number;
+  };
+
+  const nested = (attribution as { program: ProgramBits | ProgramBits[] | null })
+    .program;
+  const program = Array.isArray(nested) ? (nested[0] ?? null) : nested;
+  if (!program) return null;
+
+  const reward = Number(program.referee_reward_amount);
+  const minTopup = Number(program.min_referee_topup_amount);
+  if (!Number.isFinite(reward) || reward <= 0) return null;
+  if (!Number.isFinite(minTopup) || minTopup < 0) return null;
+
+  return {
+    minTopup,
+    reward,
+    label: formatRefereeOfferLabel(minTopup, reward),
+  };
+}
+
 /**
  * After a successful wallet recharge, pay referral rewards when:
  * - referee has a pending attribution

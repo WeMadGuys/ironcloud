@@ -34,16 +34,31 @@ export type ApplicableWalletCoupon = {
   label: string;
 };
 
+export type PendingReferralOffer = {
+  minTopup: number;
+  reward: number;
+  label: string;
+};
+
+export type ApplicableWalletOffers = {
+  coupons: ApplicableWalletCoupon[];
+  referralOffer: PendingReferralOffer | null;
+};
+
 const walletCache = createTtlCache<WalletInfo>(WALLET_CACHE_TTL_MS);
-const couponsCache = createTtlCache<ApplicableWalletCoupon[]>(COUPONS_CACHE_TTL_MS);
+const couponsCache = createTtlCache<ApplicableWalletOffers>(COUPONS_CACHE_TTL_MS);
 let walletInflight: Promise<WalletInfo | null> | null = null;
 
 export function getCachedWallet(): WalletInfo | null {
   return walletCache.get();
 }
 
-export function getCachedApplicableWalletCoupons(): ApplicableWalletCoupon[] | null {
+export function getCachedApplicableWalletOffers(): ApplicableWalletOffers | null {
   return couponsCache.get();
+}
+
+export function getCachedApplicableWalletCoupons(): ApplicableWalletCoupon[] | null {
+  return couponsCache.get()?.coupons ?? null;
 }
 
 export function clearWalletCache(): void {
@@ -184,9 +199,27 @@ export async function getWalletTransactions(
   }));
 }
 
+function parseReferralOffer(raw: unknown): PendingReferralOffer | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const offer = raw as {
+    minTopup?: number;
+    reward?: number;
+    label?: string;
+  };
+  const minTopup = Number(offer.minTopup);
+  const reward = Number(offer.reward);
+  if (!Number.isFinite(minTopup) || minTopup < 0) return null;
+  if (!Number.isFinite(reward) || reward <= 0) return null;
+  const label =
+    typeof offer.label === 'string' && offer.label.trim()
+      ? offer.label
+      : `Recharge ₹${minTopup}+ to get ₹${reward}`;
+  return { minTopup, reward, label };
+}
+
 export async function listApplicableWalletCoupons(options?: {
   force?: boolean;
-}): Promise<ApplicableWalletCoupon[]> {
+}): Promise<ApplicableWalletOffers> {
   return couponsCache.getOrFetch(async () => {
     const token = await getAccessToken();
     if (!token) {
@@ -201,6 +234,7 @@ export async function listApplicableWalletCoupons(options?: {
 
     const payload = (await response.json().catch(() => ({}))) as {
       coupons?: ApplicableWalletCoupon[];
+      referralOffer?: PendingReferralOffer | null;
       error?: string;
     };
 
@@ -208,7 +242,10 @@ export async function listApplicableWalletCoupons(options?: {
       throw new Error(payload.error || 'Could not load coupons.');
     }
 
-    return payload.coupons ?? [];
+    return {
+      coupons: payload.coupons ?? [],
+      referralOffer: parseReferralOffer(payload.referralOffer),
+    };
   }, options?.force);
 }
 
