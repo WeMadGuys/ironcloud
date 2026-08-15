@@ -9,6 +9,7 @@ export const SUPPORT_CATEGORIES = [
   { value: 'payment_wallet', label: 'Payment / Wallet' },
   { value: 'quality', label: 'Quality' },
   { value: 'cancellation', label: 'Cancellation' },
+  { value: 'account', label: 'Account' },
   { value: 'other', label: 'Other' },
 ] as const;
 

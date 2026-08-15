@@ -42,7 +42,14 @@ import {
   uploadProfileAvatar,
   type UserProfileData,
 } from '../../src/features/profile/services/profile.service';
-import { clearWalletCache } from '../../src/features/wallet/services/wallet.service';
+import {
+  clearWalletCache,
+  getWallet,
+} from '../../src/features/wallet/services/wallet.service';
+import {
+  createTicket,
+  listTickets,
+} from '../../src/features/support/services/support.service';
 import {
   clearReferralCache,
   prefetchMyReferral,
@@ -299,6 +306,105 @@ export default function ProfileScreen() {
     router.replace('/(auth)/login');
   };
 
+  const formatWalletAmount = (balance: number) =>
+    balance.toLocaleString('en-IN', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+  const createAccountDeletionRequest = async (balance: number) => {
+    const amount = formatWalletAmount(balance);
+    setIsSaving(true);
+    try {
+      const openTickets = await listTickets('open');
+      const existing = openTickets.find((t) => t.category === 'account');
+      if (existing) {
+        setShowEditModal(false);
+        router.push(`/support/${existing.id}`);
+        return;
+      }
+
+      const ticket = await createTicket({
+        category: 'account',
+        description:
+          `Account deletion request. Customer has an active wallet balance of ₹${amount} ` +
+          'and cannot self-delete. Please settle the wallet and close the account.',
+      });
+
+      const successTitle = 'Request submitted';
+      const successBody =
+        'We’ve opened an Account request. Our team will contact you to settle your wallet and close the account.';
+
+      const goToTicket = () => {
+        setShowEditModal(false);
+        router.push(`/support/${ticket.id}`);
+      };
+
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') {
+          window.alert(`${successTitle}\n\n${successBody}`);
+        }
+        goToTicket();
+        return;
+      }
+
+      Alert.alert(successTitle, successBody, [
+        { text: 'OK', onPress: goToTicket },
+      ]);
+    } catch (error) {
+      Alert.alert(
+        'Could not create request',
+        error instanceof Error ? error.message : 'Please try again.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const continueDeleteAfterConfirm = async () => {
+    setIsSaving(true);
+    try {
+      const wallet = await getWallet({ force: true });
+      const balance = wallet?.balance ?? 0;
+
+      if (balance > 0) {
+        setIsSaving(false);
+        const amount = formatWalletAmount(balance);
+        const walletMessage =
+          `You still have ₹${amount} in your Iron Cloud wallet. Account deletion can’t be completed while you have an active balance. ` +
+          'Create a support request and our team will help settle the balance and close your account.';
+
+        if (Platform.OS === 'web') {
+          const confirmed =
+            typeof window === 'undefined' ||
+            window.confirm(`Wallet balance remaining\n\n${walletMessage}`);
+          if (confirmed) void createAccountDeletionRequest(balance);
+          return;
+        }
+
+        Alert.alert('Wallet balance remaining', walletMessage, [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Proceed and create request',
+            onPress: () => {
+              void createAccountDeletionRequest(balance);
+            },
+          },
+        ]);
+        return;
+      }
+
+      await performDeleteAccount();
+    } catch (error) {
+      Alert.alert(
+        'Delete failed',
+        error instanceof Error ? error.message : 'Could not check wallet balance',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleLogout = () => {
     // RN Web's Alert.alert often does not show multi-button dialogs.
     if (Platform.OS === 'web') {
@@ -327,22 +433,23 @@ export default function ProfileScreen() {
 
   const handleDeleteAccount = () => {
     const message =
-      'Your account and personal data will be removed. Open bookings will be cancelled.';
+      'Once you delete your account, your personal data and access to order history will be permanently removed and cannot be recovered. Any open bookings will be cancelled.';
 
     if (Platform.OS === 'web') {
       const confirmed =
         typeof window === 'undefined' ||
-        window.confirm(`Delete account?\n\n${message}`);
-      if (confirmed) void performDeleteAccount();
+        window.confirm(`Delete Iron Cloud account\n\n${message}`);
+      if (confirmed) void continueDeleteAfterConfirm();
       return;
     }
 
-    Alert.alert('Delete account', message, [
+    Alert.alert('Delete Iron Cloud account', message, [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Continue',
+        text: 'Proceed',
+        style: 'destructive',
         onPress: () => {
-          void performDeleteAccount();
+          void continueDeleteAfterConfirm();
         },
       },
     ]);

@@ -1,11 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  type AppStateStatus,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -56,10 +59,66 @@ export default function WalletScreen() {
   );
   const [selectedCouponCode, setSelectedCouponCode] = useState<string | null>(null);
   const [isToppingUp, setIsToppingUp] = useState(false);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+
+  const loadWalletData = useCallback(async (force = true) => {
+    try {
+      // Keep existing balance visible while refreshing after cache hits.
+      if (!getCachedWallet()) setIsLoading(true);
+
+      const couponsPrefetch = listApplicableWalletCoupons()
+        .then((coupons) => {
+          setApplicableCoupons(coupons);
+          setCouponsLoading(false);
+        })
+        .catch(() => {
+          if (!getCachedApplicableWalletCoupons()) {
+            setApplicableCoupons([]);
+          }
+          setCouponsLoading(false);
+        });
+
+      const walletInfo = await getWallet({ force });
+      const txns = await getWalletTransactions(20, {
+        walletId: walletInfo?.id,
+      });
+
+      if (walletInfo) {
+        setBalance(walletInfo.balance);
+      }
+      setTransactions(txns);
+      await couponsPrefetch;
+    } catch (error) {
+      console.error('Error loading wallet data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handlePullRefresh = useCallback(async () => {
+    setPullRefreshing(true);
+    try {
+      await loadWalletData(true);
+    } finally {
+      setPullRefreshing(false);
+    }
+  }, [loadWalletData]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadWalletData(true);
+    }, [loadWalletData]),
+  );
 
   useEffect(() => {
-    loadWalletData();
-  }, []);
+    const onAppState = (next: AppStateStatus) => {
+      if (next === 'active') {
+        void loadWalletData(true);
+      }
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [loadWalletData]);
 
   useEffect(() => {
     if (!showAddMoney) return;
@@ -107,39 +166,6 @@ export default function WalletScreen() {
       setSelectedCouponCode(null);
     }
   }, [addAmount, applicableCoupons, selectedCouponCode]);
-
-  async function loadWalletData() {
-    try {
-      if (!getCachedWallet()) setIsLoading(true);
-
-      const couponsPrefetch = listApplicableWalletCoupons()
-        .then((coupons) => {
-          setApplicableCoupons(coupons);
-          setCouponsLoading(false);
-        })
-        .catch(() => {
-          if (!getCachedApplicableWalletCoupons()) {
-            setApplicableCoupons([]);
-          }
-          setCouponsLoading(false);
-        });
-
-      const walletInfo = await getWallet();
-      const txns = await getWalletTransactions(20, {
-        walletId: walletInfo?.id,
-      });
-
-      if (walletInfo) {
-        setBalance(walletInfo.balance);
-      }
-      setTransactions(txns);
-      await couponsPrefetch;
-    } catch (error) {
-      console.error('Error loading wallet data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   const getTransactionIcon = (type: WalletTransaction['type']) => {
     switch (type) {
@@ -255,6 +281,14 @@ export default function WalletScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={pullRefreshing}
+            onRefresh={() => void handlePullRefresh()}
+            tintColor={colors.brand.primary}
+            colors={[colors.brand.primary]}
+          />
+        }
       >
         {/* Balance Card */}
         <View style={styles.balanceCard}>

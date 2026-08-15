@@ -11,6 +11,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   payment_wallet: 'Payment / Wallet',
   quality: 'Quality',
   cancellation: 'Cancellation',
+  account: 'Account',
   other: 'Other',
 };
 

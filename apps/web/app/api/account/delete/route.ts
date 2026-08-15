@@ -101,6 +101,27 @@ export async function POST(req: Request) {
     const role = profile.role as string;
 
     if (role === 'customer') {
+      const { data: wallet, error: walletError } = await admin
+        .from('wallets')
+        .select('balance')
+        .eq('customer_id', user.id)
+        .maybeSingle();
+
+      if (walletError) {
+        return json({ error: walletError.message }, 500);
+      }
+
+      const balance = Number((wallet as { balance?: number } | null)?.balance ?? 0);
+      if (Number.isFinite(balance) && balance > 0) {
+        return json(
+          {
+            error:
+              'Account deletion is blocked while wallet balance remains. Please contact support.',
+          },
+          400,
+        );
+      }
+
       await deleteCustomerAccount(admin, user.id);
     } else if (role === 'rider') {
       await deleteRiderAccount(admin, user.id);

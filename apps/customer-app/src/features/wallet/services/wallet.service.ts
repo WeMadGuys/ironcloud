@@ -120,7 +120,10 @@ async function fetchWalletUncached(): Promise<WalletInfo | null> {
 export async function getWallet(options?: {
   force?: boolean;
 }): Promise<WalletInfo | null> {
-  if (!options?.force) {
+  if (options?.force) {
+    walletCache.clear();
+    walletInflight = null;
+  } else {
     const cached = walletCache.get();
     if (cached) return cached;
     if (walletInflight) return walletInflight;

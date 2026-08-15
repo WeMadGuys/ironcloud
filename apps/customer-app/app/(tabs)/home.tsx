@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
+  type AppStateStatus,
   Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -186,6 +189,7 @@ export default function HomeScreen() {
   const [feedbackBooking, setFeedbackBooking] = useState<ActiveBooking | null>(null);
   const [bookedDays, setBookedDays] = useState<number[]>([]);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
   const [headerAddress, setHeaderAddress] = useState({
     name: '',
     detail: '',
@@ -270,7 +274,7 @@ export default function HomeScreen() {
       const [snapshot, wallet, addresses, profile, sessionResult] =
         await Promise.all([
           getHomeBookingSnapshot(dayOffset),
-          getWallet(),
+          getWallet({ force: true }),
           listAddresses(),
           fetchUserProfile(),
           supabase.auth.getSession(),
@@ -322,15 +326,46 @@ export default function HomeScreen() {
 
   const refreshBookingState = useCallback(async (dayOffset: number) => {
     try {
-      const snapshot = await getHomeBookingSnapshot(dayOffset, { force: true });
+      const [snapshot, wallet] = await Promise.all([
+        getHomeBookingSnapshot(dayOffset, { force: true }),
+        getWallet({ force: true }),
+      ]);
       setDayBooking(snapshot.dayBooking);
       setBookedDays(snapshot.bookedDays);
       setOfdBooking(snapshot.ofdBooking);
       setFeedbackBooking(snapshot.feedbackBooking);
+      setWalletBalance(wallet?.balance ?? null);
     } catch (error) {
       console.error('Error refreshing booking state:', error);
     }
   }, []);
+
+  const refreshWalletBalance = useCallback(async () => {
+    try {
+      const wallet = await getWallet({ force: true });
+      setWalletBalance(wallet?.balance ?? null);
+    } catch (error) {
+      console.error('Error refreshing wallet balance:', error);
+    }
+  }, []);
+
+  const handlePullRefresh = useCallback(async () => {
+    setPullRefreshing(true);
+    try {
+      await loadHomeData(selectedDay, 'content');
+    } finally {
+      setPullRefreshing(false);
+    }
+  }, [loadHomeData, selectedDay]);
+
+  const homeRefreshControl = (
+    <RefreshControl
+      refreshing={pullRefreshing}
+      onRefresh={() => void handlePullRefresh()}
+      tintColor={colors.brand.primary}
+      colors={[colors.brand.primary]}
+    />
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -341,6 +376,17 @@ export default function HomeScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadHomeData, selectedDay]),
   );
+
+  // Rider may debit wallet while the app is backgrounded — refresh on resume.
+  useEffect(() => {
+    const onAppState = (next: AppStateStatus) => {
+      if (next === 'active') {
+        void refreshWalletBalance();
+      }
+    };
+    const sub = AppState.addEventListener('change', onAppState);
+    return () => sub.remove();
+  }, [refreshWalletBalance]);
 
   // Promo banner: load after home is ready so it never blocks first paint.
   useEffect(() => {
@@ -688,6 +734,7 @@ export default function HomeScreen() {
           style={styles.scrollView}
           contentContainerStyle={styles.statusScrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={homeRefreshControl}
         >
           <ActiveOrderCard
             booking={dayBooking}
@@ -728,6 +775,7 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        refreshControl={homeRefreshControl}
       >
         {/* Pickup Time Section */}
         <View style={styles.section}>
