@@ -1,5 +1,15 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+  BENEFIT_TYPE_REFERRAL,
+  REFERRAL_WELCOME_BENEFIT_ID,
+  getBenefitClaim,
+  hasBenefitClaim,
+  insertBenefitClaim,
+  releaseBenefitClaim,
+  resolveUserPhoneDigits,
+} from '@ironcloud/api/benefit-identity';
+
 import type { CustomerTargetContext } from '@/lib/wallet-coupons';
 
 type AdminClient = SupabaseClient<any>;
@@ -201,6 +211,18 @@ export async function applyReferralAtSignup(
     return { ok: false, message: 'Referral already applied for this account.' };
   }
 
+  const phoneDigits = await resolveUserPhoneDigits(admin, refereeId);
+  if (!phoneDigits) {
+    return {
+      ok: false,
+      message: 'Referral could not be applied. Sign in with a valid mobile number.',
+    };
+  }
+
+  if (await hasBenefitClaim(admin, phoneDigits, BENEFIT_TYPE_REFERRAL, REFERRAL_WELCOME_BENEFIT_ID)) {
+    return { ok: false, message: 'This number has already used a referral.' };
+  }
+
   const { data: referrer } = await admin
     .from('profiles')
     .select('id, referral_code, role')
@@ -231,6 +253,16 @@ export async function applyReferralAtSignup(
     }
   }
 
+  const claimResult = await insertBenefitClaim(admin, {
+    phoneDigits,
+    benefitType: BENEFIT_TYPE_REFERRAL,
+    benefitId: REFERRAL_WELCOME_BENEFIT_ID,
+    claimedBy: refereeId,
+  });
+  if (claimResult === 'exists') {
+    return { ok: false, message: 'This number has already used a referral.' };
+  }
+
   const { data: inserted, error } = await admin
     .from('referral_attributions')
     .insert({
@@ -244,6 +276,12 @@ export async function applyReferralAtSignup(
     .single();
 
   if (error || !inserted) {
+    await releaseBenefitClaim(admin, {
+      phoneDigits,
+      benefitType: BENEFIT_TYPE_REFERRAL,
+      benefitId: REFERRAL_WELCOME_BENEFIT_ID,
+      claimedBy: refereeId,
+    });
     if (error?.code === '23505') {
       return { ok: false, message: 'Referral already applied for this account.' };
     }
@@ -305,6 +343,22 @@ export async function validateReferralCode(
       return {
         valid: false,
         message: 'Referral already applied for this account.',
+      };
+    }
+
+    const phoneDigits = await resolveUserPhoneDigits(admin, refereeId);
+    if (
+      phoneDigits &&
+      (await hasBenefitClaim(
+        admin,
+        phoneDigits,
+        BENEFIT_TYPE_REFERRAL,
+        REFERRAL_WELCOME_BENEFIT_ID,
+      ))
+    ) {
+      return {
+        valid: false,
+        message: 'This number has already used a referral.',
       };
     }
   }
@@ -497,6 +551,19 @@ export async function maybeRewardReferral(
   );
   if (alreadyQualified) return empty;
 
+  const phoneDigits = await resolveUserPhoneDigits(admin, refereeId);
+  if (phoneDigits) {
+    const claim = await getBenefitClaim(
+      admin,
+      phoneDigits,
+      BENEFIT_TYPE_REFERRAL,
+      REFERRAL_WELCOME_BENEFIT_ID,
+    );
+    if (claim && claim.claimedBy !== refereeId) {
+      return empty;
+    }
+  }
+
   const referrerBonus = Number(
     (program as { referrer_reward_amount: number }).referrer_reward_amount,
   );
@@ -545,6 +612,17 @@ export async function maybeRewardReferral(
   if (updateError) {
     console.error('[referrals] Failed to mark attribution rewarded', updateError);
     return empty;
+  }
+
+  if (phoneDigits) {
+    await insertBenefitClaim(admin, {
+      phoneDigits,
+      benefitType: BENEFIT_TYPE_REFERRAL,
+      benefitId: REFERRAL_WELCOME_BENEFIT_ID,
+      claimedBy: refereeId,
+    }).catch((claimErr) => {
+      console.error('[referrals] Failed to persist referral identity claim', claimErr);
+    });
   }
 
   return {

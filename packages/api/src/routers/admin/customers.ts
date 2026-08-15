@@ -1,3 +1,4 @@
+import { persistBenefitClaimsForUser } from '../../lib/benefit-identity';
 import { writeAuditLog } from '../../lib/audit';
 import { createStubProfileUser } from '../../lib/createStubProfile';
 import { adminProcedure, router, z } from '../../trpc/init';
@@ -85,12 +86,18 @@ export const customersRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { data: profile } = await ctx.supabase
         .from('profiles')
-        .select('id, role')
+        .select('id, role, phone')
         .eq('id', input.id)
         .eq('role', 'customer')
         .maybeSingle();
 
       if (!profile) throw new Error('Customer not found');
+
+      await persistBenefitClaimsForUser(
+        ctx.supabase,
+        input.id,
+        (profile as { phone: string | null }).phone,
+      );
 
       const { error: profileError } = await ctx.supabase
         .from('profiles')

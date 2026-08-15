@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+import { listClaimedCouponIds, resolveUserPhoneDigits } from '@ironcloud/api/benefit-identity';
 import { getPendingRefereeOffer } from '@/lib/referrals';
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 import {
@@ -100,7 +101,7 @@ export async function GET(req: Request) {
 
     const target = await resolveCustomerTarget(admin, user.id);
 
-    const [couponsResult, referralOffer] = await Promise.all([
+    const [couponsResult, referralOffer, phoneDigits] = await Promise.all([
       admin
         .from('coupons')
         .select(
@@ -109,6 +110,7 @@ export async function GET(req: Request) {
         .contains('applicable_on', ['wallet_topup'])
         .order('created_at', { ascending: false }),
       getPendingRefereeOffer(admin, user.id),
+      resolveUserPhoneDigits(admin, user.id),
     ]);
 
     const { data: coupons, error } = couponsResult;
@@ -119,15 +121,23 @@ export async function GET(req: Request) {
 
     const redeemed = new Set<string>();
     if (ids.length > 0) {
-      const { data: redemptions } = await admin
-        .from('coupon_redemptions')
-        .select('coupon_id')
-        .eq('customer_id', user.id)
-        .eq('context', 'wallet_topup')
-        .in('coupon_id', ids);
+      const [{ data: redemptions }, phoneClaimed] = await Promise.all([
+        admin
+          .from('coupon_redemptions')
+          .select('coupon_id')
+          .eq('customer_id', user.id)
+          .eq('context', 'wallet_topup')
+          .in('coupon_id', ids),
+        phoneDigits
+          ? listClaimedCouponIds(admin, phoneDigits, ids)
+          : Promise.resolve(new Set<string>()),
+      ]);
 
       for (const r of (redemptions ?? []) as { coupon_id: string }[]) {
         redeemed.add(r.coupon_id);
+      }
+      for (const couponId of phoneClaimed) {
+        redeemed.add(couponId);
       }
     }
 

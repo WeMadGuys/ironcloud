@@ -20,6 +20,7 @@
       "@ironcloud/ui": ["../../packages/ui/src/tokens/index.ts"],
       "@ironcloud/db": ["../../packages/db/src/index.ts"],
       "@ironcloud/api": ["../../packages/api/src/index.ts"],
+      "@ironcloud/api/benefit-identity": ["../../packages/api/src/lib/benefit-identity.ts"],
       "@ironcloud/config/legal": ["../../packages/config/src/legal.ts"]
     }
   },

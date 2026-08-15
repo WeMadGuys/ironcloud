@@ -482,6 +482,33 @@ export interface Database {
         };
         Relationships: [];
       };
+      benefit_identity_claims: {
+        Row: {
+          id: string;
+          phone_digits: string;
+          benefit_type: string;
+          benefit_id: string;
+          claimed_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          phone_digits: string;
+          benefit_type: string;
+          benefit_id: string;
+          claimed_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          phone_digits?: string;
+          benefit_type?: string;
+          benefit_id?: string;
+          claimed_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       orders: {
         Row: {
           id: string;

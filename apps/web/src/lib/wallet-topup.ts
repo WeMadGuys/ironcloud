@@ -1,5 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+  BENEFIT_TYPE_COUPON,
+  hasBenefitClaim,
+  insertBenefitClaim,
+  resolveUserPhoneDigits,
+} from '@ironcloud/api/benefit-identity';
 import { maybeRewardReferral } from '@/lib/referrals';
 import {
   calcWalletBonus,
@@ -88,7 +94,19 @@ export async function resolveWalletCoupon(
     .eq('context', 'wallet_topup')
     .maybeSingle();
 
-  if (!isEligibleWalletCoupon(coupon, amount, target, Boolean(existingRedeem))) {
+  const phoneDigits = await resolveUserPhoneDigits(admin, customerId);
+  const phoneClaimed =
+    phoneDigits != null &&
+    (await hasBenefitClaim(admin, phoneDigits, BENEFIT_TYPE_COUPON, coupon.id));
+
+  if (
+    !isEligibleWalletCoupon(
+      coupon,
+      amount,
+      target,
+      Boolean(existingRedeem) || phoneClaimed,
+    )
+  ) {
     return { bonus: 0, coupon: null, error: 'Coupon is not applicable for this top-up.' };
   }
 
@@ -214,6 +232,18 @@ export async function creditWalletTopUp(params: {
 
     if (redeemError) {
       throw new Error(redeemError.message);
+    }
+
+    const phoneDigits = await resolveUserPhoneDigits(admin, customerId);
+    if (phoneDigits) {
+      await insertBenefitClaim(admin, {
+        phoneDigits,
+        benefitType: BENEFIT_TYPE_COUPON,
+        benefitId: coupon.id,
+        claimedBy: customerId,
+      }).catch((claimErr) => {
+        console.error('[wallet-topup] Failed to persist coupon identity claim', claimErr);
+      });
     }
 
     await admin

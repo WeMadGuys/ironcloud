@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+import { persistBenefitClaimsForUser } from '@ironcloud/api/benefit-identity';
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 
 type AdminClient = SupabaseClient<any>;
@@ -132,6 +133,7 @@ export async function POST(req: Request) {
       );
     }
 
+    await persistBenefitClaimsForUser(admin, user.id, profile.phone);
     await anonymizeProfile(admin, user.id, profile.avatar_url);
     await stripAuthLogin(admin, user.id);
 
