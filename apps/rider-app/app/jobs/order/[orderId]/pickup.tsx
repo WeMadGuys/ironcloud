@@ -31,6 +31,7 @@ import {
   getOrderItemsPrefill,
   getOrderPickupDetails,
   getOrderPricingContext,
+  isInsufficientWalletError,
   updatePickupItems,
   type GarmentCatalogItem,
 } from '../../../../src/features/jobs/services/pickup.service';
@@ -216,6 +217,21 @@ export default function PickupScreen() {
       }
       router.back();
     } catch (error) {
+      if (isInsufficientWalletError(error)) {
+        const amount =
+          'amount' in error && typeof error.amount === 'number'
+            ? error.amount
+            : runningTotal;
+        const balance =
+          'balance' in error && typeof error.balance === 'number'
+            ? error.balance
+            : 0;
+        Alert.alert(
+          'Insufficient wallet balance',
+          `Ask the customer to add money to their wallet to confirm pickup.\n\nRequired: ₹${amount}\nWallet: ₹${balance}`,
+        );
+        return;
+      }
       Alert.alert(
         isEditMode ? 'Update failed' : 'Pickup failed',
         error instanceof Error ? error.message : 'Could not save items',

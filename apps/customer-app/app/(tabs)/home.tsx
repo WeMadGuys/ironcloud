@@ -1135,9 +1135,11 @@ const styles = StyleSheet.create({
   dayDateWrap: {
     width: 40,
     height: 40,
-    borderRadius: radius.full,
+    borderRadius: 20,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.transparent,
   },
   dayDateWrapSelected: {
     backgroundColor: colors.brand.primary,

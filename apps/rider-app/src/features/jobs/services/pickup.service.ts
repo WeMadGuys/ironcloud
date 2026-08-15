@@ -175,6 +175,83 @@ async function debitWalletAfterPickup(orderId: string): Promise<void> {
   }
 }
 
+export class InsufficientWalletError extends Error {
+  readonly balance: number;
+  readonly amount: number;
+
+  constructor(amount: number, balance: number) {
+    super(
+      'Ask the customer to add money to their wallet to confirm pickup.',
+    );
+    this.name = 'InsufficientWalletError';
+    this.amount = amount;
+    this.balance = balance;
+    Object.setPrototypeOf(this, InsufficientWalletError.prototype);
+  }
+}
+
+export function isInsufficientWalletError(
+  error: unknown,
+): error is InsufficientWalletError {
+  return (
+    error instanceof InsufficientWalletError ||
+    (typeof error === 'object' &&
+      error != null &&
+      (error as { name?: string }).name === 'InsufficientWalletError')
+  );
+}
+
+/**
+ * Verify customer wallet can cover the pickup total before confirming.
+ * Throws InsufficientWalletError when balance is too low.
+ */
+async function assertWalletCoversPickup(
+  orderId: string,
+  amount: number,
+): Promise<void> {
+  if (AUTH_PROVIDER === 'mock') return;
+  if (amount <= 0) return;
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Session expired. Please sign in again and retry.');
+  }
+
+  const response = await fetch(
+    `${getApiBaseUrl()}/api/booking/check-pickup-wallet`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ orderId, amount }),
+    },
+  );
+
+  const body = (await response.json().catch(() => null)) as {
+    ok?: boolean;
+    sufficient?: boolean;
+    amount?: number;
+    balance?: number;
+    error?: string;
+  } | null;
+
+  if (!response.ok) {
+    throw new Error(body?.error || 'Could not verify wallet balance.');
+  }
+
+  if (!body?.sufficient) {
+    throw new InsufficientWalletError(
+      Number(body?.amount ?? amount),
+      Number(body?.balance ?? 0),
+    );
+  }
+}
+
 export async function getOrderPricingContext(orderId: string): Promise<{
   customerId: string | null;
   communityId: string | null;
@@ -363,7 +440,7 @@ export async function getOrderPickupDetails(orderId: string): Promise<{
   };
 }
 
-async function replaceOrderItems(
+async function buildPickupLineItems(
   orderId: string,
   communityId: string,
   items: PickupLineItem[],
@@ -404,6 +481,18 @@ async function replaceOrderItems(
     0,
   );
 
+  return { subtotal, lineItems, nameByService };
+}
+
+async function writeOrderItems(
+  orderId: string,
+  lineItems: {
+    order_id: string;
+    service_id: string;
+    quantity: number;
+    unit_price: number;
+  }[],
+): Promise<void> {
   await (supabase.from('order_items') as ReturnType<typeof supabase.from>)
     .delete()
     .eq('order_id', orderId);
@@ -413,8 +502,25 @@ async function replaceOrderItems(
     .insert(lineItems);
 
   if (itemsError) throw new Error(itemsError.message);
+}
 
-  return { subtotal, lineItems, nameByService };
+async function replaceOrderItems(
+  orderId: string,
+  communityId: string,
+  items: PickupLineItem[],
+): Promise<{
+  subtotal: number;
+  lineItems: {
+    order_id: string;
+    service_id: string;
+    quantity: number;
+    unit_price: number;
+  }[];
+  nameByService: Record<string, string>;
+}> {
+  const built = await buildPickupLineItems(orderId, communityId, items);
+  await writeOrderItems(orderId, built.lineItems);
+  return built;
 }
 
 export async function confirmPickup(
@@ -444,11 +550,15 @@ export async function confirmPickup(
     (orderBefore as { estimated_garments: EstimatedGarment[] | null } | null)
       ?.estimated_garments ?? null;
 
-  const { subtotal, lineItems, nameByService } = await replaceOrderItems(
+  // Price first, then require sufficient wallet — do not mutate until funds check passes.
+  const { subtotal, lineItems, nameByService } = await buildPickupLineItems(
     orderId,
     communityId,
     items,
   );
+  await assertWalletCoversPickup(orderId, subtotal);
+
+  await writeOrderItems(orderId, lineItems);
 
   const { error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
