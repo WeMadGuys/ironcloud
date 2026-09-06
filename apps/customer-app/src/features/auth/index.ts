@@ -3,6 +3,7 @@ export {
   verifyOtp,
   resendOtp,
   signOut,
+  forceLocalSignOut,
   getSession,
   getCurrentUser,
   onAuthStateChange,

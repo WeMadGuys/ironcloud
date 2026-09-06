@@ -27,8 +27,7 @@ import {
   typographyScale,
 } from '@ironcloud/ui';
 
-import { IS_MOCK_AUTH } from '../../src/config/auth';
-import { deleteAccount, signOut } from '../../src/features/auth/services/auth';
+import { deleteAccount, forceLocalSignOut } from '../../src/features/auth/services/auth';
 import { clearOrdersCache } from '../../src/features/orders/services/orders.service';
 import {
   clearAddressCache,
@@ -37,6 +36,7 @@ import {
   clearProfileCache,
   fetchUserProfile,
   getCachedProfile,
+  isAnonymizedDeletedProfile,
   removeProfileAvatar,
   updateProfile,
   uploadProfileAvatar,
@@ -90,19 +90,34 @@ export default function ProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
+  const leaveToLogin = useCallback(async () => {
+    setShowEditModal(false);
+    clearProfileCache();
+    clearReferralCache();
+    clearOrdersCache();
+    clearWalletCache();
+    clearAddressCache();
+    await forceLocalSignOut();
+    router.replace('/(auth)/login');
+  }, [router]);
+
   const loadProfile = useCallback(async () => {
     const showLoading = !getCachedProfile();
     if (showLoading) setIsLoading(true);
 
     try {
       const data = await fetchUserProfile();
+      if (data && isAnonymizedDeletedProfile(data)) {
+        void leaveToLogin();
+        return;
+      }
       setProfile(data);
     } catch (error) {
       console.error('Error loading profile:', error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [leaveToLogin]);
 
   useFocusEffect(
     useCallback(() => {
@@ -264,23 +279,7 @@ export default function ProfileScreen() {
   };
 
   const performLogout = async () => {
-    try {
-      if (!IS_MOCK_AUTH) {
-        const result = await signOut();
-        if (result.error) {
-          console.warn('Logout signOut failed:', result.error.message);
-        }
-      }
-    } catch (error) {
-      console.warn('Logout signOut failed:', error);
-    } finally {
-      clearProfileCache();
-      clearReferralCache();
-      clearOrdersCache();
-      clearWalletCache();
-      clearAddressCache();
-      router.replace('/(auth)/login');
-    }
+    await leaveToLogin();
   };
 
   const performDeleteAccount = async () => {
@@ -298,12 +297,7 @@ export default function ProfileScreen() {
       return;
     }
 
-    clearProfileCache();
-    clearReferralCache();
-    clearOrdersCache();
-    clearWalletCache();
-    clearAddressCache();
-    router.replace('/(auth)/login');
+    await leaveToLogin();
   };
 
   const formatWalletAmount = (balance: number) =>

@@ -300,6 +300,23 @@ export const resendOtp = async (
 };
 
 /**
+ * Clear the local session even if the auth user is already banned/deleted.
+ * Times out so callers can still navigate to login.
+ */
+export const forceLocalSignOut = async (): Promise<void> => {
+  try {
+    await Promise.race([
+      supabase.auth.signOut({ scope: 'local' }),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 2500);
+      }),
+    ]);
+  } catch {
+    // Session may already be invalid after account deletion.
+  }
+};
+
+/**
  * Sign out the current user.
  * Prefer local scope so logout always clears storage even if revoke fails/hangs.
  */
@@ -360,7 +377,7 @@ export const onAuthStateChange = (
  */
 export const deleteAccount = async (): Promise<AuthResult<{ deleted: true }>> => {
   if (AUTH_PROVIDER === 'mock') {
-    await signOut();
+    await forceLocalSignOut();
     return { data: { deleted: true }, error: null };
   }
 
@@ -405,6 +422,6 @@ export const deleteAccount = async (): Promise<AuthResult<{ deleted: true }>> =>
     };
   }
 
-  await signOut();
+  await forceLocalSignOut();
   return { data: { deleted: true }, error: null };
 };

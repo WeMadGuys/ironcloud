@@ -5,6 +5,8 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { colors } from '@ironcloud/ui';
 
 import { IS_MOCK_AUTH, MOCK_USER_ID } from '../src/config/auth';
+import { forceLocalSignOut } from '../src/features/auth/services/auth';
+import { isAnonymizedDeletedProfile } from '../src/features/profile/services/profile.service';
 import { supabase } from '../src/lib/supabase';
 
 type Destination = 'login' | 'home' | null;
@@ -24,6 +26,23 @@ export default function IndexScreen() {
         : (await supabase.auth.getUser()).data.user?.id || null;
 
       if (!userId) {
+        setDestination('login');
+        return;
+      }
+
+      const { data: profile } = await (supabase
+        .from('profiles') as ReturnType<typeof supabase.from>)
+        .select('full_name, phone')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (
+        isAnonymizedDeletedProfile({
+          fullName: (profile as { full_name?: string | null } | null)?.full_name,
+          phone: (profile as { phone?: string | null } | null)?.phone,
+        })
+      ) {
+        await forceLocalSignOut();
         setDestination('login');
         return;
       }

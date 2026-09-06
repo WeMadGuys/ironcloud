@@ -25,6 +25,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  getActiveCommunities,
   getBlockFlats,
   getCommunityBlocks,
   searchCommunities,
@@ -48,6 +49,7 @@ export default function OnboardingScreen() {
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   const [communitySearch, setCommunitySearch] = useState('');
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [allCommunities, setAllCommunities] = useState<Community[]>([]);
   const [showCommunityModal, setShowCommunityModal] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [showFlatModal, setShowFlatModal] = useState(false);
@@ -77,24 +79,55 @@ export default function OnboardingScreen() {
 
   const blocksEnabled = Boolean(selectedCommunity?.blocksEnabled);
 
-  const handleSearchCommunities = useCallback(async (query: string) => {
-    setCommunitySearch(query);
-    if (query.length < 2) {
-      setCommunities([]);
-      return;
-    }
-
+  const openCommunityModal = useCallback(async () => {
+    setShowCommunityModal(true);
+    setCommunitySearch('');
     setSearchLoading(true);
     try {
-      const results = await searchCommunities(query);
-      setCommunities(results);
+      const list = await getActiveCommunities();
+      setAllCommunities(list);
+      setCommunities(list);
     } catch (error) {
-      console.error('Search error:', error);
+      console.error('Error loading communities:', error);
+      setAllCommunities([]);
       setCommunities([]);
     } finally {
       setSearchLoading(false);
     }
   }, []);
+
+  const handleSearchCommunities = useCallback(
+    async (query: string) => {
+      setCommunitySearch(query);
+      const trimmed = query.trim();
+
+      if (!trimmed) {
+        setCommunities(allCommunities);
+        return;
+      }
+
+      const localMatches = allCommunities.filter((c) =>
+        c.name.toLowerCase().includes(trimmed.toLowerCase()),
+      );
+
+      if (trimmed.length < 2) {
+        setCommunities(localMatches);
+        return;
+      }
+
+      setSearchLoading(true);
+      try {
+        const results = await searchCommunities(trimmed);
+        setCommunities(results.length > 0 ? results : localMatches);
+      } catch (error) {
+        console.error('Search error:', error);
+        setCommunities(localMatches);
+      } finally {
+        setSearchLoading(false);
+      }
+    },
+    [allCommunities],
+  );
 
   const handleSelectCommunity = (community: Community) => {
     setSelectedCommunity(community);
@@ -346,7 +379,7 @@ export default function OnboardingScreen() {
                 styles.selectContainer,
                 errors.community && styles.inputContainerError,
               ]}
-              onPress={() => setShowCommunityModal(true)}
+              onPress={() => void openCommunityModal()}
             >
               <MaterialCommunityIcons
                 name="magnify"
@@ -736,37 +769,48 @@ export default function OnboardingScreen() {
             )}
           </View>
 
-          <FlatList
-            data={communities}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <Pressable
-                style={styles.communityItem}
-                onPress={() => handleSelectCommunity(item)}
-              >
-                <MaterialCommunityIcons
-                  name="office-building"
-                  size={20}
-                  color={colors.icon.secondary}
-                />
-                <View style={styles.communityInfo}>
-                  <Text style={styles.communityName}>{item.name}</Text>
-                  <Text style={styles.communityCity}>{item.city}</Text>
-                </View>
-              </Pressable>
-            )}
-            ListEmptyComponent={
-              communitySearch.length >= 2 && !searchLoading ? (
+          {searchLoading && communities.length === 0 ? (
+            <View style={styles.emptyList}>
+              <ActivityIndicator size="small" color={colors.brand.primary} />
+            </View>
+          ) : (
+            <FlatList
+              data={communities}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.communityItem}
+                  onPress={() => handleSelectCommunity(item)}
+                >
+                  <MaterialCommunityIcons
+                    name="office-building"
+                    size={20}
+                    color={colors.icon.secondary}
+                  />
+                  <View style={styles.communityInfo}>
+                    <Text style={styles.communityName}>{item.name}</Text>
+                    <Text style={styles.communityCity}>{item.city}</Text>
+                  </View>
+                </Pressable>
+              )}
+              ListEmptyComponent={
                 <View style={styles.emptyList}>
-                  <Text style={styles.emptyText}>No communities found</Text>
-                  <Text style={styles.emptySubtext}>
-                    Try a different search term
+                  <Text style={styles.emptyText}>
+                    {communitySearch.trim()
+                      ? 'No apartments found'
+                      : 'No apartments available'}
                   </Text>
-    </View>
-              ) : null
-            }
-            contentContainerStyle={styles.communityList}
-          />
+                  {communitySearch.trim() ? (
+                    <Text style={styles.emptySubtext}>
+                      Try a different search term
+                    </Text>
+                  ) : null}
+                </View>
+              }
+              contentContainerStyle={styles.communityList}
+            />
+          )}
         </SafeAreaView>
       </Modal>
 

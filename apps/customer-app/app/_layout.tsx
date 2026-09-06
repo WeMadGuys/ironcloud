@@ -12,7 +12,7 @@ import {
   Poppins_800ExtraBold,
   useFonts,
 } from '@expo-google-fonts/poppins';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
@@ -33,6 +33,7 @@ function sessionAccessToken(session: unknown): string | null {
 
 export default function RootLayout() {
   const router = useRouter();
+  const segments = useSegments();
   const [fontsLoaded, fontError] = useFonts({
     'Poppins-Regular': Poppins_400Regular,
     'Poppins-Medium': Poppins_500Medium,
@@ -53,9 +54,39 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError]);
 
   useEffect(() => {
-    if (Platform.OS === 'web') return;
-
     let cancelled = false;
+
+    const { data: authSub } = onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (event === 'SIGNED_OUT') {
+        const inAuthGroup = segments[0] === '(auth)';
+        if (!inAuthGroup) {
+          router.replace('/(auth)/login');
+        }
+        return;
+      }
+      if (Platform.OS === 'web') return;
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'TOKEN_REFRESHED' ||
+        event === 'INITIAL_SESSION'
+      ) {
+        const accessToken = sessionAccessToken(session);
+        if (!accessToken) return;
+        void registerForPushNotifications({ accessToken }).catch((err) => {
+          console.warn('[Push] register from auth event failed:', err);
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      authSub.subscription.unsubscribe();
+    };
+  }, [router, segments]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
 
     const attachTapListener = async () => {
       try {
@@ -84,30 +115,9 @@ export default function RootLayout() {
       }
     };
 
-    const registerIfSignedIn = (session: unknown) => {
-      const accessToken = sessionAccessToken(session);
-      if (!accessToken) return;
-      void registerForPushNotifications({ accessToken }).catch((err) => {
-        console.warn('[Push] register from auth event failed:', err);
-      });
-    };
-
     void attachTapListener();
 
-    const { data: authSub } = onAuthStateChange((event, session) => {
-      if (cancelled) return;
-      if (
-        event === 'SIGNED_IN' ||
-        event === 'TOKEN_REFRESHED' ||
-        event === 'INITIAL_SESSION'
-      ) {
-        registerIfSignedIn(session);
-      }
-    });
-
     return () => {
-      cancelled = true;
-      authSub.subscription.unsubscribe();
       responseSub.current?.remove();
       responseSub.current = null;
     };

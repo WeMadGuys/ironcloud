@@ -135,7 +135,13 @@ export async function POST(req: Request) {
 
     await persistBenefitClaimsForUser(admin, user.id, profile.phone);
     await anonymizeProfile(admin, user.id, profile.avatar_url);
-    await stripAuthLogin(admin, user.id);
+    // Login strip is best-effort: PII is already gone. Never leave the
+    // client stuck on a "Deleted User" session because ban/phone update failed.
+    try {
+      await stripAuthLogin(admin, user.id);
+    } catch (err) {
+      console.warn('[account/delete] stripAuthLogin', err);
+    }
 
     return json({ success: true });
   } catch (err) {
@@ -267,6 +273,12 @@ async function stripAuthLogin(admin: AdminClient, userId: string) {
   // Unique placeholder phone so the real number can re-register.
   const stubDigits = userId.replace(/\D/g, '').slice(0, 10).padEnd(10, '0');
   const stubPhone = `+1999${stubDigits}`;
+  const deletedMeta = {
+    deleted: true,
+    deleted_at: new Date().toISOString(),
+    phone: null,
+    role: null,
+  };
 
   const { error } = await admin.auth.admin.updateUserById(userId, {
     email: deletedEmail,
@@ -274,15 +286,26 @@ async function stripAuthLogin(admin: AdminClient, userId: string) {
     phone: stubPhone,
     phone_confirm: true,
     ban_duration: '876000h',
-    user_metadata: {
-      deleted: true,
-      deleted_at: new Date().toISOString(),
-      phone: null,
-      role: null,
-    },
+    user_metadata: deletedMeta,
   });
 
   if (error) {
-    throw new Error(error.message);
+    console.warn('[account/delete] updateUserById', error.message);
+    const ban = await admin.auth.admin.updateUserById(userId, {
+      ban_duration: '876000h',
+      user_metadata: deletedMeta,
+    });
+    if (ban.error) {
+      console.warn('[account/delete] ban user', ban.error.message);
+    }
+  }
+
+  try {
+    const { error: signOutError } = await admin.auth.admin.signOut(userId);
+    if (signOutError) {
+      console.warn('[account/delete] revoke sessions', signOutError.message);
+    }
+  } catch (err) {
+    console.warn('[account/delete] revoke sessions', err);
   }
 }

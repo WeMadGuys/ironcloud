@@ -38,6 +38,7 @@ import {
   pickEligibleHomeBanner,
   type PromoBanner,
 } from '../../src/features/banners/services/banners.service';
+import { forceLocalSignOut } from '../../src/features/auth/services/auth';
 import {
   cancelBooking,
   createBooking,
@@ -65,7 +66,7 @@ import { GarmentRateCard } from '../../src/features/booking/components/GarmentRa
 import { OutForDeliveryBanner } from '../../src/features/booking/components/OutForDeliveryBanner';
 import type { GarmentCatalogItem } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
-import { fetchUserProfile, getCachedProfile } from '../../src/features/profile/services/profile.service';
+import { fetchUserProfile, getCachedProfile, isAnonymizedDeletedProfile } from '../../src/features/profile/services/profile.service';
 import { getWallet } from '../../src/features/wallet/services/wallet.service';
 import { supabase } from '../../src/lib/supabase';
 
@@ -113,6 +114,27 @@ function isPickupSlotAvailable(
 ): boolean {
   const { end } = buildPickupWindow(dayOffset, startHour);
   return end.getTime() > now.getTime();
+}
+
+function findNextAvailableDayOffset(
+  fromOffset: number,
+  slots: CommunityPickupSlot[],
+  bookedDays: number[],
+  now: Date,
+  dayCount: number,
+): number | null {
+  for (let offset = fromOffset + 1; offset < dayCount; offset++) {
+    if (bookedDays.includes(offset)) continue;
+    if (slots.some((slot) => isPickupSlotAvailable(offset, slot.startHour, now))) {
+      return offset;
+    }
+  }
+  return null;
+}
+
+function formatNextAvailableDayLabel(day: DayOption, offset: number): string {
+  if (offset === 1) return 'Tomorrow';
+  return `${day.day} ${day.date.toString().padStart(2, '0')}`;
 }
 
 function formatDeliveryPreview(dayOffset: number, startHour: number) {
@@ -238,13 +260,31 @@ export default function HomeScreen() {
     );
   }, [pickupSlots, selectedDay, slotClock]);
 
-  // Keep selection on a still-bookable slot for the selected day.
+  const nextAvailableDay = useMemo(() => {
+    const dayOptions = getNextDays(7);
+    const offset = findNextAvailableDayOffset(
+      selectedDay,
+      pickupSlots,
+      bookedDays,
+      new Date(slotClock),
+      dayOptions.length,
+    );
+    if (offset == null) return null;
+    const day = dayOptions[offset];
+    if (!day) return null;
+    return {
+      offset,
+      label: formatNextAvailableDayLabel(day, offset),
+    };
+  }, [selectedDay, pickupSlots, bookedDays, slotClock]);
+
+  // Keep an explicit selection only if that slot is still bookable. Never auto-pick.
   useEffect(() => {
     setSelectedStartHour((prev) => {
       if (prev != null && availableSlots.some((s) => s.startHour === prev)) {
         return prev;
       }
-      return availableSlots[0]?.startHour ?? null;
+      return null;
     });
   }, [availableSlots]);
 
@@ -284,6 +324,11 @@ export default function HomeScreen() {
       setBookedDays(snapshot.bookedDays);
       setOfdBooking(snapshot.ofdBooking);
       setFeedbackBooking(snapshot.feedbackBooking);
+      if (profile && isAnonymizedDeletedProfile(profile)) {
+        await forceLocalSignOut();
+        router.replace('/(auth)/login');
+        return;
+      }
       setWalletBalance(wallet?.balance ?? null);
       setUserId(sessionResult.data.session?.user?.id ?? null);
       setHeaderProfile({
@@ -322,7 +367,7 @@ export default function HomeScreen() {
       setInitialLoading(false);
       setContentLoading(false);
     }
-  }, []);
+  }, [router]);
 
   const refreshBookingState = useCallback(async (dayOffset: number) => {
     try {
@@ -823,6 +868,26 @@ export default function HomeScreen() {
                   ? 'All pickup times for today have already passed. Please choose another day.'
                   : 'No pickup times are available for this day. Please choose another day.'}
               </Text>
+              {nextAvailableDay ? (
+                <Pressable
+                  style={styles.nextAvailableButton}
+                  onPress={() => handleSelectDay(nextAvailableDay.offset)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`See next available slots on ${nextAvailableDay.label}`}
+                >
+                  <MaterialCommunityIcons
+                    name="calendar-clock"
+                    size={18}
+                    color={colors.brand.onPrimary}
+                  />
+                  <Text
+                    style={styles.nextAvailableButtonText}
+                    numberOfLines={2}
+                  >
+                    Next available: {nextAvailableDay.label}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : (
             <>
@@ -1328,6 +1393,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
     lineHeight: 17,
+  },
+  nextAvailableButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    backgroundColor: colors.brand.primary,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  nextAvailableButtonText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 13,
+    color: colors.brand.onPrimary,
+    flexShrink: 1,
   },
   summaryStack: {
     paddingHorizontal: spacing.lg,

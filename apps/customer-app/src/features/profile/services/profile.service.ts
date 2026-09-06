@@ -50,6 +50,14 @@ export type UserProfileData = {
   flatNumber: string;
 };
 
+/** Matches the anonymized row written by POST /api/account/delete. */
+export function isAnonymizedDeletedProfile(profile: {
+  fullName?: string | null;
+  phone?: string | null;
+}): boolean {
+  return profile.fullName === 'Deleted User' && !profile.phone?.trim();
+}
+
 const AVATAR_BUCKET = 'avatars';
 
 const profileCache = createTtlCache<UserProfileData>(PROFILE_CACHE_TTL_MS);
