@@ -11,8 +11,6 @@ import {
   APP_BUSINESS_ADDRESS,
   APP_ENTERPRISE_NAME,
   APP_SUPPORT_EMAIL,
-  APP_SUPPORT_PHONE,
-  APP_SUPPORT_PHONE_TEL,
   APP_UDYAM_NUMBER,
 } from '@ironcloud/config/legal';
 
@@ -21,8 +19,6 @@ export const SITE_TAGLINE = 'Premium laundry ironing pickup & delivery';
 export const SITE_DESCRIPTION =
   'Schedule a pickup in the Iron Cloud app. Freshly ironed clothes delivered back to your doorstep.';
 export const SUPPORT_EMAIL = APP_SUPPORT_EMAIL;
-export const SUPPORT_PHONE = APP_SUPPORT_PHONE;
-export const SUPPORT_PHONE_TEL = APP_SUPPORT_PHONE_TEL;
 export const BUSINESS_ADDRESS = APP_BUSINESS_ADDRESS;
 export const ENTERPRISE_NAME = APP_ENTERPRISE_NAME;
 export const UDYAM_NUMBER = APP_UDYAM_NUMBER;

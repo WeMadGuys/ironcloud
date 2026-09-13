@@ -42,8 +42,7 @@
   color: rgba(255, 255, 255, 0.72);
 }
 
-.email,
-.phone {
+.email {
   display: block;
   color: #ffffff;
   font-weight: 600;
@@ -52,8 +51,7 @@
   margin-bottom: 0.35rem;
 }
 
-.email:hover,
-.phone:hover {
+.email:hover {
   color: var(--ic-brand-accent-soft);
 }
 
@@ -105,7 +103,6 @@
 
 .socialLink:focus-visible,
 .email:focus-visible,
-.phone:focus-visible,
 .list a:focus-visible {
   outline: 2px solid var(--ic-brand-accent);
   outline-offset: 2px;

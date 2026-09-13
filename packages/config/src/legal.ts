@@ -19,7 +19,7 @@ export const APP_PRIVACY_POLICY_URL = `${APP_WEBSITE_URL}/privacy-policy`;
 export const APP_TERMS_URL = `${APP_WEBSITE_URL}/terms-and-conditions`;
 
 /** Shared contact line for policy footers. */
-export const APP_CONTACT_DETAILS = `${APP_SUPPORT_EMAIL} | ${APP_SUPPORT_PHONE} | ${APP_BUSINESS_ADDRESS}`;
+export const APP_CONTACT_DETAILS = `${APP_SUPPORT_EMAIL} | ${APP_BUSINESS_ADDRESS}`;
 
 export const PRIVACY_POLICY_TITLE = 'Privacy Policy';
 export const TERMS_TITLE = 'Terms of Service';
@@ -127,7 +127,7 @@ export const REFUND_POLICY_SECTIONS: LegalSection[] = [
   },
   {
     heading: '6. How to request a refund',
-    body: `Request refunds or adjustments from the in-app support flow, by emailing ${APP_SUPPORT_EMAIL}, or by calling ${APP_SUPPORT_PHONE}, with your registered phone number, order ID, and a short description of the issue. We aim to respond within 2–3 business days.`,
+    body: `Request refunds or adjustments from the in-app support flow or by emailing ${APP_SUPPORT_EMAIL}, with your registered phone number, order ID, and a short description of the issue. We aim to respond within 2–3 business days.`,
   },
   {
     heading: '7. Changes',

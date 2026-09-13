@@ -9,8 +9,6 @@ import {
   HOW_IT_WORKS,
   SITE_NAME,
   SUPPORT_EMAIL,
-  SUPPORT_PHONE,
-  SUPPORT_PHONE_TEL,
   UDYAM_NUMBER,
 } from '@/constants/marketing';
 import { createPageMetadata, getLocalBusinessJsonLd } from '@/lib/seo';
@@ -155,12 +153,6 @@ export default function HomePage() {
               <dt>Email</dt>
               <dd>
                 <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
-              </dd>
-            </div>
-            <div>
-              <dt>Phone</dt>
-              <dd>
-                <a href={`tel:${SUPPORT_PHONE_TEL}`}>{SUPPORT_PHONE}</a>
               </dd>
             </div>
           </dl>

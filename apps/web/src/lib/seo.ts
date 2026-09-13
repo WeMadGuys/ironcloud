@@ -5,7 +5,6 @@ import {
   SITE_NAME,
   SITE_TAGLINE,
   SUPPORT_EMAIL,
-  SUPPORT_PHONE_TEL,
 } from '@/constants/marketing';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://ironcloud.co.in';
@@ -52,7 +51,6 @@ export function getLocalBusinessJsonLd() {
     description: `${SITE_TAGLINE}. ${SITE_DESCRIPTION}`,
     url: SITE_URL,
     email: SUPPORT_EMAIL,
-    telephone: SUPPORT_PHONE_TEL,
     address: {
       '@type': 'PostalAddress',
       streetAddress: '607, Block D, Avantika Espino, Ameenpur Road',

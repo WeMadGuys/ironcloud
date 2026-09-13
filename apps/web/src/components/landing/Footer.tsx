@@ -9,8 +9,6 @@ import {
   FOOTER_LEGAL_LINKS,
   SITE_NAME,
   SUPPORT_EMAIL,
-  SUPPORT_PHONE,
-  SUPPORT_PHONE_TEL,
   UDYAM_NUMBER,
 } from '@/constants/marketing';
 
@@ -38,9 +36,6 @@ export function Footer() {
           <p className={styles.address}>{BUSINESS_ADDRESS}</p>
           <a className={styles.email} href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
-          </a>
-          <a className={styles.phone} href={`tel:${SUPPORT_PHONE_TEL}`}>
-            {SUPPORT_PHONE}
           </a>
         </div>
 
