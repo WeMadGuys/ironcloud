@@ -1,0 +1,43 @@
+.card {
+  margin-bottom: var(--ic-spacing-xl);
+}
+
+.qrBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.qrHint {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--ic-text-muted);
+}
+
+.qrImage {
+  width: 280px;
+  max-width: 100%;
+  height: auto;
+}
+
+.qrLink {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ic-text-secondary);
+  word-break: break-all;
+}
+
+.download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-radius: var(--ic-radius-sm);
+  background: var(--ic-brand-primary);
+  color: var(--ic-brand-on-primary);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+}

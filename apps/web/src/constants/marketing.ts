@@ -23,6 +23,10 @@ export const BUSINESS_ADDRESS = APP_BUSINESS_ADDRESS;
 export const ENTERPRISE_NAME = APP_ENTERPRISE_NAME;
 export const UDYAM_NUMBER = APP_UDYAM_NUMBER;
 
+export const APP_STORE_URL = 'https://apps.apple.com/in/app/ironcloud/id6806960035';
+export const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.ironcloud.app';
+export const GET_APP_PATH = '/get-app';
+
 export const NAV_LINKS = [
   { label: 'Home', href: '/' },
   { label: 'About', href: '/about' },

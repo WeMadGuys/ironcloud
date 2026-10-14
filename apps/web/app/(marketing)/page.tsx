@@ -13,6 +13,7 @@ import {
 } from '@/constants/marketing';
 import { createPageMetadata, getLocalBusinessJsonLd } from '@/lib/seo';
 
+import { DownloadAppSection } from '@/components/landing/DownloadAppSection';
 import { ScreenshotCarousel } from '@/components/landing/ScreenshotCarousel';
 import styles from '@/components/landing/HomePage.module.css';
 
@@ -130,6 +131,8 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <DownloadAppSection />
 
       <section className={styles.info} aria-labelledby="business-heading">
         <div className={styles.infoInner}>

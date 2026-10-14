@@ -1,7 +1,9 @@
 import { getSupabase } from '@/lib/supabase';
-import { endOfDay, startOfDay } from '@/utils/format';
+import { endOfDay, startOfDay, toISODate } from '@/utils/format';
 
 const PERFORMANCE_LOOKBACK_DAYS = 30;
+const APP_DOWNLOAD_LOOKBACK_DAYS = 30;
+const APP_DOWNLOAD_PAGE_SIZE = 1000;
 
 export const fetchAnalyticsOverview = async (date: Date) => {
   const supabase = getSupabase();
@@ -119,10 +121,74 @@ export const fetchCommunityPerformance = async () => {
   return Object.values(perf).sort((a, b) => b.revenue - a.revenue);
 };
 
+type AppDownloadEventRow = {
+  event_type: 'visit' | 'app_store_click' | 'play_store_click';
+  platform: 'ios' | 'android' | 'desktop';
+  source: string | null;
+  created_at: string;
+};
+
+/** Daily /get-app visits and store-bound traffic (auto-redirects + button clicks). */
+export const fetchAppDownloadStats = async (date: Date) => {
+  const supabase = getSupabase();
+  const since = startOfDay(date);
+  since.setDate(since.getDate() - (APP_DOWNLOAD_LOOKBACK_DAYS - 1));
+  const until = endOfDay(date);
+
+  const rows: AppDownloadEventRow[] = [];
+  for (let from = 0; ; from += APP_DOWNLOAD_PAGE_SIZE) {
+    const { data } = await supabase
+      .from('app_download_events')
+      .select('event_type, platform, source, created_at')
+      .gte('created_at', since.toISOString())
+      .lte('created_at', until.toISOString())
+      .order('created_at', { ascending: true })
+      .range(from, from + APP_DOWNLOAD_PAGE_SIZE - 1);
+    const page = (data ?? []) as AppDownloadEventRow[];
+    rows.push(...page);
+    if (page.length < APP_DOWNLOAD_PAGE_SIZE) break;
+  }
+
+  const byDay: Record<string, { date: string; visits: number; appStore: number; playStore: number }> = {};
+  for (let i = 0; i < APP_DOWNLOAD_LOOKBACK_DAYS; i++) {
+    const d = new Date(since);
+    d.setDate(since.getDate() + i);
+    const key = toISODate(d);
+    byDay[key] = { date: key, visits: 0, appStore: 0, playStore: 0 };
+  }
+
+  const totals = { visits: 0, appStore: 0, playStore: 0, qrVisits: 0 };
+  for (const r of rows) {
+    const day = byDay[toISODate(new Date(r.created_at))];
+    if (!day) continue;
+
+    if (r.event_type === 'visit') {
+      day.visits++;
+      totals.visits++;
+      if (r.source === 'qr') totals.qrVisits++;
+    }
+    const toAppStore =
+      r.event_type === 'app_store_click' || (r.event_type === 'visit' && r.platform === 'ios');
+    const toPlayStore =
+      r.event_type === 'play_store_click' || (r.event_type === 'visit' && r.platform === 'android');
+    if (toAppStore) {
+      day.appStore++;
+      totals.appStore++;
+    }
+    if (toPlayStore) {
+      day.playStore++;
+      totals.playStore++;
+    }
+  }
+
+  return { trend: Object.values(byDay), totals };
+};
+
 export const fetchAnalyticsBundle = async (date: Date) => {
-  const [overview, communities] = await Promise.all([
+  const [overview, communities, appDownloads] = await Promise.all([
     fetchAnalyticsOverview(date),
     fetchCommunityPerformance(),
+    fetchAppDownloadStats(date),
   ]);
-  return { overview, communities };
+  return { overview, communities, appDownloads };
 };

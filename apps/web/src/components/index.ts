@@ -12,7 +12,13 @@ export { Skeleton } from './Skeleton/Skeleton';
 export { EmptyState } from './EmptyState/EmptyState';
 export { SearchInput } from './SearchInput/SearchInput';
 export { Pagination } from './Pagination/Pagination';
-export { OrdersAreaChart, StatusDonutChart, RevenueBarChart, TrendLineChart } from './Chart/Chart';
+export {
+  OrdersAreaChart,
+  StatusDonutChart,
+  RevenueBarChart,
+  TrendLineChart,
+  MultiLineChart,
+} from './Chart/Chart';
 export { ToastProvider, useToast } from './Toast/ToastProvider';
 export { FilterBar } from './Filter/FilterBar';
 export { Picklist } from './Picklist/Picklist';

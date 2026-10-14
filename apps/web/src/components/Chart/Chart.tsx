@@ -163,3 +163,36 @@ export const TrendLineChart = ({
     </ResponsiveContainer>
   </div>
 );
+
+export const MultiLineChart = ({
+  data,
+  series,
+  xKey = 'date',
+}: {
+  data: DataPoint[];
+  series: { key: string; label: string; color: string }[];
+  xKey?: string;
+}) => (
+  <div className={styles.chart}>
+    <ResponsiveContainer width="100%" height={280}>
+      <LineChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--ic-border-divider)" />
+        <XAxis dataKey={xKey} tick={{ fill: 'var(--ic-text-muted)', fontSize: 12 }} />
+        <YAxis allowDecimals={false} tick={{ fill: 'var(--ic-text-muted)', fontSize: 12 }} />
+        <Tooltip />
+        <Legend />
+        {series.map((s) => (
+          <Line
+            key={s.key}
+            type="monotone"
+            dataKey={s.key}
+            name={s.label}
+            stroke={s.color}
+            strokeWidth={2}
+            dot={false}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  </div>
+);

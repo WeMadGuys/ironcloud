@@ -7,6 +7,7 @@ import { useDateFilter } from '@/contexts/DateFilterContext';
 import { formatCurrency, toISODate } from '@/utils/format';
 
 import { fetchAnalyticsBundle } from '../services/analytics.service';
+import { AppDownloadsCard } from './AppDownloadsCard';
 
 import pageStyles from '@/styles/pages.module.css';
 
@@ -73,6 +74,7 @@ export const AnalyticsPage = () => {
           <RevenueBarChart data={communityChart} />
         </Card>
       </div>
+      <AppDownloadsCard stats={data!.appDownloads} />
       <Card title="Growth">
         <p>Total Customers: {overview.totalCustomers}</p>
         <p>Total Partners: {overview.totalPartners}</p>
