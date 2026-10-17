@@ -210,7 +210,7 @@ export const CommunityNextStepsCard = ({ communityId }: Props) => {
           <div className={assignStyles.emptyBox}>
             <p className={assignStyles.emptyTitle}>No open next steps</p>
             <p className={assignStyles.emptyHint}>
-              Add what needs to happen next, e.g. "Call FM next week".
+              Add what needs to happen next, e.g. &ldquo;Call FM next week&rdquo;.
             </p>
           </div>
         ) : (

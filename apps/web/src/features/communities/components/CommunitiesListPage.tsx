@@ -20,12 +20,15 @@ import { trpc } from '@/lib/trpc';
 import type { CommunityStage } from '@ironcloud/db';
 
 import { COMMUNITY_STAGES, stageBadge, stageLabel } from '../constants';
-import { fetchCommunities } from '../services/communities.service';
+import { fetchCommunities, fetchCommunityOptions } from '../services/communities.service';
 
 import formStyles from '@/styles/form.module.css';
 import pageStyles from '@/styles/pages.module.css';
 
 type CommunityRow = Awaited<ReturnType<typeof fetchCommunities>>['data'][number];
+
+const formatDueDate = (value: string) =>
+  new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
 const emptyForm = () => ({
   name: '',
@@ -45,6 +48,10 @@ export const CommunitiesListPage = () => {
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [stageFilter, setStageFilter] = useState('');
+  const [dueThisWeek, setDueThisWeek] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [cityFilter, setCityFilter] = useState('');
+  const [cities, setCities] = useState<string[]>([]);
   const [data, setData] = useState<CommunityRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -64,20 +71,40 @@ export const CommunitiesListPage = () => {
     if (hasLoadedRef.current) setRefreshing(true);
     else setLoading(true);
 
-    fetchCommunities(page, pageSize, debouncedSearch || undefined, stageFilter || undefined).then(
-      (res) => {
-        setData(res.data);
-        setTotal(res.total);
-        hasLoadedRef.current = true;
-        setLoading(false);
-        setRefreshing(false);
-      },
-    );
-  }, [page, debouncedSearch, stageFilter]);
+    fetchCommunities(page, pageSize, {
+      search: debouncedSearch || undefined,
+      stage: stageFilter || undefined,
+      city: cityFilter || undefined,
+      dueThisWeek,
+      overdue: overdueOnly,
+    }).then((res) => {
+      setData(res.data);
+      setTotal(res.total);
+      hasLoadedRef.current = true;
+      setLoading(false);
+      setRefreshing(false);
+    });
+  }, [page, debouncedSearch, stageFilter, cityFilter, dueThisWeek, overdueOnly]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    fetchCommunityOptions().then((options) => {
+      const unique = new Set(options.map((option) => option.city?.trim()).filter(Boolean));
+      setCities([...unique].sort((a, b) => a.localeCompare(b)));
+    });
+  }, []);
+
+  const hasFilters = Boolean(stageFilter || cityFilter || dueThisWeek || overdueOnly);
+  const clearFilters = () => {
+    setStageFilter('');
+    setCityFilter('');
+    setDueThisWeek(false);
+    setOverdueOnly(false);
+    setPage(1);
+  };
 
   const closeModal = () => {
     setModalOpen(false);
@@ -204,6 +231,49 @@ export const CommunitiesListPage = () => {
             </option>
           ))}
         </select>
+        <select
+          className={pageStyles.select}
+          aria-label="Filter by city"
+          value={cityFilter}
+          onChange={(e) => {
+            setCityFilter(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All cities</option>
+          {cities.map((city) => (
+            <option key={city} value={city}>
+              {city}
+            </option>
+          ))}
+        </select>
+        <label className={formStyles.checkLabel}>
+          <input
+            type="checkbox"
+            checked={dueThisWeek}
+            onChange={(e) => {
+              setDueThisWeek(e.target.checked);
+              setPage(1);
+            }}
+          />
+          Next step due this week
+        </label>
+        <label className={formStyles.checkLabel}>
+          <input
+            type="checkbox"
+            checked={overdueOnly}
+            onChange={(e) => {
+              setOverdueOnly(e.target.checked);
+              setPage(1);
+            }}
+          />
+          Overdue
+        </label>
+        {hasFilters ? (
+          <Button variant="secondary" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        ) : null}
         <div className={pageStyles.filtersAction}>
           <Button onClick={openCreate}>Add Community</Button>
         </div>
@@ -232,16 +302,41 @@ export const CommunitiesListPage = () => {
                 key: 'contact',
                 header: 'Primary contact',
                 render: (c) =>
-                  c.primaryContact ? (
+                  c.primary_contact_name ? (
                     <span>
-                      {c.primaryContact.name}
-                      {c.primaryContact.position ? ` (${c.primaryContact.position})` : ''}
-                      {c.primaryContact.phone ? (
+                      {c.primary_contact_name}
+                      {c.primary_contact_position ? ` (${c.primary_contact_position})` : ''}
+                      {c.primary_contact_phone ? (
                         <>
                           {' · '}
-                          <a href={`tel:${c.primaryContact.phone}`}>{c.primaryContact.phone}</a>
+                          <a href={`tel:${c.primary_contact_phone}`}>{c.primary_contact_phone}</a>
                         </>
                       ) : null}
+                    </span>
+                  ) : (
+                    '—'
+                  ),
+              },
+              {
+                key: 'nextStep',
+                header: 'Next step',
+                render: (c) =>
+                  c.next_step_body ? (
+                    <span>
+                      {c.next_step_body}
+                      {c.next_step_due ? (
+                        <span
+                          style={
+                            c.overdue_steps_count > 0
+                              ? { color: 'var(--ic-status-error)', fontWeight: 600 }
+                              : undefined
+                          }
+                        >
+                          {' · '}
+                          {formatDueDate(c.next_step_due)}
+                        </span>
+                      ) : null}
+                      {c.open_steps_count > 1 ? ` (+${c.open_steps_count - 1} more)` : ''}
                     </span>
                   ) : (
                     '—'

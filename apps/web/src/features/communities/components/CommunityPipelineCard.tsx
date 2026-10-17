@@ -75,7 +75,7 @@ export const CommunityPipelineCard = ({
           </Badge>
           {stage !== 'active' ? (
             <p className={assignStyles.statusLine}>
-              Customers can't see this community until it is Active.
+              Customers can&apos;t see this community until it is Active.
             </p>
           ) : null}
         </div>

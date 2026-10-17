@@ -1,45 +1,46 @@
 import { getSupabase } from '@/lib/supabase';
 
-type CommunityContactSummary = {
-  name: string;
-  position: string | null;
-  phone: string | null;
-  is_primary: boolean;
+export type CommunityListFilters = {
+  search?: string;
+  stage?: string;
+  city?: string;
+  /** Has an open next step due within the next 7 days (including overdue). */
+  dueThisWeek?: boolean;
+  overdue?: boolean;
+};
+
+/** Local calendar date as YYYY-MM-DD, offset by `days`. */
+const localDateKey = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${month}-${day}`;
 };
 
 export const fetchCommunities = async (
   page = 1,
   pageSize = 25,
-  search?: string,
-  stage?: string,
+  filters: CommunityListFilters = {},
 ) => {
   const supabase = getSupabase();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let query = supabase
-    .from('communities')
-    .select('*, community_contacts(name, position, phone, is_primary)', { count: 'exact' });
-  if (search) query = query.ilike('name', `%${search}%`);
-  if (stage) query = query.eq('stage', stage);
+  let query = supabase.from('community_list_view').select('*', { count: 'exact' });
+  if (filters.search) query = query.ilike('name', `%${filters.search}%`);
+  if (filters.stage) query = query.eq('stage', filters.stage);
+  if (filters.city) query = query.eq('city', filters.city);
+
+  if (filters.dueThisWeek) query = query.lte('next_step_due', localDateKey(7));
+  if (filters.overdue) query = query.gt('overdue_steps_count', 0);
 
   const { data, count, error } = await query
     .order('created_at', { ascending: false })
     .range(from, to);
   if (error) console.error('[fetchCommunities]', error.message);
 
-  const rows = (data ?? []).map((row) => {
-    const { community_contacts: contacts, ...community } = row as typeof row & {
-      community_contacts?: CommunityContactSummary[] | null;
-    };
-    return {
-      ...community,
-      primaryContact:
-        (contacts ?? []).find((contact: CommunityContactSummary) => contact.is_primary) ?? null,
-    };
-  });
-
-  return { data: rows, total: count ?? 0 };
+  return { data: data ?? [], total: count ?? 0 };
 };
 
 export type CommunityOption = {
