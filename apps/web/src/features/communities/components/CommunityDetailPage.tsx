@@ -10,8 +10,15 @@ import { ADMIN_ROUTES } from '@/constants/routes';
 import { trpc } from '@/lib/trpc';
 import { formatCurrency } from '@/utils/format';
 
+import type { CommunityStage } from '@ironcloud/db';
+
+import { stageLabel } from '../constants';
 import { fetchCommunityById } from '../services/communities.service';
 
+import { CommunityAddressCard } from './CommunityAddressCard';
+import { CommunityContactsCard } from './CommunityContactsCard';
+import { CommunityNextStepsCard } from './CommunityNextStepsCard';
+import { CommunityPipelineCard } from './CommunityPipelineCard';
 import assignStyles from './CommunityDetailPage.module.css';
 import pageStyles from '@/styles/pages.module.css';
 
@@ -174,6 +181,10 @@ export const CommunityDetailPage = () => {
     });
   }, [id]);
 
+  const reloadCommunity = () => {
+    fetchCommunityById(id).then(setData);
+  };
+
   const assignedRiders = assignedQuery.data ?? [];
   const assignedIds = useMemo(
     () => new Set(assignedRiders.map((row) => row.riderId)),
@@ -310,9 +321,23 @@ export const CommunityDetailPage = () => {
       </div>
 
       <div className={pageStyles.detailGrid}>
+        <CommunityPipelineCard
+          communityId={id}
+          stage={data.community.stage as CommunityStage}
+          stageUpdatedAt={data.community.stage_updated_at ?? null}
+          onStageChanged={reloadCommunity}
+        />
+        <CommunityContactsCard communityId={id} />
+        <CommunityNextStepsCard communityId={id} />
+        <CommunityAddressCard
+          communityId={id}
+          community={data.community}
+          onSaved={reloadCommunity}
+        />
+
         <Card
           title={data.community.name}
-          subtitle={`${data.community.city} · ${data.community.status}${
+          subtitle={`${data.community.city} · ${stageLabel(data.community.stage)}${
             blocksEnabled ? ' · Blocks enabled' : ''
           }`}
         >
@@ -561,10 +586,6 @@ export const CommunityDetailPage = () => {
                         name: community.name,
                         city: community.city,
                         pricingTier: community.pricing_tier ?? 'standard',
-                        status: (community.status as
-                          | 'pending'
-                          | 'active'
-                          | 'suspended') || 'active',
                         blocksEnabled: e.target.checked,
                       });
                     }}
@@ -787,10 +808,6 @@ export const CommunityDetailPage = () => {
                         name: community.name,
                         city: community.city,
                         pricingTier: community.pricing_tier ?? 'standard',
-                        status: (community.status as
-                          | 'pending'
-                          | 'active'
-                          | 'suspended') || 'active',
                         blocksEnabled: true,
                       });
                     }}

@@ -23,6 +23,7 @@ export type {
   PaymentMethod,
   BoxStatus,
   BoxEventType,
+  CommunityStage,
 } from './types';
 
 export {

@@ -1,15 +1,45 @@
 import { getSupabase } from '@/lib/supabase';
 
-export const fetchCommunities = async (page = 1, pageSize = 25, search?: string) => {
+type CommunityContactSummary = {
+  name: string;
+  position: string | null;
+  phone: string | null;
+  is_primary: boolean;
+};
+
+export const fetchCommunities = async (
+  page = 1,
+  pageSize = 25,
+  search?: string,
+  stage?: string,
+) => {
   const supabase = getSupabase();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
-  let query = supabase.from('communities').select('*', { count: 'exact' });
+  let query = supabase
+    .from('communities')
+    .select('*, community_contacts(name, position, phone, is_primary)', { count: 'exact' });
   if (search) query = query.ilike('name', `%${search}%`);
+  if (stage) query = query.eq('stage', stage);
 
-  const { data, count } = await query.order('created_at', { ascending: false }).range(from, to);
-  return { data: data ?? [], total: count ?? 0 };
+  const { data, count, error } = await query
+    .order('created_at', { ascending: false })
+    .range(from, to);
+  if (error) console.error('[fetchCommunities]', error.message);
+
+  const rows = (data ?? []).map((row) => {
+    const { community_contacts: contacts, ...community } = row as typeof row & {
+      community_contacts?: CommunityContactSummary[] | null;
+    };
+    return {
+      ...community,
+      primaryContact:
+        (contacts ?? []).find((contact: CommunityContactSummary) => contact.is_primary) ?? null,
+    };
+  });
+
+  return { data: rows, total: count ?? 0 };
 };
 
 export type CommunityOption = {

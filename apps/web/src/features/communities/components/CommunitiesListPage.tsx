@@ -17,6 +17,9 @@ import { useToast } from '@/components/Toast/ToastProvider';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { trpc } from '@/lib/trpc';
 
+import type { CommunityStage } from '@ironcloud/db';
+
+import { COMMUNITY_STAGES, stageBadge, stageLabel } from '../constants';
 import { fetchCommunities } from '../services/communities.service';
 
 import formStyles from '@/styles/form.module.css';
@@ -28,8 +31,12 @@ const emptyForm = () => ({
   name: '',
   city: '',
   pricingTier: 'standard',
-  status: 'active' as 'pending' | 'active' | 'suspended',
+  stage: 'lead' as CommunityStage,
   blocksEnabled: false,
+  addressLine: '',
+  locality: '',
+  pincode: '',
+  state: '',
 });
 
 export const CommunitiesListPage = () => {
@@ -37,6 +44,7 @@ export const CommunitiesListPage = () => {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  const [stageFilter, setStageFilter] = useState('');
   const [data, setData] = useState<CommunityRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -56,14 +64,16 @@ export const CommunitiesListPage = () => {
     if (hasLoadedRef.current) setRefreshing(true);
     else setLoading(true);
 
-    fetchCommunities(page, pageSize, debouncedSearch || undefined).then((res) => {
-      setData(res.data);
-      setTotal(res.total);
-      hasLoadedRef.current = true;
-      setLoading(false);
-      setRefreshing(false);
-    });
-  }, [page, debouncedSearch]);
+    fetchCommunities(page, pageSize, debouncedSearch || undefined, stageFilter || undefined).then(
+      (res) => {
+        setData(res.data);
+        setTotal(res.total);
+        hasLoadedRef.current = true;
+        setLoading(false);
+        setRefreshing(false);
+      },
+    );
+  }, [page, debouncedSearch, stageFilter]);
 
   useEffect(() => {
     load();
@@ -87,17 +97,27 @@ export const CommunitiesListPage = () => {
       name: row.name ?? '',
       city: row.city ?? '',
       pricingTier: row.pricing_tier ?? 'standard',
-      status: (row.status as 'pending' | 'active' | 'suspended') || 'active',
+      stage: (row.stage as CommunityStage) || 'lead',
       blocksEnabled: Boolean(
         (row as { blocks_enabled?: boolean | null }).blocks_enabled,
       ),
+      addressLine: row.address_line ?? '',
+      locality: row.locality ?? '',
+      pincode: row.pincode ?? '',
+      state: row.state ?? '',
     });
     setModalOpen(true);
   };
 
+  const pincodeInvalid = form.pincode.trim() !== '' && !/^\d{6}$/.test(form.pincode.trim());
+
   const handleSave = () => {
     if (!form.name.trim() || !form.city.trim()) {
       toast('Name and city are required', 'error');
+      return;
+    }
+    if (pincodeInvalid) {
+      toast('Pincode must be 6 digits', 'error');
       return;
     }
 
@@ -105,8 +125,12 @@ export const CommunitiesListPage = () => {
       name: form.name.trim(),
       city: form.city.trim(),
       pricingTier: form.pricingTier,
-      status: form.status,
+      stage: form.stage,
       blocksEnabled: form.blocksEnabled,
+      addressLine: form.addressLine,
+      locality: form.locality,
+      pincode: form.pincode.trim(),
+      state: form.state,
     };
 
     if (editing) {
@@ -164,6 +188,22 @@ export const CommunitiesListPage = () => {
             setPage(1);
           }}
         />
+        <select
+          className={pageStyles.select}
+          aria-label="Filter by stage"
+          value={stageFilter}
+          onChange={(e) => {
+            setStageFilter(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All stages</option>
+          {COMMUNITY_STAGES.map((stage) => (
+            <option key={stage.value} value={stage.value}>
+              {stage.label}
+            </option>
+          ))}
+        </select>
         <div className={pageStyles.filtersAction}>
           <Button onClick={openCreate}>Add Community</Button>
         </div>
@@ -182,12 +222,30 @@ export const CommunitiesListPage = () => {
                 render: (c) => <a href={`/admin/communities/${c.id}`}>{c.name}</a>,
               },
               { key: 'city', header: 'City', render: (c) => c.city },
+              { key: 'pincode', header: 'Pincode', render: (c) => c.pincode ?? '—' },
               {
-                key: 'status',
-                header: 'Status',
-                render: (c) => (
-                  <Badge variant={c.status === 'active' ? 'success' : 'warning'}>{c.status}</Badge>
-                ),
+                key: 'stage',
+                header: 'Stage',
+                render: (c) => <Badge variant={stageBadge(c.stage)}>{stageLabel(c.stage)}</Badge>,
+              },
+              {
+                key: 'contact',
+                header: 'Primary contact',
+                render: (c) =>
+                  c.primaryContact ? (
+                    <span>
+                      {c.primaryContact.name}
+                      {c.primaryContact.position ? ` (${c.primaryContact.position})` : ''}
+                      {c.primaryContact.phone ? (
+                        <>
+                          {' · '}
+                          <a href={`tel:${c.primaryContact.phone}`}>{c.primaryContact.phone}</a>
+                        </>
+                      ) : null}
+                    </span>
+                  ) : (
+                    '—'
+                  ),
               },
               { key: 'tier', header: 'Pricing Tier', render: (c) => c.pricing_tier },
               {
@@ -226,7 +284,7 @@ export const CommunitiesListPage = () => {
         onSubmit={handleSave}
         submitLabel={editing ? 'Save' : 'Create'}
         submitting={saving}
-        submitDisabled={!form.name.trim() || !form.city.trim()}
+        submitDisabled={!form.name.trim() || !form.city.trim() || pincodeInvalid}
       >
         <div className={formStyles.stack}>
           <div className={formStyles.field}>
@@ -268,24 +326,79 @@ export const CommunitiesListPage = () => {
             </select>
           </div>
           <div className={formStyles.field}>
-            <label className={formStyles.label} htmlFor="community-status">
-              Status
+            <label className={formStyles.label} htmlFor="community-stage">
+              Stage
             </label>
             <select
-              id="community-status"
+              id="community-stage"
               className={formStyles.select}
-              value={form.status}
+              value={form.stage}
               onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  status: e.target.value as 'pending' | 'active' | 'suspended',
-                }))
+                setForm((f) => ({ ...f, stage: e.target.value as CommunityStage }))
               }
             >
-              <option value="active">Active</option>
-              <option value="pending">Pending</option>
-              <option value="suspended">Suspended</option>
+              {COMMUNITY_STAGES.map((stage) => (
+                <option key={stage.value} value={stage.value}>
+                  {stage.label}
+                </option>
+              ))}
             </select>
+            <p className={formStyles.hint}>
+              Customers can only see and book this community once it is Active.
+            </p>
+          </div>
+          <div className={formStyles.field}>
+            <label className={formStyles.label} htmlFor="community-address">
+              Address
+            </label>
+            <input
+              id="community-address"
+              className={formStyles.input}
+              value={form.addressLine}
+              onChange={(e) => setForm((f) => ({ ...f, addressLine: e.target.value }))}
+              placeholder="Street / road"
+            />
+          </div>
+          <div className={formStyles.row2}>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="community-locality">
+                Locality / area
+              </label>
+              <input
+                id="community-locality"
+                className={formStyles.input}
+                value={form.locality}
+                onChange={(e) => setForm((f) => ({ ...f, locality: e.target.value }))}
+                placeholder="e.g. Whitefield"
+              />
+            </div>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="community-pincode">
+                Pincode
+              </label>
+              <input
+                id="community-pincode"
+                className={formStyles.input}
+                value={form.pincode}
+                inputMode="numeric"
+                maxLength={6}
+                onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value }))}
+                placeholder="560066"
+              />
+              {pincodeInvalid ? <p className={formStyles.error}>Pincode must be 6 digits</p> : null}
+            </div>
+          </div>
+          <div className={formStyles.field}>
+            <label className={formStyles.label} htmlFor="community-state">
+              State
+            </label>
+            <input
+              id="community-state"
+              className={formStyles.input}
+              value={form.state}
+              onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))}
+              placeholder="e.g. Karnataka"
+            />
           </div>
           <div className={formStyles.field}>
             <label className={formStyles.checkLabel} htmlFor="community-blocks-enabled">

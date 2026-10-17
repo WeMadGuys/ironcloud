@@ -1,0 +1,116 @@
+.item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ic-spacing-sm) var(--ic-spacing-md);
+  padding: var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-divider);
+  border-radius: var(--ic-radius-md);
+  background: var(--ic-surface-section);
+}
+
+.itemOverdue {
+  border-color: var(--ic-status-error);
+}
+
+.itemDone {
+  opacity: 0.65;
+}
+
+.itemDone .itemTitle {
+  text-decoration: line-through;
+}
+
+.itemBody {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.itemTitle {
+  margin: 0;
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+  color: var(--ic-text-heading);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.itemMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ic-spacing-xs) var(--ic-spacing-sm);
+  margin-top: 2px;
+  font-size: var(--ic-font-size-xs);
+  color: var(--ic-text-secondary);
+}
+
+.overdueText {
+  color: var(--ic-status-error);
+  font-weight: 600;
+}
+
+.itemActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-xs);
+  margin-left: auto;
+}
+
+.checkbox {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-sm);
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--ic-spacing-sm);
+}
+
+@media (max-width: 560px) {
+  .formRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.formActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ic-spacing-sm);
+}
+
+.sectionToggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ic-brand-link);
+  font-size: var(--ic-font-size-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.addressLines {
+  margin: 0;
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-primary);
+  line-height: 1.5;
+}
+
+.link {
+  color: var(--ic-brand-link);
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+}

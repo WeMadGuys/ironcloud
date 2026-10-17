@@ -55,6 +55,15 @@ export type SlotType = 'pickup' | 'delivery';
 export type PaymentMethod = 'wallet' | 'razorpay_direct';
 export type BoxStatus = 'AVAILABLE' | 'OCCUPIED';
 export type BoxEventType = 'BOX_ASSIGNED' | 'BOX_RELEASED' | 'WRONG_BOX_SCAN';
+export type CommunityStage =
+  | 'lead'
+  | 'contacted'
+  | 'meeting_scheduled'
+  | 'approved'
+  | 'onboarding'
+  | 'active'
+  | 'paused'
+  | 'lost';
 
 export interface Database {
   public: {
@@ -128,6 +137,14 @@ export interface Database {
           pricing_tier: string;
           status: string;
           blocks_enabled: boolean;
+          stage: CommunityStage;
+          stage_updated_at: string;
+          address_line: string | null;
+          locality: string | null;
+          pincode: string | null;
+          state: string | null;
+          latitude: number | null;
+          longitude: number | null;
           created_at: string;
         };
         Insert: {
@@ -138,6 +155,14 @@ export interface Database {
           pricing_tier?: string;
           status?: string;
           blocks_enabled?: boolean;
+          stage?: CommunityStage;
+          stage_updated_at?: string;
+          address_line?: string | null;
+          locality?: string | null;
+          pincode?: string | null;
+          state?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
           created_at?: string;
         };
         Update: {
@@ -148,6 +173,110 @@ export interface Database {
           pricing_tier?: string;
           status?: string;
           blocks_enabled?: boolean;
+          stage?: CommunityStage;
+          stage_updated_at?: string;
+          address_line?: string | null;
+          locality?: string | null;
+          pincode?: string | null;
+          state?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      community_stage_history: {
+        Row: {
+          id: string;
+          community_id: string;
+          from_stage: CommunityStage | null;
+          to_stage: CommunityStage;
+          note: string | null;
+          changed_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          from_stage?: CommunityStage | null;
+          to_stage: CommunityStage;
+          note?: string | null;
+          changed_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          community_id?: string;
+          from_stage?: CommunityStage | null;
+          to_stage?: CommunityStage;
+          note?: string | null;
+          changed_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      community_contacts: {
+        Row: {
+          id: string;
+          community_id: string;
+          name: string;
+          position: string | null;
+          phone: string | null;
+          email: string | null;
+          is_primary: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          name: string;
+          position?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          is_primary?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          community_id?: string;
+          name?: string;
+          position?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          is_primary?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      community_next_steps: {
+        Row: {
+          id: string;
+          community_id: string;
+          body: string;
+          due_date: string | null;
+          is_done: boolean;
+          done_at: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id: string;
+          body: string;
+          due_date?: string | null;
+          is_done?: boolean;
+          done_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          community_id?: string;
+          body?: string;
+          due_date?: string | null;
+          is_done?: boolean;
+          done_at?: string | null;
+          created_by?: string | null;
           created_at?: string;
         };
         Relationships: [];
