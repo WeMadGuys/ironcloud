@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button, Card, DetailBackLink, Loader, RevenueBarChart } from '@/components';
 import { useToast } from '@/components/Toast/ToastProvider';
@@ -45,6 +45,8 @@ export const CommunityDetailPage = () => {
   const [newBlockName, setNewBlockName] = useState('');
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
   const [newFlatsText, setNewFlatsText] = useState('');
+  const [editingFlats, setEditingFlats] = useState(false);
+  const seedEditFlatsRef = useRef(false);
   const [renameBlockId, setRenameBlockId] = useState<string | null>(null);
   const [renameBlockValue, setRenameBlockValue] = useState('');
 
@@ -155,6 +157,19 @@ export const CommunityDetailPage = () => {
     onError: (err) => toast(err.message, 'error'),
   });
 
+  const syncFlatsMutation = trpc.communities.syncFlats.useMutation({
+    onSuccess: async () => {
+      toast('Flats updated', 'success');
+      setEditingFlats(false);
+      setNewFlatsText('');
+      seedEditFlatsRef.current = false;
+      if (expandedBlockId) {
+        await utils.communities.listFlats.invalidate({ blockId: expandedBlockId });
+      }
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
   const setBlocksEnabledMutation = trpc.communities.update.useMutation({
     onSuccess: async (_result, variables) => {
       const enabled = Boolean(variables.blocksEnabled);
@@ -168,6 +183,9 @@ export const CommunityDetailPage = () => {
         await utils.communities.listBlocks.invalidate({ communityId: id });
       } else {
         setExpandedBlockId(null);
+        setEditingFlats(false);
+        setNewFlatsText('');
+        seedEditFlatsRef.current = false;
       }
     },
     onError: (err) => toast(err.message, 'error'),
@@ -255,6 +273,34 @@ export const CommunityDetailPage = () => {
     createBlockMutation.mutate({ communityId: id, name });
   };
 
+  const resetFlatsEditor = () => {
+    setEditingFlats(false);
+    setNewFlatsText('');
+    seedEditFlatsRef.current = false;
+  };
+
+  const startEditFlats = (
+    blockId: string,
+    currentFlats?: { flat_number: string }[],
+  ) => {
+    setExpandedBlockId(blockId);
+    setEditingFlats(true);
+    if (currentFlats) {
+      setNewFlatsText(currentFlats.map((flat) => flat.flat_number).join(', '));
+      seedEditFlatsRef.current = false;
+      return;
+    }
+    setNewFlatsText('');
+    seedEditFlatsRef.current = true;
+  };
+
+  useEffect(() => {
+    if (!editingFlats || !seedEditFlatsRef.current) return;
+    if (!flatsQuery.data || flatsQuery.isLoading) return;
+    setNewFlatsText(flatsQuery.data.map((flat) => flat.flat_number).join(', '));
+    seedEditFlatsRef.current = false;
+  }, [editingFlats, flatsQuery.data, flatsQuery.isLoading]);
+
   const handleAddFlats = () => {
     if (!expandedBlockId) return;
     const flatNumbers = parseFlatNumbers(newFlatsText);
@@ -263,6 +309,20 @@ export const CommunityDetailPage = () => {
       return;
     }
     createFlatsMutation.mutate({
+      communityId: id,
+      blockId: expandedBlockId,
+      flatNumbers,
+    });
+  };
+
+  const handleSaveFlats = () => {
+    if (!expandedBlockId) return;
+    const flatNumbers = parseFlatNumbers(newFlatsText);
+    if (flatNumbers.length === 0) {
+      toast('Enter at least one flat number', 'error');
+      return;
+    }
+    syncFlatsMutation.mutate({
       communityId: id,
       blockId: expandedBlockId,
       flatNumbers,
@@ -287,6 +347,7 @@ export const CommunityDetailPage = () => {
     updateBlockMutation.isPending ||
     createFlatsMutation.isPending ||
     updateFlatMutation.isPending ||
+    syncFlatsMutation.isPending ||
     setBlocksEnabledMutation.isPending;
   const ridersLoading = assignedQuery.isLoading || assignedQuery.isFetching;
   const pickupSlots = slotsQuery.data ?? [];
@@ -663,10 +724,23 @@ export const CommunityDetailPage = () => {
                                 disabled={isBlockMutating}
                                 onClick={() => {
                                   setExpandedBlockId(isExpanded ? null : block.id);
-                                  setNewFlatsText('');
+                                  resetFlatsEditor();
                                 }}
                               >
                                 {isExpanded ? 'Hide flats' : 'Flats'}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                disabled={isBlockMutating}
+                                onClick={() =>
+                                  startEditFlats(
+                                    block.id,
+                                    isExpanded ? flatsQuery.data : undefined,
+                                  )
+                                }
+                              >
+                                Edit flats
                               </Button>
                               <Button
                                 variant="secondary"
@@ -736,22 +810,42 @@ export const CommunityDetailPage = () => {
                               className={assignStyles.assignLabel}
                               htmlFor={`add-flats-${block.id}`}
                             >
-                              Add flats (comma or newline separated)
+                              {editingFlats
+                                ? 'Edit flats (comma or newline separated)'
+                                : 'Add flats (comma or newline separated)'}
                             </label>
                             <textarea
                               id={`add-flats-${block.id}`}
                               className={assignStyles.flatsInput}
-                              rows={3}
+                              rows={editingFlats ? 8 : 3}
                               value={newFlatsText}
                               onChange={(e) => setNewFlatsText(e.target.value)}
                               placeholder="101, 102, 103"
                             />
-                            <Button
-                              onClick={handleAddFlats}
-                              disabled={isBlockMutating || !newFlatsText.trim()}
-                            >
-                              {createFlatsMutation.isPending ? 'Adding…' : 'Add flats'}
-                            </Button>
+                            {editingFlats ? (
+                              <div className={assignStyles.assignControls}>
+                                <Button
+                                  onClick={handleSaveFlats}
+                                  disabled={isBlockMutating || !newFlatsText.trim()}
+                                >
+                                  {syncFlatsMutation.isPending ? 'Saving…' : 'Save flats'}
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  disabled={isBlockMutating}
+                                  onClick={resetFlatsEditor}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            ) : (
+                              <Button
+                                onClick={handleAddFlats}
+                                disabled={isBlockMutating || !newFlatsText.trim()}
+                              >
+                                {createFlatsMutation.isPending ? 'Adding…' : 'Add flats'}
+                              </Button>
+                            )}
                           </div>
                         ) : null}
                       </li>

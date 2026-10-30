@@ -15,6 +15,7 @@
 
 .assignedItem {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--ic-spacing-md);
   padding: var(--ic-spacing-md);
@@ -218,6 +219,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--ic-spacing-xs);
+  max-height: 18rem;
+  overflow-y: auto;
 }
 
 .flatItem {
@@ -234,6 +237,8 @@
 
 .flatsInput {
   width: 100%;
+  max-height: 18rem;
+  overflow-y: auto;
   padding: var(--ic-spacing-sm) var(--ic-spacing-md);
   border: 1px solid var(--ic-border-default);
   border-radius: var(--ic-radius-input);

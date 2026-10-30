@@ -38,6 +38,20 @@ type AddressInput = {
 
 const emptyToNull = (value: string | null | undefined) => (value?.trim() ? value.trim() : null);
 
+const uniqueFlatNumbers = (rawNumbers: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of rawNumbers) {
+    const flat_number = raw.trim();
+    if (!flat_number) continue;
+    const key = flat_number.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(flat_number);
+  }
+  return result;
+};
+
 /** Only keys present in the input are written, so partial updates leave other fields alone. */
 const addressColumns = (input: AddressInput) => {
   const columns: Record<string, string | number | null> = {};
@@ -800,27 +814,28 @@ export const communitiesRouter = router({
       if (blockError) throw new Error(blockError.message);
       if (!block) throw new Error('Block not found for this community');
 
-      const seen = new Set<string>();
-      const rows: { block_id: string; flat_number: string; sort_order: number; is_active: boolean }[] =
-        [];
-
-      for (const raw of input.flatNumbers) {
-        const flat_number = raw.trim();
-        if (!flat_number) continue;
-        const key = flat_number.toLowerCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
-        rows.push({
-          block_id: input.blockId,
-          flat_number,
-          sort_order: 0,
-          is_active: true,
-        });
-      }
-
-      if (rows.length === 0) {
+      const flatNumbers = uniqueFlatNumbers(input.flatNumbers);
+      if (flatNumbers.length === 0) {
         throw new Error('Enter at least one flat number');
       }
+
+      const { data: lastFlat, error: lastError } = await ctx.supabase
+        .from('community_flats')
+        .select('sort_order')
+        .eq('block_id', input.blockId)
+        .order('sort_order', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lastError) throw new Error(lastError.message);
+
+      let nextSort = (lastFlat?.sort_order ?? -1) + 1;
+      const rows = flatNumbers.map((flat_number) => ({
+        block_id: input.blockId,
+        flat_number,
+        sort_order: nextSort++,
+        is_active: true,
+      }));
 
       const { data, error } = await ctx.supabase
         .from('community_flats')
@@ -865,6 +880,110 @@ export const communitiesRouter = router({
       });
 
       return { created };
+    }),
+
+  syncFlats: adminProcedure
+    .input(
+      z.object({
+        communityId: z.string().uuid(),
+        blockId: z.string().uuid(),
+        flatNumbers: z.array(z.string().min(1)).min(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data: block, error: blockError } = await ctx.supabase
+        .from('community_blocks')
+        .select('id')
+        .eq('id', input.blockId)
+        .eq('community_id', input.communityId)
+        .maybeSingle();
+
+      if (blockError) throw new Error(blockError.message);
+      if (!block) throw new Error('Block not found for this community');
+
+      const flatNumbers = uniqueFlatNumbers(input.flatNumbers);
+      if (flatNumbers.length === 0) {
+        throw new Error('Enter at least one flat number');
+      }
+
+      const { data: existing, error: existingError } = await ctx.supabase
+        .from('community_flats')
+        .select('id, flat_number, sort_order')
+        .eq('block_id', input.blockId);
+
+      if (existingError) throw new Error(existingError.message);
+
+      const existingByKey = new Map(
+        (existing ?? []).map((row) => [row.flat_number.trim().toLowerCase(), row]),
+      );
+      const keepIds = new Set<string>();
+      const inserts: { block_id: string; flat_number: string; sort_order: number; is_active: boolean }[] =
+        [];
+      let updated = 0;
+
+      for (let i = 0; i < flatNumbers.length; i += 1) {
+        const flat_number = flatNumbers[i];
+        const current = existingByKey.get(flat_number.toLowerCase());
+        if (current) {
+          keepIds.add(current.id);
+          if (current.sort_order !== i) {
+            const { error: updateError } = await ctx.supabase
+              .from('community_flats')
+              .update({ sort_order: i })
+              .eq('id', current.id)
+              .eq('block_id', input.blockId);
+            if (updateError) throw new Error(updateError.message);
+            updated += 1;
+          }
+        } else {
+          inserts.push({
+            block_id: input.blockId,
+            flat_number,
+            sort_order: i,
+            is_active: true,
+          });
+        }
+      }
+
+      if (inserts.length > 0) {
+        const { error: insertError } = await ctx.supabase
+          .from('community_flats')
+          .insert(inserts);
+        if (insertError) throw new Error(insertError.message);
+      }
+
+      const removeIds = (existing ?? [])
+        .filter((row) => !keepIds.has(row.id))
+        .map((row) => row.id);
+
+      if (removeIds.length > 0) {
+        const { error: deleteError } = await ctx.supabase
+          .from('community_flats')
+          .delete()
+          .eq('block_id', input.blockId)
+          .in('id', removeIds);
+        if (deleteError) throw new Error(deleteError.message);
+      }
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.flats.sync',
+        entityType: 'community',
+        entityId: input.communityId,
+        after: {
+          blockId: input.blockId,
+          updated,
+          created: inserts.length,
+          removed: removeIds.length,
+        },
+      });
+
+      return {
+        updated,
+        created: inserts.length,
+        removed: removeIds.length,
+      };
     }),
 
   updateFlat: adminProcedure
