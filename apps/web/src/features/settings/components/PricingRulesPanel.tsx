@@ -32,8 +32,11 @@ import pageStyles from '@/styles/pages.module.css';
 type PricingRow = Awaited<ReturnType<typeof fetchPricingRules>>[number];
 type ServiceOption = Awaited<ReturnType<typeof fetchActiveServices>>[number];
 
+const NEW_SERVICE_VALUE = '__new__';
+
 type PricingForm = {
   serviceId: string;
+  newServiceName: string;
   scope: PricingScope;
   city: string;
   communityId: string;
@@ -45,6 +48,7 @@ type PricingForm = {
 
 const emptyForm = (): PricingForm => ({
   serviceId: '',
+  newServiceName: '',
   scope: 'all',
   city: '',
   communityId: '',
@@ -123,6 +127,27 @@ export const PricingRulesPanel = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [communities]);
 
+  const uniqueServices = useMemo(() => {
+    const byName = new Map<string, ServiceOption>();
+    for (const s of services) {
+      const key = s.name.trim().toLowerCase();
+      if (!key || byName.has(key)) continue;
+      byName.set(key, s);
+    }
+    const list = Array.from(byName.values()).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+    if (
+      form.serviceId &&
+      form.serviceId !== NEW_SERVICE_VALUE &&
+      !list.some((s) => s.id === form.serviceId)
+    ) {
+      const current = services.find((s) => s.id === form.serviceId);
+      if (current) list.unshift(current);
+    }
+    return list;
+  }, [services, form.serviceId]);
+
   const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
@@ -142,6 +167,7 @@ export const PricingRulesPanel = () => {
     setEditing(row);
     setForm({
       serviceId: row.service_id,
+      newServiceName: '',
       scope,
       city: row.city ?? '',
       communityId: row.community_id ?? '',
@@ -158,8 +184,13 @@ export const PricingRulesPanel = () => {
   };
 
   const handleSave = () => {
+    const isNewService = form.serviceId === NEW_SERVICE_VALUE;
     if (!form.serviceId) {
       toast('Select a service', 'error');
+      return;
+    }
+    if (isNewService && !form.newServiceName.trim()) {
+      toast('Enter a service name', 'error');
       return;
     }
     const basePrice = Number(form.basePrice);
@@ -182,7 +213,9 @@ export const PricingRulesPanel = () => {
 
     const expressMultiplier = Number(form.expressMultiplier);
     const payload = {
-      serviceId: form.serviceId,
+      ...(isNewService
+        ? { newServiceName: form.newServiceName.trim(), serviceId: null }
+        : { serviceId: form.serviceId, newServiceName: null }),
       scope: form.scope,
       city: form.scope === 'city' ? form.city.trim() : null,
       communityId: form.scope === 'community' ? form.communityId : null,
@@ -323,16 +356,43 @@ export const PricingRulesPanel = () => {
               id="pricing-service"
               className={formStyles.select}
               value={form.serviceId}
-              onChange={(e) => setForm((f) => ({ ...f, serviceId: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  serviceId: e.target.value,
+                  newServiceName:
+                    e.target.value === NEW_SERVICE_VALUE ? f.newServiceName : '',
+                }))
+              }
             >
               <option value="">Select service</option>
-              {services.map((s) => (
+              {uniqueServices.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
               ))}
+              <option value={NEW_SERVICE_VALUE}>New service</option>
             </select>
           </div>
+
+          {form.serviceId === NEW_SERVICE_VALUE && (
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-new-service">
+                New service name *
+              </label>
+              <input
+                id="pricing-new-service"
+                className={formStyles.input}
+                type="text"
+                value={form.newServiceName}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, newServiceName: e.target.value }))
+                }
+                placeholder="e.g. Blazer"
+                autoFocus
+              />
+            </div>
+          )}
 
           <div className={formStyles.field}>
             <span className={formStyles.label}>Applies to *</span>

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { TypedSupabaseClient } from '@ironcloud/db';
+
 import { writeAuditLog } from '../../lib/audit';
 import { adminProcedure, superAdminProcedure, router } from '../../trpc/init';
 
@@ -61,22 +63,82 @@ function audienceColumns(input: PricingAudience) {
   };
 }
 
+const pricingServiceObject = z.object({
+  serviceId: z.string().uuid().optional().nullable(),
+  newServiceName: z.string().optional().nullable(),
+  basePrice: z.number().positive(),
+  expressMultiplier: z.number().positive().optional(),
+});
+
+type PricingServiceInput = z.infer<typeof pricingServiceObject>;
+
+function refinePricingService(val: PricingServiceInput, ctx: z.RefinementCtx) {
+  const hasId = Boolean(val.serviceId);
+  const hasName = Boolean(val.newServiceName?.trim());
+  if (!hasId && !hasName) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Select a service or enter a new service name',
+      path: ['serviceId'],
+    });
+  }
+}
+
+async function resolveServiceId(
+  supabase: TypedSupabaseClient,
+  input: Pick<PricingServiceInput, 'serviceId' | 'newServiceName'>,
+): Promise<string> {
+  const name = input.newServiceName?.trim();
+  if (name) {
+    const { data: active, error: listError } = await supabase
+      .from('services')
+      .select('id, name')
+      .eq('is_active', true)
+      .limit(500);
+
+    if (listError) throw new Error(listError.message);
+
+    const existing = (active ?? []).find(
+      (row) => row.name.trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (existing) return existing.id;
+
+    const { data, error } = await supabase
+      .from('services')
+      .insert({
+        name,
+        category: 'ironing',
+        unit: 'piece',
+        is_active: true,
+      })
+      .select('id')
+      .single();
+
+    if (error) throw new Error(error.message);
+    if (!data?.id) throw new Error('Failed to create service');
+    return data.id;
+  }
+
+  if (!input.serviceId) throw new Error('Service is required');
+  return input.serviceId;
+}
+
 const createPricingInput = pricingAudienceObject
-  .extend({
-    serviceId: z.string().uuid(),
-    basePrice: z.number().positive(),
-    expressMultiplier: z.number().positive().optional(),
-  })
-  .superRefine(refinePricingAudience);
+  .merge(pricingServiceObject)
+  .superRefine((val, ctx) => {
+    refinePricingAudience(val, ctx);
+    refinePricingService(val, ctx);
+  });
 
 const updatePricingInput = pricingAudienceObject
+  .merge(pricingServiceObject)
   .extend({
     id: z.string().uuid(),
-    serviceId: z.string().uuid(),
-    basePrice: z.number().positive(),
-    expressMultiplier: z.number().positive().optional(),
   })
-  .superRefine(refinePricingAudience);
+  .superRefine((val, ctx) => {
+    refinePricingAudience(val, ctx);
+    refinePricingService(val, ctx);
+  });
 
 export const settingsRouter = router({
   updateSetting: adminProcedure
@@ -106,10 +168,12 @@ export const settingsRouter = router({
   createPricing: adminProcedure
     .input(createPricingInput)
     .mutation(async ({ ctx, input }) => {
+      const serviceId = await resolveServiceId(ctx.supabase, input);
+
       const { data, error } = await ctx.supabase
         .from('pricing_rules')
         .insert({
-          service_id: input.serviceId,
+          service_id: serviceId,
           base_price: input.basePrice,
           express_multiplier: input.expressMultiplier ?? 1.5,
           ...audienceColumns(input),
@@ -125,7 +189,11 @@ export const settingsRouter = router({
         action: 'pricing.create',
         entityType: 'pricing_rules',
         entityId: data.id,
-        after: { serviceId: input.serviceId, scope: input.scope },
+        after: {
+          serviceId,
+          newServiceName: input.newServiceName?.trim() || null,
+          scope: input.scope,
+        },
       });
 
       return { id: data.id };
@@ -134,10 +202,12 @@ export const settingsRouter = router({
   updatePricing: adminProcedure
     .input(updatePricingInput)
     .mutation(async ({ ctx, input }) => {
+      const serviceId = await resolveServiceId(ctx.supabase, input);
+
       const { error } = await ctx.supabase
         .from('pricing_rules')
         .update({
-          service_id: input.serviceId,
+          service_id: serviceId,
           base_price: input.basePrice,
           ...(input.expressMultiplier !== undefined
             ? { express_multiplier: input.expressMultiplier }
@@ -154,7 +224,11 @@ export const settingsRouter = router({
         action: 'pricing.update',
         entityType: 'pricing_rules',
         entityId: input.id,
-        after: { serviceId: input.serviceId, scope: input.scope },
+        after: {
+          serviceId,
+          newServiceName: input.newServiceName?.trim() || null,
+          scope: input.scope,
+        },
       });
 
       return { success: true };
