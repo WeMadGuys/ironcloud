@@ -1197,6 +1197,27 @@ async function createBookingClientSide(input: CreateBookingInput): Promise<{
     throw new Error('Invalid pickup time slot');
   }
 
+  const pickupWindow = buildWindow(input.dayOffset, startHour, startHour + 1);
+  if (pickupWindow.end.getTime() <= Date.now()) {
+    throw new Error(
+      'This pickup slot has already passed. Please choose another time.',
+    );
+  }
+
+  const closedDate = pickupWindow.start.toLocaleDateString('en-CA');
+  const { data: closedRows, error: closedError } = await (supabase
+    .from('booking_closed_dates') as ReturnType<typeof supabase.from>)
+    .select('id')
+    .eq('closed_date', closedDate)
+    .or(`community_id.is.null,community_id.eq.${addressRow.community_id}`)
+    .limit(1);
+
+  if (closedError) {
+    console.warn('[Booking] closed dates check failed:', closedError.message);
+  } else if ((closedRows?.length ?? 0) > 0) {
+    throw new Error('Pickup is not available on this date. Please choose another day.');
+  }
+
   const { data: slotTemplate, error: slotTemplateError } = await (supabase
     .from('community_pickup_slots') as ReturnType<typeof supabase.from>)
     .select('id')
@@ -1210,13 +1231,6 @@ async function createBookingClientSide(input: CreateBookingInput): Promise<{
   }
   if (!slotTemplate) {
     throw new Error('Selected pickup slot is not available for your community');
-  }
-
-  const pickupWindow = buildWindow(input.dayOffset, startHour, startHour + 1);
-  if (pickupWindow.end.getTime() <= Date.now()) {
-    throw new Error(
-      'This pickup slot has already passed. Please choose another time.',
-    );
   }
   // Delivery is always 24 hours after pickup
   const deliveryWindow = getDeliveryWindowFromPickup(

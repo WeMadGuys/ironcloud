@@ -61,11 +61,31 @@ export const CommunitiesListPage = () => {
   const [editing, setEditing] = useState<CommunityRow | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [globalClosedDate, setGlobalClosedDate] = useState('');
   const pageSize = 25;
+  const utils = trpc.useUtils();
 
   const createMutation = trpc.communities.create.useMutation();
   const updateMutation = trpc.communities.update.useMutation();
   const deleteMutation = trpc.communities.delete.useMutation();
+  const closedDatesQuery = trpc.communities.listClosedDates.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+  const addClosedDateMutation = trpc.communities.addClosedDate.useMutation({
+    onSuccess: async () => {
+      toast('Closed date added for all communities', 'success');
+      setGlobalClosedDate('');
+      await utils.communities.listClosedDates.invalidate();
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+  const removeClosedDateMutation = trpc.communities.removeClosedDate.useMutation({
+    onSuccess: async () => {
+      toast('Closed date removed', 'success');
+      await utils.communities.listClosedDates.invalidate();
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
 
   const load = useCallback(() => {
     if (hasLoadedRef.current) setRefreshing(true);
@@ -201,11 +221,79 @@ export const CommunitiesListPage = () => {
   };
 
   const saving = createMutation.isPending || updateMutation.isPending;
+  const globalClosedDates = closedDatesQuery.data ?? [];
+  const closedDateMutating =
+    addClosedDateMutation.isPending || removeClosedDateMutation.isPending;
+
+  const formatClosedDate = (value: string) =>
+    new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+
+  const handleAddGlobalClosedDate = () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(globalClosedDate)) {
+      toast('Pick a valid date', 'error');
+      return;
+    }
+    addClosedDateMutation.mutate({ closedDate: globalClosedDate });
+  };
 
   if (loading) return <Loader fullPage />;
 
   return (
     <div>
+      <div className={pageStyles.closedDatesPanel}>
+        <div className={pageStyles.closedDatesHeader}>
+          <div>
+            <h2 className={pageStyles.closedDatesTitle}>Closed dates (all communities)</h2>
+            <p className={pageStyles.closedDatesHint}>
+              Blocks pickup booking for every community on the selected date.
+            </p>
+          </div>
+          <div className={pageStyles.closedDatesControls}>
+            <input
+              type="date"
+              className={pageStyles.select}
+              aria-label="Close all communities on date"
+              value={globalClosedDate}
+              onChange={(e) => setGlobalClosedDate(e.target.value)}
+              disabled={closedDateMutating}
+            />
+            <Button
+              size="sm"
+              onClick={handleAddGlobalClosedDate}
+              disabled={!globalClosedDate || closedDateMutating}
+            >
+              {addClosedDateMutation.isPending ? 'Adding…' : 'Disable date'}
+            </Button>
+          </div>
+        </div>
+        {closedDatesQuery.isLoading ? (
+          <p className={pageStyles.closedDatesEmpty}>Loading closed dates…</p>
+        ) : globalClosedDates.length === 0 ? (
+          <p className={pageStyles.closedDatesEmpty}>No global closed dates.</p>
+        ) : (
+          <ul className={pageStyles.closedDatesList}>
+            {globalClosedDates.map((row) => (
+              <li key={row.id} className={pageStyles.closedDatesItem}>
+                <span>{formatClosedDate(row.closed_date)}</span>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  disabled={closedDateMutating}
+                  onClick={() => removeClosedDateMutation.mutate({ id: row.id })}
+                >
+                  Enable
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div className={pageStyles.filters}>
         <SearchInput
           placeholder="Search communities..."

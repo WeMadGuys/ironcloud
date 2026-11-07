@@ -51,6 +51,8 @@ import {
   type ActiveBooking,
 } from '../../src/features/booking/services/booking.service';
 import {
+  dayOffsetToLocalDateKey,
+  getClosedDatesForCommunity,
   getCommunityPickupSlots,
   type CommunityPickupSlot,
 } from '../../src/features/booking/services/communitySlots.service';
@@ -122,9 +124,11 @@ function findNextAvailableDayOffset(
   bookedDays: number[],
   now: Date,
   dayCount: number,
+  closedDates: Set<string> = new Set(),
 ): number | null {
   for (let offset = fromOffset + 1; offset < dayCount; offset++) {
     if (bookedDays.includes(offset)) continue;
+    if (closedDates.has(dayOffsetToLocalDateKey(offset, now))) continue;
     if (slots.some((slot) => isPickupSlotAvailable(offset, slot.startHour, now))) {
       return offset;
     }
@@ -193,6 +197,7 @@ export default function HomeScreen() {
   const [selectedDay, setSelectedDay] = useState(0);
   const [selectedStartHour, setSelectedStartHour] = useState<number | null>(null);
   const [pickupSlots, setPickupSlots] = useState<CommunityPickupSlot[]>([]);
+  const [closedDates, setClosedDates] = useState<Set<string>>(() => new Set());
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [showAllSlots, setShowAllSlots] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -231,19 +236,27 @@ export default function HomeScreen() {
   useEffect(() => {
     if (!communityId) {
       setPickupSlots([]);
+      setClosedDates(new Set());
       setSelectedStartHour(null);
       return;
     }
     let cancelled = false;
     setSlotsLoading(true);
-    getCommunityPickupSlots(communityId)
-      .then((slots) => {
+    Promise.all([
+      getCommunityPickupSlots(communityId),
+      getClosedDatesForCommunity(communityId),
+    ])
+      .then(([slots, closed]) => {
         if (cancelled) return;
         setPickupSlots(slots);
+        setClosedDates(closed);
       })
       .catch((error) => {
         console.error('Error loading pickup slots:', error);
-        if (!cancelled) setPickupSlots([]);
+        if (!cancelled) {
+          setPickupSlots([]);
+          setClosedDates(new Set());
+        }
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false);
@@ -253,12 +266,18 @@ export default function HomeScreen() {
     };
   }, [communityId]);
 
+  const selectedDayClosed = useMemo(() => {
+    const now = new Date(slotClock);
+    return closedDates.has(dayOffsetToLocalDateKey(selectedDay, now));
+  }, [closedDates, selectedDay, slotClock]);
+
   const availableSlots = useMemo(() => {
+    if (selectedDayClosed) return [];
     const now = new Date(slotClock);
     return pickupSlots.filter((slot) =>
       isPickupSlotAvailable(selectedDay, slot.startHour, now),
     );
-  }, [pickupSlots, selectedDay, slotClock]);
+  }, [pickupSlots, selectedDay, slotClock, selectedDayClosed]);
 
   const nextAvailableDay = useMemo(() => {
     const dayOptions = getNextDays(7);
@@ -268,6 +287,7 @@ export default function HomeScreen() {
       bookedDays,
       new Date(slotClock),
       dayOptions.length,
+      closedDates,
     );
     if (offset == null) return null;
     const day = dayOptions[offset];
@@ -276,7 +296,7 @@ export default function HomeScreen() {
       offset,
       label: formatNextAvailableDayLabel(day, offset),
     };
-  }, [selectedDay, pickupSlots, bookedDays, slotClock]);
+  }, [selectedDay, pickupSlots, bookedDays, slotClock, closedDates]);
 
   // Keep an explicit selection only if that slot is still bookable. Never auto-pick.
   useEffect(() => {

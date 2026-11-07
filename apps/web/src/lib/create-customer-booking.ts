@@ -285,6 +285,24 @@ export async function createCustomerBooking(
     };
   }
 
+  const pickupDayKey = zonedDayKey(pickupStart, timeZone);
+  const { data: closedRows, error: closedError } = await admin
+    .from('booking_closed_dates')
+    .select('id')
+    .eq('closed_date', pickupDayKey)
+    .or(`community_id.is.null,community_id.eq.${address.community_id}`)
+    .limit(1);
+
+  if (closedError) {
+    console.warn('[create-booking] closed dates check failed:', closedError.message);
+  } else if ((closedRows?.length ?? 0) > 0) {
+    return {
+      success: false,
+      error: 'Pickup is not available on this date. Please choose another day.',
+      status: 400,
+    };
+  }
+
   const { data: slotTemplate, error: slotTemplateError } = await admin
     .from('community_pickup_slots')
     .select('id')

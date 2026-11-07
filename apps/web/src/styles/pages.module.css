@@ -127,3 +127,69 @@
   color: var(--ic-brand-primary);
   border-bottom-color: var(--ic-brand-accent);
 }
+
+.closedDatesPanel {
+  margin-bottom: var(--ic-spacing-lg);
+  padding: var(--ic-spacing-lg);
+  border: 1px solid var(--ic-border-divider);
+  border-radius: var(--ic-radius-md);
+  background: var(--ic-surface-section);
+}
+
+.closedDatesHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-md);
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.closedDatesTitle {
+  margin: 0;
+  font-family: var(--ic-font-body);
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+  color: var(--ic-text-heading);
+}
+
+.closedDatesHint {
+  margin: var(--ic-spacing-xs) 0 0;
+  font-size: var(--ic-font-size-xs);
+  color: var(--ic-text-secondary);
+}
+
+.closedDatesControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-sm);
+  align-items: center;
+}
+
+.closedDatesList {
+  list-style: none;
+  margin: var(--ic-spacing-md) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-sm);
+}
+
+.closedDatesItem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ic-spacing-md);
+  padding: var(--ic-spacing-sm) var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-divider);
+  border-radius: var(--ic-radius-md);
+  background: var(--ic-surface-input);
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-primary);
+}
+
+.closedDatesEmpty {
+  margin: var(--ic-spacing-md) 0 0;
+  font-size: var(--ic-font-size-xs);
+  color: var(--ic-text-muted);
+}

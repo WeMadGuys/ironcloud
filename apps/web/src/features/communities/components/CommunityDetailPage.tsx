@@ -42,6 +42,7 @@ export const CommunityDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [selectedRiderId, setSelectedRiderId] = useState('');
   const [selectedStartHour, setSelectedStartHour] = useState(8);
+  const [communityClosedDate, setCommunityClosedDate] = useState('');
   const [newBlockName, setNewBlockName] = useState('');
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
   const [newFlatsText, setNewFlatsText] = useState('');
@@ -58,6 +59,10 @@ export const CommunityDetailPage = () => {
     refetchOnWindowFocus: false,
   });
   const slotsQuery = trpc.communities.listPickupSlots.useQuery(
+    { communityId: id },
+    { enabled: Boolean(id), refetchOnWindowFocus: false },
+  );
+  const closedDatesQuery = trpc.communities.listClosedDates.useQuery(
     { communityId: id },
     { enabled: Boolean(id), refetchOnWindowFocus: false },
   );
@@ -109,6 +114,23 @@ export const CommunityDetailPage = () => {
     onSuccess: async () => {
       toast('Pickup slot removed', 'success');
       await utils.communities.listPickupSlots.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const addClosedDateMutation = trpc.communities.addClosedDate.useMutation({
+    onSuccess: async () => {
+      toast('Closed date added', 'success');
+      setCommunityClosedDate('');
+      await utils.communities.listClosedDates.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const removeClosedDateMutation = trpc.communities.removeClosedDate.useMutation({
+    onSuccess: async () => {
+      toast('Closed date removed', 'success');
+      await utils.communities.listClosedDates.invalidate({ communityId: id });
     },
     onError: (err) => toast(err.message, 'error'),
   });
@@ -342,6 +364,18 @@ export const CommunityDetailPage = () => {
     addSlotMutation.isPending ||
     setSlotActiveMutation.isPending ||
     removeSlotMutation.isPending;
+  const isClosedDateMutating =
+    addClosedDateMutation.isPending || removeClosedDateMutation.isPending;
+  const closedDates = closedDatesQuery.data ?? [];
+  const communityOnlyClosedDates = closedDates.filter((row) => row.scope === 'community');
+  const globalClosedDates = closedDates.filter((row) => row.scope === 'global');
+  const formatClosedDate = (value: string) =>
+    new Date(`${value}T00:00:00`).toLocaleDateString('en-IN', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
   const isBlockMutating =
     createBlockMutation.isPending ||
     updateBlockMutation.isPending ||
@@ -618,6 +652,102 @@ export const CommunityDetailPage = () => {
               {slotsQuery.isError && (
                 <p className={assignStyles.statusLine}>
                   Could not load slots: {slotsQuery.error.message}
+                </p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <Card
+          title="Closed dates"
+          subtitle="Hide all pickup slots for this community on selected dates"
+        >
+          <div className={assignStyles.assignPanel}>
+            {closedDatesQuery.isLoading ? (
+              <p className={assignStyles.statusLine}>Loading closed dates…</p>
+            ) : (
+              <>
+                {globalClosedDates.length > 0 ? (
+                  <ul className={assignStyles.assignedList}>
+                    {globalClosedDates.map((row) => (
+                      <li key={row.id} className={assignStyles.assignedItem}>
+                        <div className={assignStyles.assignedMeta}>
+                          <span className={assignStyles.assignedName}>
+                            {formatClosedDate(row.closed_date)}
+                          </span>
+                          <span className={assignStyles.assignedPhone}>
+                            All communities · managed on communities list
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                {communityOnlyClosedDates.length === 0 ? (
+                  <div className={assignStyles.emptyBox}>
+                    <p className={assignStyles.emptyTitle}>No community closed dates</p>
+                    <p className={assignStyles.emptyHint}>
+                      Add a date below to hide slots for this community only.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className={assignStyles.assignedList}>
+                    {communityOnlyClosedDates.map((row) => (
+                      <li key={row.id} className={assignStyles.assignedItem}>
+                        <div className={assignStyles.assignedMeta}>
+                          <span className={assignStyles.assignedName}>
+                            {formatClosedDate(row.closed_date)}
+                          </span>
+                          <span className={assignStyles.assignedPhone}>This community</span>
+                        </div>
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          disabled={isClosedDateMutating}
+                          onClick={() => removeClosedDateMutation.mutate({ id: row.id })}
+                        >
+                          Enable
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+
+            <div className={assignStyles.assignBox}>
+              <label className={assignStyles.assignLabel} htmlFor="add-closed-date">
+                Disable a date
+              </label>
+              <div className={assignStyles.assignControls}>
+                <input
+                  id="add-closed-date"
+                  type="date"
+                  className={assignStyles.assignSelect}
+                  value={communityClosedDate}
+                  onChange={(e) => setCommunityClosedDate(e.target.value)}
+                  disabled={isClosedDateMutating}
+                />
+                <Button
+                  onClick={() => {
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(communityClosedDate)) {
+                      toast('Pick a valid date', 'error');
+                      return;
+                    }
+                    addClosedDateMutation.mutate({
+                      communityId: id,
+                      closedDate: communityClosedDate,
+                    });
+                  }}
+                  disabled={!communityClosedDate || isClosedDateMutating}
+                >
+                  {addClosedDateMutation.isPending ? 'Adding…' : 'Disable date'}
+                </Button>
+              </div>
+              {closedDatesQuery.isError && (
+                <p className={assignStyles.statusLine}>
+                  Could not load closed dates: {closedDatesQuery.error.message}
                 </p>
               )}
             </div>

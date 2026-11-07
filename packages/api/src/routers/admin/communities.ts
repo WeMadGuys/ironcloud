@@ -685,6 +685,113 @@ export const communitiesRouter = router({
       return { success: true };
     }),
 
+  listClosedDates: adminProcedure
+    .input(z.object({ communityId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const communityId = input?.communityId;
+      let query = ctx.supabase
+        .from('booking_closed_dates')
+        .select('id, community_id, closed_date, note, created_at')
+        .order('closed_date', { ascending: true });
+
+      if (communityId) {
+        query = query.or(`community_id.is.null,community_id.eq.${communityId}`);
+      } else {
+        query = query.is('community_id', null);
+      }
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+
+      return (data ?? []).map((row) => ({
+        ...row,
+        scope: row.community_id == null ? ('global' as const) : ('community' as const),
+      }));
+    }),
+
+  addClosedDate: adminProcedure
+    .input(
+      z.object({
+        closedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        communityId: z.string().uuid().optional(),
+        note: z.string().max(500).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase
+        .from('booking_closed_dates')
+        .insert({
+          closed_date: input.closedDate,
+          community_id: input.communityId ?? null,
+          note: input.note?.trim() || null,
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          throw new Error(
+            input.communityId
+              ? `This community is already closed on ${input.closedDate}`
+              : `All communities are already closed on ${input.closedDate}`,
+          );
+        }
+        throw new Error(error.message);
+      }
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.closed_date.add',
+        entityType: 'community',
+        entityId: input.communityId ?? data.id,
+        after: {
+          closedDateId: data.id,
+          closedDate: input.closedDate,
+          scope: input.communityId ? 'community' : 'global',
+          communityId: input.communityId ?? null,
+        },
+      });
+
+      return { id: data.id };
+    }),
+
+  removeClosedDate: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing, error: fetchError } = await ctx.supabase
+        .from('booking_closed_dates')
+        .select('id, community_id, closed_date')
+        .eq('id', input.id)
+        .maybeSingle();
+
+      if (fetchError) throw new Error(fetchError.message);
+      if (!existing) throw new Error('Closed date not found');
+
+      const { error } = await ctx.supabase
+        .from('booking_closed_dates')
+        .delete()
+        .eq('id', input.id);
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.closed_date.remove',
+        entityType: 'community',
+        entityId: existing.community_id ?? existing.id,
+        after: {
+          closedDateId: existing.id,
+          closedDate: existing.closed_date,
+          scope: existing.community_id ? 'community' : 'global',
+          communityId: existing.community_id,
+        },
+      });
+
+      return { success: true };
+    }),
+
   listBlocks: adminProcedure
     .input(z.object({ communityId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {

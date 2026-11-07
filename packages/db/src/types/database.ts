@@ -365,6 +365,30 @@ export interface Database {
         };
         Relationships: [];
       };
+      booking_closed_dates: {
+        Row: {
+          id: string;
+          community_id: string | null;
+          closed_date: string;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          community_id?: string | null;
+          closed_date: string;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          community_id?: string | null;
+          closed_date?: string;
+          note?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       addresses: {
         Row: {
           id: string;
