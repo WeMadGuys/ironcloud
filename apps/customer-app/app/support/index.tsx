@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   StatusBar,
@@ -13,6 +14,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import {
+  APP_SUPPORT_EMAIL,
+  APP_SUPPORT_PHONE,
+  APP_SUPPORT_PHONE_TEL,
+} from '@ironcloud/config/legal';
 import {
   colors,
   radius,
@@ -79,6 +85,23 @@ export default function SupportListScreen() {
           hitSlop={8}
         >
           <MaterialCommunityIcons name="plus" size={22} color={colors.brand.primary} />
+        </Pressable>
+      </View>
+
+      <View style={styles.contactCard}>
+        <Pressable
+          style={styles.contactRow}
+          onPress={() => void Linking.openURL(`mailto:${APP_SUPPORT_EMAIL}`)}
+        >
+          <MaterialCommunityIcons name="email-outline" size={20} color={colors.brand.primary} />
+          <Text style={styles.contactText}>{APP_SUPPORT_EMAIL}</Text>
+        </Pressable>
+        <Pressable
+          style={styles.contactRow}
+          onPress={() => void Linking.openURL(`tel:${APP_SUPPORT_PHONE_TEL}`)}
+        >
+          <MaterialCommunityIcons name="phone-outline" size={20} color={colors.brand.primary} />
+          <Text style={styles.contactText}>{APP_SUPPORT_PHONE}</Text>
         </Pressable>
       </View>
 
@@ -215,6 +238,26 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  contactCard: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  contactText: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: colors.brand.link,
   },
   tabs: {
     flexDirection: 'row',

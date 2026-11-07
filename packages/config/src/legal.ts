@@ -3,23 +3,18 @@ export type LegalSection = {
   body: string;
 };
 
-export const LEGAL_LAST_UPDATED = '8 August 2026';
+export const LEGAL_LAST_UPDATED = '7 November 2026';
 
 export const APP_LEGAL_NAME = 'Iron Cloud';
 export const APP_ENTERPRISE_NAME = 'IRON CLOUD';
 export const APP_UDYAM_NUMBER = 'UDYAM-TS-09-0264194';
 export const APP_SUPPORT_EMAIL = 'support@ironcloud.co.in';
-export const APP_SUPPORT_PHONE = '+91 99125 45050';
-export const APP_SUPPORT_PHONE_TEL = '+919912545050';
-export const APP_BUSINESS_ADDRESS =
-  '607, Block D, Avantika Espino, Ameenpur Road, Ameenpur, Hyderabad, Ranga Reddy Dist., Telangana 502032';
+export const APP_SUPPORT_PHONE = '+91 72073 70303';
+export const APP_SUPPORT_PHONE_TEL = '+917207370303';
 
 export const APP_WEBSITE_URL = 'https://ironcloud.co.in';
 export const APP_PRIVACY_POLICY_URL = `${APP_WEBSITE_URL}/privacy-policy`;
 export const APP_TERMS_URL = `${APP_WEBSITE_URL}/terms-and-conditions`;
-
-/** Shared contact line for policy footers. */
-export const APP_CONTACT_DETAILS = `${APP_SUPPORT_EMAIL} | ${APP_BUSINESS_ADDRESS}`;
 
 export const PRIVACY_POLICY_TITLE = 'Privacy Policy';
 export const TERMS_TITLE = 'Terms of Service';
@@ -59,10 +54,6 @@ export const PRIVACY_POLICY_SECTIONS: LegalSection[] = [
     heading: '8. Children’s privacy',
     body: `The Services are intended for adults. We do not knowingly collect personal information from children.`,
   },
-  {
-    heading: '9. Contact',
-    body: `For privacy questions or requests, contact us at ${APP_CONTACT_DETAILS}. Enterprise: ${APP_ENTERPRISE_NAME} (${APP_UDYAM_NUMBER}).`,
-  },
 ];
 
 export const TERMS_SECTIONS: LegalSection[] = [
@@ -98,10 +89,6 @@ export const TERMS_SECTIONS: LegalSection[] = [
     heading: '8. Changes',
     body: `We may update these Terms from time to time. Continued use of the Services after changes means you accept the updated Terms.`,
   },
-  {
-    heading: '9. Contact',
-    body: `Questions about these Terms: ${APP_CONTACT_DETAILS}. Enterprise: ${APP_ENTERPRISE_NAME} (${APP_UDYAM_NUMBER}).`,
-  },
 ];
 
 export const REFUND_POLICY_SECTIONS: LegalSection[] = [
@@ -127,15 +114,11 @@ export const REFUND_POLICY_SECTIONS: LegalSection[] = [
   },
   {
     heading: '6. How to request a refund',
-    body: `Request refunds or adjustments from the in-app support flow or by emailing ${APP_SUPPORT_EMAIL}, with your registered phone number, order ID, and a short description of the issue. We aim to respond within 2–3 business days.`,
+    body: `Request refunds or adjustments from the in-app support flow, by emailing ${APP_SUPPORT_EMAIL}, or by calling ${APP_SUPPORT_PHONE}, with your registered phone number, order ID, and a short description of the issue. We aim to respond within 2–3 business days.`,
   },
   {
     heading: '7. Changes',
     body: `We may update this Refund Policy from time to time. The “Last updated” date at the top of this page reflects the latest revision.`,
-  },
-  {
-    heading: '8. Contact',
-    body: `Questions about refunds: ${APP_CONTACT_DETAILS}. Enterprise: ${APP_ENTERPRISE_NAME} (${APP_UDYAM_NUMBER}).`,
   },
 ];
 
@@ -167,9 +150,5 @@ export const SHIPPING_POLICY_SECTIONS: LegalSection[] = [
   {
     heading: '7. Charges',
     body: `Service charges for ironing, pickup, and delivery are shown in the app before you confirm an order. There are no separate courier shipping fees beyond what is disclosed at checkout.`,
-  },
-  {
-    heading: '8. Contact',
-    body: `Questions about pickup or delivery: ${APP_CONTACT_DETAILS}. Enterprise: ${APP_ENTERPRISE_NAME} (${APP_UDYAM_NUMBER}).`,
   },
 ];

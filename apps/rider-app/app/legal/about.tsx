@@ -4,7 +4,6 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  APP_BUSINESS_ADDRESS,
   APP_ENTERPRISE_NAME,
   APP_LEGAL_NAME,
   APP_SUPPORT_EMAIL,
@@ -136,7 +135,6 @@ export default function AboutScreen() {
         <View style={styles.contactCard}>
           <Text style={styles.contactTitle}>{APP_ENTERPRISE_NAME}</Text>
           <Text style={styles.contactLine}>UDYAM: {APP_UDYAM_NUMBER}</Text>
-          <Text style={styles.contactLine}>{APP_BUSINESS_ADDRESS}</Text>
           <Pressable onPress={() => void Linking.openURL(`mailto:${APP_SUPPORT_EMAIL}`)}>
             <Text style={styles.contactLink}>{APP_SUPPORT_EMAIL}</Text>
           </Pressable>

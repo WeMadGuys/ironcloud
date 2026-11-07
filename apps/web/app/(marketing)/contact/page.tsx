@@ -1,8 +1,9 @@
 import { ContactForm, PageIntro } from '@/components/landing';
 import {
-  BUSINESS_ADDRESS,
   ENTERPRISE_NAME,
   SUPPORT_EMAIL,
+  SUPPORT_PHONE,
+  SUPPORT_PHONE_TEL,
   UDYAM_NUMBER,
 } from '@/constants/marketing';
 import { createPageMetadata } from '@/lib/seo';
@@ -37,13 +38,15 @@ export default function ContactPage() {
               <dd>{UDYAM_NUMBER}</dd>
             </div>
             <div>
-              <dt>Address</dt>
-              <dd>{BUSINESS_ADDRESS}</dd>
-            </div>
-            <div>
               <dt>Email</dt>
               <dd>
                 <a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+              </dd>
+            </div>
+            <div>
+              <dt>Phone</dt>
+              <dd>
+                <a href={`tel:${SUPPORT_PHONE_TEL}`}>{SUPPORT_PHONE}</a>
               </dd>
             </div>
           </dl>

@@ -3,12 +3,13 @@ import Icon from '@mdi/react';
 import { mdiInstagram, mdiLinkedin, mdiTwitter } from '@mdi/js';
 
 import {
-  BUSINESS_ADDRESS,
   ENTERPRISE_NAME,
   FOOTER_COMPANY_LINKS,
   FOOTER_LEGAL_LINKS,
   SITE_NAME,
   SUPPORT_EMAIL,
+  SUPPORT_PHONE,
+  SUPPORT_PHONE_TEL,
   UDYAM_NUMBER,
 } from '@/constants/marketing';
 
@@ -33,9 +34,11 @@ export function Footer() {
           </p>
           <p className={styles.meta}>{ENTERPRISE_NAME}</p>
           <p className={styles.meta}>UDYAM: {UDYAM_NUMBER}</p>
-          <p className={styles.address}>{BUSINESS_ADDRESS}</p>
           <a className={styles.email} href={`mailto:${SUPPORT_EMAIL}`}>
             {SUPPORT_EMAIL}
+          </a>
+          <a className={styles.email} href={`tel:${SUPPORT_PHONE_TEL}`}>
+            {SUPPORT_PHONE}
           </a>
         </div>
 
