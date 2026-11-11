@@ -792,6 +792,166 @@ export const communitiesRouter = router({
       return { success: true };
     }),
 
+  getOrderCap: adminProcedure
+    .input(z.object({ communityId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const { data: memberships, error } = await ctx.supabase
+        .from('capacity_pool_communities')
+        .select('pool_id, community_id');
+
+      if (error) throw new Error(error.message);
+
+      const rows = memberships ?? [];
+      const mine = rows.find((row) => row.community_id === input.communityId);
+      if (!mine) {
+        return {
+          poolId: null as string | null,
+          maxOrders: null as number | null,
+          memberIds: [] as string[],
+          elsewhereIds: rows.map((row) => row.community_id),
+        };
+      }
+
+      const { data: pool, error: poolError } = await ctx.supabase
+        .from('capacity_pools')
+        .select('id, max_orders')
+        .eq('id', mine.pool_id)
+        .single();
+
+      if (poolError) throw new Error(poolError.message);
+
+      return {
+        poolId: pool.id,
+        maxOrders: pool.max_orders,
+        memberIds: rows
+          .filter((row) => row.pool_id === mine.pool_id)
+          .map((row) => row.community_id),
+        elsewhereIds: rows
+          .filter((row) => row.pool_id !== mine.pool_id)
+          .map((row) => row.community_id),
+      };
+    }),
+
+  saveOrderCap: adminProcedure
+    .input(
+      z.object({
+        communityId: z.string().uuid(),
+        maxOrders: z.number().int().min(1).max(500),
+        memberIds: z.array(z.string().uuid()).max(50),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const memberIds = [...new Set([input.communityId, ...input.memberIds])];
+
+      const { data: existing, error: existingError } = await ctx.supabase
+        .from('capacity_pool_communities')
+        .select('pool_id, community_id')
+        .in('community_id', memberIds);
+
+      if (existingError) throw new Error(existingError.message);
+
+      const existingRows = existing ?? [];
+      const current = existingRows.find((row) => row.community_id === input.communityId);
+      let poolId = current?.pool_id ?? existingRows[0]?.pool_id ?? null;
+
+      if (!poolId) {
+        const { data: created, error: createError } = await ctx.supabase
+          .from('capacity_pools')
+          .insert({
+            name: 'Hourly order limit',
+            max_orders: input.maxOrders,
+          })
+          .select('id')
+          .single();
+
+        if (createError || !created) throw new Error(createError?.message ?? 'Could not create order limit');
+        poolId = created.id;
+      } else {
+        const { error: updateError } = await ctx.supabase
+          .from('capacity_pools')
+          .update({ max_orders: input.maxOrders })
+          .eq('id', poolId);
+
+        if (updateError) throw new Error(updateError.message);
+      }
+
+      if (!poolId) throw new Error('Could not create order limit');
+
+      const { error: clearError } = await ctx.supabase
+        .from('capacity_pool_communities')
+        .delete()
+        .in('community_id', memberIds);
+
+      if (clearError) throw new Error(clearError.message);
+
+      const { error: insertError } = await ctx.supabase
+        .from('capacity_pool_communities')
+        .insert(memberIds.map((communityId) => ({ pool_id: poolId, community_id: communityId })));
+
+      if (insertError) throw new Error(insertError.message);
+
+      const orphanPoolIds = [
+        ...new Set(existingRows.map((row) => row.pool_id).filter((id) => id !== poolId)),
+      ];
+      for (const orphanId of orphanPoolIds) {
+        const { count, error: countError } = await ctx.supabase
+          .from('capacity_pool_communities')
+          .select('community_id', { count: 'exact', head: true })
+          .eq('pool_id', orphanId);
+
+        if (countError) throw new Error(countError.message);
+        if (!count) {
+          const { error: deleteError } = await ctx.supabase
+            .from('capacity_pools')
+            .delete()
+            .eq('id', orphanId);
+          if (deleteError) throw new Error(deleteError.message);
+        }
+      }
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.order_cap.save',
+        entityType: 'community',
+        entityId: input.communityId,
+        after: { poolId, maxOrders: input.maxOrders, memberIds },
+      });
+
+      return { poolId };
+    }),
+
+  clearOrderCap: adminProcedure
+    .input(z.object({ communityId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { data: membership, error: membershipError } = await ctx.supabase
+        .from('capacity_pool_communities')
+        .select('pool_id')
+        .eq('community_id', input.communityId)
+        .maybeSingle();
+
+      if (membershipError) throw new Error(membershipError.message);
+      if (!membership) return { success: true };
+
+      const { error } = await ctx.supabase
+        .from('capacity_pools')
+        .delete()
+        .eq('id', membership.pool_id);
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'community.order_cap.clear',
+        entityType: 'community',
+        entityId: input.communityId,
+        after: { poolId: membership.pool_id },
+      });
+
+      return { success: true };
+    }),
+
   listBlocks: adminProcedure
     .input(z.object({ communityId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {

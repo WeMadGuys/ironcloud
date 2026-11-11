@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
+import { FailStopButton } from '../../../../src/features/jobs/components/FailStopButton';
 import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDetailsCard';
 import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
 import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
@@ -36,6 +38,7 @@ export default function DeliveryScreen() {
   const [items, setItems] = useState<DeliveryItem[]>([]);
   const [orderBoxes, setOrderBoxes] = useState<OrderBoxRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
@@ -48,20 +51,32 @@ export default function DeliveryScreen() {
     setOrderBoxes(rows);
   }, [orderId]);
 
+  const loadOrder = useCallback(
+    async (showLoader: boolean) => {
+      if (!orderId) return;
+      if (showLoader) setLoading(true);
+      try {
+        const [data] = await Promise.all([getDeliveryItems(orderId), refreshBoxes()]);
+        setItems(data);
+      } finally {
+        if (showLoader) setLoading(false);
+      }
+    },
+    [orderId, refreshBoxes],
+  );
+
   useEffect(() => {
-    if (!orderId) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      const [data] = await Promise.all([getDeliveryItems(orderId), refreshBoxes()]);
-      if (cancelled) return;
-      setItems(data);
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [orderId, refreshBoxes]);
+    void loadOrder(true);
+  }, [loadOrder]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadOrder(false);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadOrder]);
 
   const activeBoxes = orderBoxes.filter((b) => !b.releasedAt);
   const releasedCount = orderBoxes.length - activeBoxes.length;
@@ -150,7 +165,17 @@ export default function DeliveryScreen() {
         <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.list}>
+          <ScrollView
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => void onRefresh()}
+                tintColor={colors.brand.primary}
+                colors={[colors.brand.primary]}
+              />
+            }
+          >
             <Text style={styles.sectionTitle}>Garments to deliver</Text>
             {items.length === 0 ? (
               <Text style={styles.empty}>No garment details on this order.</Text>
@@ -234,6 +259,13 @@ export default function DeliveryScreen() {
                 <Text style={styles.confirmText}>Confirm Delivered</Text>
               )}
             </Pressable>
+            {orderId ? (
+              <FailStopButton
+                orderId={orderId}
+                jobType="delivery"
+                onFailed={() => router.back()}
+              />
+            ) : null}
           </View>
         </>
       )}

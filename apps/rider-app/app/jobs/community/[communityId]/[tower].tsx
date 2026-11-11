@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Linking,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
+import { NotifyPickupEtaButton } from '../../../../src/features/jobs/components/NotifyPickupEtaButton';
 import {
   getFlatJobs,
   type FlatJob,
@@ -32,14 +34,9 @@ function actionLabel(state: FlatJob['buttonState'], dayOffset: number) {
       return 'View / Edit';
     case 'delivered':
       return 'Delivered';
+    case 'failed':
+      return 'Failed';
   }
-}
-
-function formatDisplayPhone(phone: string | null | undefined): string {
-  if (!phone?.trim()) return 'Phone not available';
-  const digits = phone.replace(/\D/g, '').slice(-10);
-  if (digits.length !== 10) return phone.trim();
-  return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
 }
 
 function telHref(phone: string | null | undefined): string | null {
@@ -59,11 +56,11 @@ export default function FlatListScreen() {
   }>();
   const dayOffset = Number(day ?? 0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [flats, setFlats] = useState<FlatJob[]>([]);
-  const [expandedContactJobId, setExpandedContactJobId] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!communityId || !tower) return;
     if (!hasLoadedRef.current) setLoading(true);
     try {
@@ -71,6 +68,8 @@ export default function FlatListScreen() {
         communityId,
         decodeURIComponent(tower),
         dayOffset,
+        'all',
+        force ? { force: true } : undefined,
       );
       setFlats(data);
       hasLoadedRef.current = true;
@@ -102,7 +101,7 @@ export default function FlatListScreen() {
     if (dayOffset > 0 && flat.buttonState !== 'collected' && flat.buttonState !== 'delivered') {
       return;
     }
-    if (flat.buttonState === 'delivered') return;
+    if (flat.buttonState === 'delivered' || flat.buttonState === 'failed') return;
 
     if (flat.buttonState === 'collect') {
       openPickup(flat, false);
@@ -121,10 +120,6 @@ export default function FlatListScreen() {
         flat: flat.flatNumber,
       },
     });
-  };
-
-  const toggleContact = (jobId: string) => {
-    setExpandedContactJobId((prev) => (prev === jobId ? null : jobId));
   };
 
   const callCustomer = async (phone: string | null) => {
@@ -150,49 +145,62 @@ export default function FlatListScreen() {
       {loading ? (
         <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void load(true).finally(() => setRefreshing(false));
+              }}
+              tintColor={colors.brand.primary}
+              colors={[colors.brand.primary]}
+            />
+          }
+        >
           {flats.map((flat) => {
             const isDelivered = flat.buttonState === 'delivered';
+            const isFailed = flat.buttonState === 'failed';
             const isCollected = flat.buttonState === 'collected';
             const isFuture =
               dayOffset > 0 &&
               (flat.buttonState === 'collect' || flat.buttonState === 'deliver');
-            const disabled = isDelivered || isFuture;
-            const contactOpen = expandedContactJobId === flat.jobId;
-            const hasContact = Boolean(flat.customerName || flat.customerPhone);
+            const disabled = isDelivered || isFailed || isFuture;
+            const canCall = Boolean(telHref(flat.customerPhone));
 
             return (
               <View key={`${flat.jobId}`} style={styles.card}>
                 <View style={styles.cardTop}>
                   <View style={styles.cardMeta}>
-                    <View style={styles.flatRow}>
-                      <Text style={styles.flatLabel}>Flat {flat.flatNumber}</Text>
+                    <View style={styles.nameRow}>
+                      <Text style={styles.customerName} numberOfLines={2}>
+                        {flat.customerName || 'Name not available'}
+                      </Text>
                       <Pressable
                         style={[
                           styles.contactIconBtn,
-                          contactOpen && styles.contactIconBtnActive,
-                          !hasContact && styles.contactIconBtnMuted,
+                          !canCall && styles.contactIconBtnMuted,
                         ]}
-                        onPress={() => toggleContact(flat.jobId)}
+                        onPress={() => void callCustomer(flat.customerPhone)}
+                        disabled={!canCall}
                         hitSlop={8}
                         accessibilityRole="button"
                         accessibilityLabel={
-                          contactOpen ? 'Hide customer contact' : 'Show customer contact'
+                          canCall ? 'Call customer' : 'Phone not available'
                         }
                       >
                         <MaterialCommunityIcons
-                          name={contactOpen ? 'phone' : 'phone-outline'}
+                          name={canCall ? 'phone' : 'phone-outline'}
                           size={18}
-                          color={
-                            contactOpen
-                              ? colors.brand.primary
-                              : hasContact
-                                ? colors.icon.primary
-                                : colors.icon.secondary
-                          }
+                          color={canCall ? colors.brand.primary : colors.icon.secondary}
                         />
-                      </Pressable>
+                        </Pressable>
+                      {flat.jobType === 'pickup' && flat.buttonState === 'collect' && dayOffset === 0 ? (
+                        <NotifyPickupEtaButton orderId={flat.orderId} />
+                      ) : null}
                     </View>
+                    <Text style={styles.flatLabel}>Flat {flat.flatNumber}</Text>
                     <Text style={styles.orderId}>#{flat.orderNumber}</Text>
                     <Text style={styles.jobType}>
                       {flat.jobType === 'pickup' ? 'Pickup' : 'Delivery'}
@@ -205,6 +213,7 @@ export default function FlatListScreen() {
                       styles.actionButton,
                       isCollected && styles.actionButtonEdit,
                       isDelivered && styles.actionButtonDone,
+                      isFailed && styles.actionButtonFailed,
                       isFuture && styles.actionButtonUpcoming,
                       disabled && styles.actionButtonDisabled,
                     ]}
@@ -216,6 +225,7 @@ export default function FlatListScreen() {
                         styles.actionText,
                         isCollected && styles.actionTextEdit,
                         isDelivered && styles.actionTextDone,
+                        isFailed && styles.actionTextFailed,
                         isFuture && styles.actionTextUpcoming,
                       ]}
                     >
@@ -223,43 +233,6 @@ export default function FlatListScreen() {
                     </Text>
                   </Pressable>
                 </View>
-
-                {contactOpen ? (
-                  <View style={styles.contactPanel}>
-                    <Text style={styles.contactLabel}>Customer</Text>
-                    <Text style={styles.contactName}>
-                      {flat.customerName || 'Name not available'}
-                    </Text>
-                    <Pressable
-                      style={styles.contactPhoneRow}
-                      onPress={() => void callCustomer(flat.customerPhone)}
-                      disabled={!telHref(flat.customerPhone)}
-                      accessibilityRole="button"
-                      accessibilityLabel="Call customer"
-                    >
-                      <MaterialCommunityIcons
-                        name="phone"
-                        size={16}
-                        color={
-                          telHref(flat.customerPhone)
-                            ? colors.brand.primary
-                            : colors.text.muted
-                        }
-                      />
-                      <Text
-                        style={[
-                          styles.contactPhone,
-                          !telHref(flat.customerPhone) && styles.contactPhoneMuted,
-                        ]}
-                      >
-                        {formatDisplayPhone(flat.customerPhone)}
-                      </Text>
-                      {telHref(flat.customerPhone) ? (
-                        <Text style={styles.callHint}>Tap to call</Text>
-                      ) : null}
-                    </Pressable>
-                  </View>
-                ) : null}
 
                 {flat.itemSummary.length > 0 ? (
                   <View style={styles.itemsBlock}>
@@ -326,12 +299,23 @@ const styles = StyleSheet.create({
   },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing.sm },
   cardMeta: { flex: 1 },
-  flatRow: {
+  nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  flatLabel: { fontFamily: fonts.inter.semibold, fontSize: 16, color: colors.text.heading },
+  customerName: {
+    flexShrink: 1,
+    fontFamily: fonts.inter.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
+  flatLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+    marginTop: 2,
+  },
   contactIconBtn: {
     width: 32,
     height: 32,
@@ -342,54 +326,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
   },
-  contactIconBtnActive: {
-    borderColor: colors.brand.primary,
-    backgroundColor: colors.status.info.background,
-  },
   contactIconBtnMuted: {
     opacity: 0.7,
-  },
-  contactPanel: {
-    marginTop: spacing.md,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface.background,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    gap: 4,
-  },
-  contactLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 11,
-    color: colors.text.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  contactName: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 15,
-    color: colors.text.heading,
-  },
-  contactPhoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: 2,
-    flexWrap: 'wrap',
-  },
-  contactPhone: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 14,
-    color: colors.brand.primary,
-  },
-  contactPhoneMuted: {
-    color: colors.text.muted,
-  },
-  callHint: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 11,
-    color: colors.text.muted,
-    marginLeft: spacing.xs,
   },
   orderId: { fontFamily: fonts.inter.regular, fontSize: 12, color: colors.brand.accent, marginTop: 2 },
   jobType: { fontFamily: fonts.inter.regular, fontSize: 12, color: colors.text.muted, marginTop: 2 },
@@ -439,6 +377,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.status.success.foreground,
   },
+  actionButtonFailed: {
+    backgroundColor: colors.status.warning.background,
+    borderWidth: 1,
+    borderColor: colors.status.warning.foreground,
+  },
   actionButtonUpcoming: {
     backgroundColor: colors.surface.background,
     borderWidth: 1,
@@ -448,6 +391,7 @@ const styles = StyleSheet.create({
   actionText: { fontFamily: fonts.inter.semibold, fontSize: 13, color: colors.brand.onPrimary },
   actionTextEdit: { color: colors.brand.primary },
   actionTextDone: { color: colors.status.success.foreground },
+  actionTextFailed: { color: colors.status.warning.foreground },
   actionTextUpcoming: { color: colors.text.muted },
   empty: { textAlign: 'center', fontFamily: fonts.inter.regular, color: colors.text.muted, marginTop: spacing.xl },
 });

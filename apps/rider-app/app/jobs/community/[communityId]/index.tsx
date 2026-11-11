@@ -6,6 +6,7 @@ import {
   Linking,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,16 +37,17 @@ export default function CommunityTowersScreen() {
   }>();
   const dayOffset = Number(day ?? 0);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [towers, setTowers] = useState<
     { tower: string; totalJobs: number; completedJobs: number }[]
   >([]);
   const hasLoadedRef = useRef(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!communityId) return;
     if (!hasLoadedRef.current) setLoading(true);
     try {
-      const data = await getTowerJobs(communityId, dayOffset);
+      const data = await getTowerJobs(communityId, dayOffset, 'all', force ? { force: true } : undefined);
       setTowers(data);
       hasLoadedRef.current = true;
     } finally {
@@ -90,7 +92,20 @@ export default function CommunityTowersScreen() {
       {loading ? (
         <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                void load(true).finally(() => setRefreshing(false));
+              }}
+              tintColor={colors.brand.primary}
+              colors={[colors.brand.primary]}
+            />
+          }
+        >
           {towers.map((tower) => (
             <Pressable
               key={tower.tower}

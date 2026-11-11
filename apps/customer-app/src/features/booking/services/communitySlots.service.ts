@@ -73,3 +73,39 @@ export async function getClosedDatesForCommunity(
   );
 }
 
+/**
+ * Which of these pickup windows are full for the community's hourly cap.
+ * Empty when the community has no cap, or the lookup is unavailable.
+ * `key` is returned for windows whose booked count has reached the pool max.
+ */
+export async function getFullPickupWindows(
+  communityId: string,
+  windows: { key: string; windowStart: string }[],
+): Promise<Set<string>> {
+  if (windows.length === 0) return new Set();
+
+  const { data, error } = await supabase.rpc('pickup_capacity_for_windows', {
+    p_community_id: communityId,
+    p_window_starts: windows.map((window) => window.windowStart),
+  });
+
+  if (error) {
+    console.warn('[Slots] capacity lookup failed:', error.message);
+    return new Set();
+  }
+
+  const fullStarts = new Set(
+    (data ?? [])
+      .filter((row) => row.is_full)
+      .map((row) => new Date(row.window_start).getTime()),
+  );
+
+  const keys = new Set<string>();
+  for (const window of windows) {
+    if (fullStarts.has(new Date(window.windowStart).getTime())) {
+      keys.add(window.key);
+    }
+  }
+  return keys;
+}
+

@@ -3,6 +3,7 @@ import { supabase } from '../../../lib/supabase';
 import { countActiveOrderBoxes } from './box.service';
 import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
+import { deletePickupPhotos } from './pickup-photos.service';
 
 export type DeliveryItem = {
   id: string;
@@ -45,6 +46,8 @@ export async function confirmDelivery(orderId: string): Promise<void> {
       `Release all boxes before completing delivery (${activeBoxes} still assigned).`,
     );
   }
+
+  await deletePickupPhotos(orderId);
 
   const { error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)

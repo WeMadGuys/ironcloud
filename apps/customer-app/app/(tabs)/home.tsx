@@ -54,6 +54,7 @@ import {
   dayOffsetToLocalDateKey,
   getClosedDatesForCommunity,
   getCommunityPickupSlots,
+  getFullPickupWindows,
   type CommunityPickupSlot,
 } from '../../src/features/booking/services/communitySlots.service';
 import { ActiveOrderCard } from '../../src/features/booking/components/ActiveOrderCard';
@@ -118,27 +119,39 @@ function isPickupSlotAvailable(
   return end.getTime() > now.getTime();
 }
 
-function findNextAvailableDayOffset(
+function findNextOpenSlot(
   fromOffset: number,
   slots: CommunityPickupSlot[],
   bookedDays: number[],
   now: Date,
   dayCount: number,
-  closedDates: Set<string> = new Set(),
-): number | null {
-  for (let offset = fromOffset + 1; offset < dayCount; offset++) {
+  closedDates: Set<string>,
+  fullKeys: Set<string>,
+): { offset: number; startHour: number } | null {
+  for (let offset = fromOffset; offset < dayCount; offset++) {
     if (bookedDays.includes(offset)) continue;
     if (closedDates.has(dayOffsetToLocalDateKey(offset, now))) continue;
-    if (slots.some((slot) => isPickupSlotAvailable(offset, slot.startHour, now))) {
-      return offset;
+    let earliest: CommunityPickupSlot | null = null;
+    for (const slot of slots) {
+      if (!isPickupSlotAvailable(offset, slot.startHour, now)) continue;
+      if (fullKeys.has(`${offset}:${slot.startHour}`)) continue;
+      if (!earliest || slot.startHour < earliest.startHour) earliest = slot;
     }
+    if (earliest) return { offset, startHour: earliest.startHour };
   }
   return null;
 }
 
-function formatNextAvailableDayLabel(day: DayOption, offset: number): string {
-  if (offset === 1) return 'Tomorrow';
-  return `${day.day} ${day.date.toString().padStart(2, '0')}`;
+function formatNextOpenLabel(offset: number, startHour: number): string {
+  const chip = getSlotChipParts(startHour);
+  const time = chip.samePeriod
+    ? `${chip.range} ${chip.period}`
+    : `${chip.startLabel} – ${chip.endLabel}`;
+  if (offset === 0) return `Today · ${time}`;
+  if (offset === 1) return `Tomorrow · ${time}`;
+  const day = getNextDays(7)[offset];
+  const dayLabel = day ? `${day.day} ${day.date.toString().padStart(2, '0')}` : 'Next day';
+  return `${dayLabel} · ${time}`;
 }
 
 function formatDeliveryPreview(dayOffset: number, startHour: number) {
@@ -198,6 +211,8 @@ export default function HomeScreen() {
   const [selectedStartHour, setSelectedStartHour] = useState<number | null>(null);
   const [pickupSlots, setPickupSlots] = useState<CommunityPickupSlot[]>([]);
   const [closedDates, setClosedDates] = useState<Set<string>>(() => new Set());
+  const [fullSlotKeys, setFullSlotKeys] = useState<Set<string>>(() => new Set());
+  const queuedHourRef = useRef<number | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [showAllSlots, setShowAllSlots] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -266,42 +281,79 @@ export default function HomeScreen() {
     };
   }, [communityId]);
 
+  useEffect(() => {
+    if (!communityId || pickupSlots.length === 0) {
+      setFullSlotKeys(new Set());
+      return;
+    }
+    let cancelled = false;
+    const windows: { key: string; windowStart: string }[] = [];
+    for (let offset = 0; offset < days.length; offset++) {
+      for (const slot of pickupSlots) {
+        windows.push({
+          key: `${offset}:${slot.startHour}`,
+          windowStart: buildPickupWindow(offset, slot.startHour).start.toISOString(),
+        });
+      }
+    }
+    getFullPickupWindows(communityId, windows)
+      .then((full) => {
+        if (!cancelled) setFullSlotKeys(full);
+      })
+      .catch((error) => {
+        console.error('Error loading pickup capacity:', error);
+        if (!cancelled) setFullSlotKeys(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [communityId, pickupSlots, slotClock, days.length]);
+
   const selectedDayClosed = useMemo(() => {
     const now = new Date(slotClock);
     return closedDates.has(dayOffsetToLocalDateKey(selectedDay, now));
   }, [closedDates, selectedDay, slotClock]);
 
-  const availableSlots = useMemo(() => {
+  const daySlots = useMemo(() => {
     if (selectedDayClosed) return [];
     const now = new Date(slotClock);
-    return pickupSlots.filter((slot) =>
-      isPickupSlotAvailable(selectedDay, slot.startHour, now),
-    );
-  }, [pickupSlots, selectedDay, slotClock, selectedDayClosed]);
+    return pickupSlots
+      .filter((slot) => isPickupSlotAvailable(selectedDay, slot.startHour, now))
+      .map((slot) => ({
+        ...slot,
+        full: fullSlotKeys.has(`${selectedDay}:${slot.startHour}`),
+      }));
+  }, [pickupSlots, selectedDay, slotClock, selectedDayClosed, fullSlotKeys]);
 
-  const nextAvailableDay = useMemo(() => {
-    const dayOptions = getNextDays(7);
-    const offset = findNextAvailableDayOffset(
+  const availableSlots = useMemo(
+    () => daySlots.filter((slot) => !slot.full),
+    [daySlots],
+  );
+
+  const nextOpenSlot = useMemo(() => {
+    const now = new Date(slotClock);
+    const next = findNextOpenSlot(
       selectedDay,
       pickupSlots,
       bookedDays,
-      new Date(slotClock),
-      dayOptions.length,
+      now,
+      days.length,
       closedDates,
+      fullSlotKeys,
     );
-    if (offset == null) return null;
-    const day = dayOptions[offset];
-    if (!day) return null;
-    return {
-      offset,
-      label: formatNextAvailableDayLabel(day, offset),
-    };
-  }, [selectedDay, pickupSlots, bookedDays, slotClock, closedDates]);
+    if (!next) return null;
+    return { ...next, label: formatNextOpenLabel(next.offset, next.startHour) };
+  }, [selectedDay, pickupSlots, bookedDays, slotClock, days.length, closedDates, fullSlotKeys]);
 
   // Keep an explicit selection only if that slot is still bookable. Never auto-pick.
   useEffect(() => {
     setSelectedStartHour((prev) => {
-      if (prev != null && availableSlots.some((s) => s.startHour === prev)) {
+      const queued = queuedHourRef.current;
+      if (queued != null && availableSlots.some((slot) => slot.startHour === queued)) {
+        queuedHourRef.current = null;
+        return queued;
+      }
+      if (prev != null && availableSlots.some((slot) => slot.startHour === prev)) {
         return prev;
       }
       return null;
@@ -314,8 +366,17 @@ export default function HomeScreen() {
   }, [selectedDay, selectedStartHour]);
 
   const visibleSlots = showAllSlots
-    ? availableSlots
-    : availableSlots.slice(0, VISIBLE_SLOT_COUNT);
+    ? daySlots
+    : daySlots.slice(0, VISIBLE_SLOT_COUNT);
+
+  const showNextOpen = Boolean(
+    nextOpenSlot &&
+      daySlots.some((slot) => slot.full) &&
+      (nextOpenSlot.offset !== selectedDay ||
+        !visibleSlots.some(
+          (slot) => !slot.full && slot.startHour === nextOpenSlot.startHour,
+        )),
+  );
 
   const hasLoadedOnceRef = useRef(false);
 
@@ -516,6 +577,22 @@ export default function HomeScreen() {
     setSelectedDay(index);
   };
 
+  const openNextSlot = () => {
+    if (!nextOpenSlot) return;
+    const now = new Date();
+    const index = pickupSlots
+      .filter((slot) => isPickupSlotAvailable(nextOpenSlot.offset, slot.startHour, now))
+      .findIndex((slot) => slot.startHour === nextOpenSlot.startHour);
+    if (index >= VISIBLE_SLOT_COUNT) setShowAllSlots(true);
+    if (nextOpenSlot.offset === selectedDay) {
+      setSelectedStartHour(nextOpenSlot.startHour);
+      return;
+    }
+    queuedHourRef.current = nextOpenSlot.startHour;
+    setSlotClock(Date.now());
+    setSelectedDay(nextOpenSlot.offset);
+  };
+
   const handleConfirmBooking = async () => {
     if (isBooking) return;
     if (selectedStartHour == null) {
@@ -554,6 +631,7 @@ export default function HomeScreen() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to create booking';
+      setSlotClock(Date.now());
       Alert.alert('Booking Failed', message);
     } finally {
       setIsBooking(false);
@@ -880,7 +958,7 @@ export default function HomeScreen() {
                   : 'Add your community and flat in Profile to see available pickup times.'}
               </Text>
             </View>
-          ) : availableSlots.length === 0 ? (
+          ) : daySlots.length === 0 ? (
             <View style={styles.slotsEmpty}>
               <Text style={styles.slotsEmptyTitle}>No slots available</Text>
               <Text style={styles.slotsEmptyHint}>
@@ -888,12 +966,12 @@ export default function HomeScreen() {
                   ? 'All pickup times for today have already passed. Please choose another day.'
                   : 'No pickup times are available for this day. Please choose another day.'}
               </Text>
-              {nextAvailableDay ? (
+              {nextOpenSlot ? (
                 <Pressable
                   style={styles.nextAvailableButton}
-                  onPress={() => handleSelectDay(nextAvailableDay.offset)}
+                  onPress={openNextSlot}
                   accessibilityRole="button"
-                  accessibilityLabel={`See next available slots on ${nextAvailableDay.label}`}
+                  accessibilityLabel={`Next available ${nextOpenSlot.label}`}
                 >
                   <MaterialCommunityIcons
                     name="calendar-clock"
@@ -904,7 +982,7 @@ export default function HomeScreen() {
                     style={styles.nextAvailableButtonText}
                     numberOfLines={2}
                   >
-                    Next available: {nextAvailableDay.label}
+                    Next available: {nextOpenSlot.label}
                   </Text>
                 </Pressable>
               ) : null}
@@ -917,25 +995,34 @@ export default function HomeScreen() {
                 contentContainerStyle={styles.timeSlotsRow}
               >
                 {visibleSlots.map((slot) => {
-                  const selected = selectedStartHour === slot.startHour;
+                  const selected = !slot.full && selectedStartHour === slot.startHour;
                   const chip = getSlotChipParts(slot.startHour);
                   return (
                     <Pressable
                       key={slot.id}
                       style={[
                         styles.timeSlot,
+                        slot.full && styles.timeSlotFull,
                         selected && styles.timeSlotSelected,
                       ]}
-                      onPress={() => setSelectedStartHour(slot.startHour)}
+                      onPress={() => {
+                        if (!slot.full) setSelectedStartHour(slot.startHour);
+                      }}
+                      disabled={slot.full}
                       accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      accessibilityLabel={formatHourlySlotLabel(slot.startHour)}
+                      accessibilityState={{ selected, disabled: slot.full }}
+                      accessibilityLabel={
+                        slot.full
+                          ? `${formatHourlySlotLabel(slot.startHour)}, full`
+                          : formatHourlySlotLabel(slot.startHour)
+                      }
                     >
                       {chip.samePeriod ? (
                         <>
                           <Text
                             style={[
                               styles.slotRange,
+                              slot.full && styles.slotRangeFull,
                               selected && styles.slotRangeSelected,
                             ]}
                             numberOfLines={1}
@@ -945,10 +1032,11 @@ export default function HomeScreen() {
                           <Text
                             style={[
                               styles.slotPeriod,
+                              slot.full && styles.slotPeriodFull,
                               selected && styles.slotPeriodSelected,
                             ]}
                           >
-                            {chip.period}
+                            {slot.full ? 'Full' : chip.period}
                           </Text>
                         </>
                       ) : (
@@ -956,6 +1044,7 @@ export default function HomeScreen() {
                           <Text
                             style={[
                               styles.slotRange,
+                              slot.full && styles.slotRangeFull,
                               selected && styles.slotRangeSelected,
                             ]}
                             numberOfLines={1}
@@ -965,11 +1054,12 @@ export default function HomeScreen() {
                           <Text
                             style={[
                               styles.slotPeriod,
+                              slot.full && styles.slotPeriodFull,
                               selected && styles.slotPeriodSelected,
                             ]}
                             numberOfLines={1}
                           >
-                            {chip.endLabel}
+                            {slot.full ? 'Full' : chip.endLabel}
                           </Text>
                         </>
                       )}
@@ -978,7 +1068,25 @@ export default function HomeScreen() {
                 })}
               </ScrollView>
 
-              {availableSlots.length > VISIBLE_SLOT_COUNT && (
+              {showNextOpen && nextOpenSlot ? (
+                <Pressable
+                  style={styles.nextAvailableButton}
+                  onPress={openNextSlot}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Next available ${nextOpenSlot.label}`}
+                >
+                  <MaterialCommunityIcons
+                    name="calendar-clock"
+                    size={18}
+                    color={colors.brand.onPrimary}
+                  />
+                  <Text style={styles.nextAvailableButtonText} numberOfLines={2}>
+                    Next available: {nextOpenSlot.label}
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              {daySlots.length > VISIBLE_SLOT_COUNT && (
                 <Pressable
                   style={styles.moreSlotsLink}
                   onPress={() => setShowAllSlots((v) => !v)}
@@ -1361,6 +1469,10 @@ const styles = StyleSheet.create({
     borderColor: colors.brand.primary,
     backgroundColor: colors.brand.primary,
   },
+  timeSlotFull: {
+    opacity: 0.45,
+    backgroundColor: colors.surface.background,
+  },
   slotRange: {
     fontFamily: fonts.inter.semibold,
     fontSize: 14,
@@ -1380,6 +1492,12 @@ const styles = StyleSheet.create({
   slotPeriodSelected: {
     color: colors.brand.onPrimary,
     opacity: 0.85,
+  },
+  slotRangeFull: {
+    color: colors.text.secondary,
+  },
+  slotPeriodFull: {
+    color: colors.text.secondary,
   },
   moreSlotsLink: {
     flexDirection: 'row',

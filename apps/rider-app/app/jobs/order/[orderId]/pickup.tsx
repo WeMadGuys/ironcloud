@@ -13,6 +13,7 @@ import {
   Alert,
   Linking,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +26,9 @@ import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDetailsCard';
 import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
 import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
+import { NotifyPickupEtaButton } from '../../../../src/features/jobs/components/NotifyPickupEtaButton';
+import { FailStopButton } from '../../../../src/features/jobs/components/FailStopButton';
+import { PickupPhotosSection } from '../../../../src/features/jobs/components/PickupPhotosSection';
 import {
   attachBoxToOrder,
   getOrderBoxes,
@@ -45,13 +49,6 @@ import {
 function formatStatus(status: string): string {
   if (!status) return '';
   return status.replace(/_/g, ' ');
-}
-
-function formatDisplayPhone(phone: string | null | undefined): string {
-  if (!phone?.trim()) return 'Phone not available';
-  const digits = phone.replace(/\D/g, '').slice(-10);
-  if (digits.length !== 10) return phone.trim();
-  return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
 }
 
 function telHref(phone: string | null | undefined): string | null {
@@ -84,8 +81,9 @@ export default function PickupScreen() {
   const [specialInstructions, setSpecialInstructions] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [customerPhone, setCustomerPhone] = useState<string | null>(null);
-  const [showContact, setShowContact] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [photoRefreshKey, setPhotoRefreshKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
 
   const [attachedBoxes, setAttachedBoxes] = useState<OrderBoxRow[]>([]);
@@ -100,54 +98,69 @@ export default function PickupScreen() {
     setAttachedBoxes(rows);
   }, [orderId]);
 
+  const loadOrder = useCallback(
+    async (showLoader: boolean) => {
+      if (!communityId || !orderId) return;
+      if (showLoader) setLoading(true);
+      try {
+        const pricingCtx = await getOrderPricingContext(orderId);
+        const [items, estimatePrefill, itemsPrefill, details] = await Promise.all([
+          getGarmentCatalog({
+            communityId: pricingCtx.communityId || communityId,
+            userId: pricingCtx.customerId,
+            city: pricingCtx.city,
+          }),
+          getOrderEstimatePrefill(orderId),
+          getOrderItemsPrefill(orderId),
+          getOrderPickupDetails(orderId),
+          refreshBoxes(),
+        ]);
+
+        const preferConfirmed = isEditMode || itemsPrefill.hasItems;
+        const sourceCounts = preferConfirmed
+          ? itemsPrefill.counts
+          : estimatePrefill.counts;
+
+        setCatalog(items);
+        setCounts(
+          Object.fromEntries(
+            items.map((item) => [item.serviceId, sourceCounts[item.serviceId] || 0]),
+          ),
+        );
+        setFromConfirmedItems(preferConfirmed && itemsPrefill.hasItems);
+        setFromCustomerEstimate(!preferConfirmed && estimatePrefill.hasEstimate);
+        setEstimatedAmount(estimatePrefill.estimatedAmount ?? details.estimatedAmount);
+        setOrderNumber(details.orderNumber);
+        setOrderStatus(details.status);
+        setSpecialInstructions(details.specialInstructions);
+        setCustomerName(details.customerName);
+        setCustomerPhone(details.customerPhone);
+      } finally {
+        if (showLoader) setLoading(false);
+      }
+    },
+    [communityId, orderId, isEditMode, refreshBoxes],
+  );
+
   useEffect(() => {
-    if (!communityId || !orderId) return;
+    void loadOrder(true);
+  }, [loadOrder]);
 
-    let cancelled = false;
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadOrder(false);
+      setPhotoRefreshKey((key) => key + 1);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadOrder]);
 
-    (async () => {
-      setLoading(true);
-      const pricingCtx = await getOrderPricingContext(orderId);
-      const [items, estimatePrefill, itemsPrefill, details] = await Promise.all([
-        getGarmentCatalog({
-          communityId: pricingCtx.communityId || communityId,
-          userId: pricingCtx.customerId,
-          city: pricingCtx.city,
-        }),
-        getOrderEstimatePrefill(orderId),
-        getOrderItemsPrefill(orderId),
-        getOrderPickupDetails(orderId),
-        refreshBoxes(),
-      ]);
-
-      if (cancelled) return;
-
-      const preferConfirmed = isEditMode || itemsPrefill.hasItems;
-      const sourceCounts = preferConfirmed
-        ? itemsPrefill.counts
-        : estimatePrefill.counts;
-
-      const initialCounts = Object.fromEntries(
-        items.map((item) => [item.serviceId, sourceCounts[item.serviceId] || 0]),
-      );
-
-      setCatalog(items);
-      setCounts(initialCounts);
-      setFromConfirmedItems(preferConfirmed && itemsPrefill.hasItems);
-      setFromCustomerEstimate(!preferConfirmed && estimatePrefill.hasEstimate);
-      setEstimatedAmount(estimatePrefill.estimatedAmount ?? details.estimatedAmount);
-      setOrderNumber(details.orderNumber);
-      setOrderStatus(details.status);
-      setSpecialInstructions(details.specialInstructions);
-      setCustomerName(details.customerName);
-      setCustomerPhone(details.customerPhone);
-      setLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [communityId, orderId, isEditMode, refreshBoxes]);
+  const canCall = Boolean(telHref(customerPhone));
+  const callCustomer = () => {
+    const href = telHref(customerPhone);
+    if (href) void Linking.openURL(href);
+  };
 
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
   const runningTotal = catalog.reduce(
@@ -277,8 +290,39 @@ export default function PickupScreen() {
         <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
       ) : step === 'boxes' && !isEditMode ? (
         <>
-          <ScrollView contentContainerStyle={styles.list}>
+          <ScrollView
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => void onRefresh()}
+                tintColor={colors.brand.primary}
+                colors={[colors.brand.primary]}
+              />
+            }
+          >
             <View style={styles.metaCard}>
+              <View style={styles.nameRow}>
+                <Text style={styles.contactName} numberOfLines={2}>
+                  {customerName || 'Name not available'}
+                </Text>
+                <Pressable
+                  style={[styles.contactIconBtn, !canCall && styles.contactIconBtnMuted]}
+                  onPress={callCustomer}
+                  disabled={!canCall}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={canCall ? 'Call customer' : 'Phone not available'}
+                >
+                  <MaterialCommunityIcons
+                    name={canCall ? 'phone' : 'phone-outline'}
+                    size={18}
+                    color={canCall ? colors.brand.primary : colors.icon.secondary}
+                  />
+                </Pressable>
+                {orderId && !isEditMode ? <NotifyPickupEtaButton orderId={orderId} /> : null}
+              </View>
+              {flat ? <Text style={styles.flatLabel}>Flat {flat}</Text> : null}
               {orderNumber ? <Text style={styles.metaOrder}>#{orderNumber}</Text> : null}
               {orderStatus ? (
                 <Text style={styles.metaStatus}>{formatStatus(orderStatus)}</Text>
@@ -322,65 +366,53 @@ export default function PickupScreen() {
             >
               <Text style={styles.continueText}>Continue to garments</Text>
             </Pressable>
+            {orderId ? (
+              <FailStopButton
+                orderId={orderId}
+                jobType="pickup"
+                onFailed={() => router.back()}
+              />
+            ) : null}
           </View>
         </>
       ) : (
         <>
-          <ScrollView contentContainerStyle={styles.list}>
+          <ScrollView
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => void onRefresh()}
+                tintColor={colors.brand.primary}
+                colors={[colors.brand.primary]}
+              />
+            }
+          >
             <View style={styles.metaCard}>
-              <View style={styles.metaHeader}>
-                <View style={styles.metaHeaderText}>
-                  {orderNumber ? (
-                    <Text style={styles.metaOrder}>#{orderNumber}</Text>
-                  ) : null}
-                  {orderStatus ? (
-                    <Text style={styles.metaStatus}>{formatStatus(orderStatus)}</Text>
-                  ) : null}
-                </View>
+              <View style={styles.nameRow}>
+                <Text style={styles.contactName} numberOfLines={2}>
+                  {customerName || 'Name not available'}
+                </Text>
                 <Pressable
-                  style={[styles.contactIconBtn, showContact && styles.contactIconBtnActive]}
-                  onPress={() => setShowContact((v) => !v)}
+                  style={[styles.contactIconBtn, !canCall && styles.contactIconBtnMuted]}
+                  onPress={callCustomer}
+                  disabled={!canCall}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel={showContact ? 'Hide customer contact' : 'Show customer contact'}
+                  accessibilityLabel={canCall ? 'Call customer' : 'Phone not available'}
                 >
                   <MaterialCommunityIcons
-                    name={showContact ? 'phone' : 'phone-outline'}
+                    name={canCall ? 'phone' : 'phone-outline'}
                     size={18}
-                    color={showContact ? colors.brand.primary : colors.icon.primary}
+                    color={canCall ? colors.brand.primary : colors.icon.secondary}
                   />
                 </Pressable>
+                {orderId && !isEditMode ? <NotifyPickupEtaButton orderId={orderId} /> : null}
               </View>
-
-              {showContact ? (
-                <View style={styles.contactPanel}>
-                  <Text style={styles.contactLabel}>Customer</Text>
-                  <Text style={styles.contactName}>
-                    {customerName || 'Name not available'}
-                  </Text>
-                  <Pressable
-                    style={styles.contactPhoneRow}
-                    onPress={() => {
-                      const href = telHref(customerPhone);
-                      if (href) void Linking.openURL(href);
-                    }}
-                    disabled={!telHref(customerPhone)}
-                  >
-                    <MaterialCommunityIcons
-                      name="phone"
-                      size={16}
-                      color={telHref(customerPhone) ? colors.brand.primary : colors.text.muted}
-                    />
-                    <Text
-                      style={[
-                        styles.contactPhone,
-                        !telHref(customerPhone) && styles.contactPhoneMuted,
-                      ]}
-                    >
-                      {formatDisplayPhone(customerPhone)}
-                    </Text>
-                  </Pressable>
-                </View>
+              {flat ? <Text style={styles.flatLabel}>Flat {flat}</Text> : null}
+              {orderNumber ? <Text style={styles.metaOrder}>#{orderNumber}</Text> : null}
+              {orderStatus ? (
+                <Text style={styles.metaStatus}>{formatStatus(orderStatus)}</Text>
               ) : null}
 
               {specialInstructions ? (
@@ -476,6 +508,10 @@ export default function PickupScreen() {
                 );
               })
             )}
+
+            {orderId ? (
+              <PickupPhotosSection orderId={orderId} refreshKey={photoRefreshKey} />
+            ) : null}
           </ScrollView>
 
           <View style={styles.footer}>
@@ -496,6 +532,13 @@ export default function PickupScreen() {
                 </Text>
               )}
             </Pressable>
+            {!isEditMode && orderId ? (
+              <FailStopButton
+                orderId={orderId}
+                jobType="pickup"
+                onFailed={() => router.back()}
+              />
+            ) : null}
           </View>
         </>
       )}
@@ -543,13 +586,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border.default,
     gap: 4,
   },
-  metaHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  metaHeaderText: { flex: 1, gap: 4 },
   metaOrder: {
     fontFamily: fonts.inter.semibold,
     fontSize: 15,
@@ -574,9 +610,25 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginTop: 4,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  contactName: {
+    flexShrink: 1,
+    fontFamily: fonts.inter.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
+  flatLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
   contactIconBtn: {
-    width: 36,
-    height: 36,
+    width: 32,
+    height: 32,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -584,42 +636,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.default,
   },
-  contactIconBtnActive: {
-    borderColor: colors.brand.primary,
-    backgroundColor: colors.status.info.background,
-  },
-  contactPanel: {
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border.divider,
-    gap: 4,
-  },
-  contactLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 11,
-    color: colors.text.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  contactName: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 15,
-    color: colors.text.heading,
-  },
-  contactPhoneRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  contactPhone: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 14,
-    color: colors.brand.primary,
-  },
-  contactPhoneMuted: {
-    color: colors.text.muted,
-  },
+  contactIconBtnMuted: { opacity: 0.7 },
   sectionTitle: {
     fontFamily: fonts.inter.semibold,
     fontSize: 14,

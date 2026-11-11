@@ -48,13 +48,14 @@ export function getJobDayOffset(
   return diff;
 }
 
-export type FlatButtonState = 'collect' | 'deliver' | 'collected' | 'delivered';
+export type FlatButtonState = 'collect' | 'deliver' | 'collected' | 'delivered' | 'failed';
 
 export function resolveButtonState(
   jobType: 'pickup' | 'delivery',
   jobStatus: string,
   orderStatus: string,
 ): FlatButtonState {
+  if (jobStatus === 'failed') return 'failed';
   if (jobType === 'pickup') {
     if (jobStatus === 'completed' || !['booked', 'pickup_assigned', 'pickup_in_progress'].includes(orderStatus)) {
       return 'collected';

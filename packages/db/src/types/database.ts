@@ -68,6 +68,33 @@ export type CommunityStage =
 export interface Database {
   public: {
     Tables: {
+      app_version_policy: {
+        Row: {
+          platform: string;
+          min_version: string;
+          store_url: string;
+          title: string;
+          message: string;
+          updated_at: string;
+        };
+        Insert: {
+          platform: string;
+          min_version: string;
+          store_url: string;
+          title?: string;
+          message: string;
+          updated_at?: string;
+        };
+        Update: {
+          platform?: string;
+          min_version?: string;
+          store_url?: string;
+          title?: string;
+          message?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
           id: string;
@@ -386,6 +413,42 @@ export interface Database {
           closed_date?: string;
           note?: string | null;
           created_at?: string;
+        };
+        Relationships: [];
+      };
+      capacity_pools: {
+        Row: {
+          id: string;
+          name: string;
+          max_orders: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          max_orders: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          max_orders?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      capacity_pool_communities: {
+        Row: {
+          pool_id: string;
+          community_id: string;
+        };
+        Insert: {
+          pool_id: string;
+          community_id: string;
+        };
+        Update: {
+          pool_id?: string;
+          community_id?: string;
         };
         Relationships: [];
       };
@@ -1774,6 +1837,18 @@ export interface Database {
       count_active_order_boxes: {
         Args: { p_order_id: string };
         Returns: number;
+      };
+      pickup_capacity_for_windows: {
+        Args: {
+          p_community_id: string;
+          p_window_starts: string[];
+        };
+        Returns: {
+          window_start: string;
+          booked: number;
+          max_orders: number | null;
+          is_full: boolean;
+        }[];
       };
     };
     Enums: {

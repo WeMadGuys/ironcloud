@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+import { notifyRiderNewPickup } from '@/lib/notify-rider-pickup';
 import { resolvePickupRiderForCommunity } from '@/lib/resolve-pickup-rider';
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 
@@ -177,6 +178,11 @@ export async function POST(req: Request) {
         500,
       );
     }
+
+    await notifyRiderNewPickup(admin, {
+      riderId: resolved.riderId,
+      orderId,
+    });
 
     return json({
       success: true,

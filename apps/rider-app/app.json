@@ -12,7 +12,7 @@
       "bundleIdentifier": "com.ironcloud.rider",
       "supportsTablet": true,
       "infoPlist": {
-        "NSCameraUsageDescription": "Iron Cloud Rider needs camera access to scan box QR codes at pickup and delivery."
+        "NSCameraUsageDescription": "Iron Cloud Rider uses the camera to scan box QR codes and to photograph clothes at pickup."
       }
     },
     "android": {
@@ -21,7 +21,7 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
-      "permissions": ["CAMERA"]
+      "permissions": ["CAMERA", "android.permission.POST_NOTIFICATIONS"]
     },
     "plugins": [
       "expo-router",
@@ -30,7 +30,20 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Iron Cloud Rider to scan box QR codes."
+          "cameraPermission": "Allow Iron Cloud Rider to scan box QR codes and photograph clothes at pickup."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow Iron Cloud Rider to photograph clothes at pickup."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#0E2A4A"
         }
       ]
     ],

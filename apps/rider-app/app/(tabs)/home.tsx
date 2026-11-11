@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -32,6 +33,7 @@ import {
   getHomeBundle,
   type CommunityJobSummary,
 } from '../../src/features/jobs/services/jobs.service';
+import { onPickupPush } from '../../src/features/notifications/services/push.service';
 
 function getNextDays(count: number) {
   const days: { day: string; date: number; isToday: boolean }[] = [];
@@ -106,6 +108,7 @@ export default function HomeScreen() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [initialLoading, setInitialLoading] = useState(() => !getCachedRiderJobs());
   const [contentLoading, setContentLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const hasLoadedOnceRef = useRef(Boolean(getCachedRiderJobs()));
   const [profileName, setProfileName] = useState('Rider');
   const [summary, setSummary] = useState({
@@ -137,16 +140,20 @@ export default function HomeScreen() {
   }, [allCommunities, debouncedSearch]);
 
   const loadData = useCallback(
-    async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
+    async (
+      dayOffset: number,
+      mode: 'initial' | 'content' = 'content',
+      force = false,
+    ) => {
       const warm = Boolean(getCachedRiderJobs()) || hasLoadedOnceRef.current;
       if (mode === 'initial' && !warm) {
         setInitialLoading(true);
-      } else if (!warm) {
+      } else if (!warm && !force) {
         setContentLoading(true);
       }
 
       try {
-        const bundle = await getHomeBundle(dayOffset, '');
+        const bundle = await getHomeBundle(dayOffset, '', force ? { force: true } : undefined);
         if (bundle.profile) setProfileName(bundle.profile.fullName.split(' ')[0]);
         setSummary(bundle.summary);
         setAllCommunities(bundle.communities);
@@ -166,6 +173,21 @@ export default function HomeScreen() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadData, selectedDay]),
   );
+
+  useEffect(() => {
+    return onPickupPush(() => {
+      void loadData(selectedDay, 'content');
+    });
+  }, [loadData, selectedDay]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadData(selectedDay, 'content', true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadData, selectedDay]);
 
   const handleSelectDay = (index: number) => {
     if (index === selectedDay || contentLoading) return;
@@ -276,7 +298,18 @@ export default function HomeScreen() {
         </ScrollView>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void onRefresh()}
+            tintColor={colors.brand.primary}
+            colors={[colors.brand.primary]}
+          />
+        }
+      >
         {contentLoading ? (
           <View style={styles.contentLoader}>
             <ActivityIndicator size="large" color={colors.brand.primary} />

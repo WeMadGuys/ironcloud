@@ -1319,7 +1319,11 @@ async function createBookingClientSide(input: CreateBookingInput): Promise<{
 
   if (orderError || !order) {
     console.error('[Booking] Order create error:', orderError);
-    throw new Error(orderError?.message || 'Failed to create booking');
+    const message = orderError?.message || 'Failed to create booking';
+    if (/pickup time is full/i.test(message)) {
+      throw new Error('This pickup time is full. Please choose the next available slot.');
+    }
+    throw new Error(message);
   }
 
   const orderRow = order as { id: string; order_number: string };

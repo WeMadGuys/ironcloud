@@ -6,6 +6,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +26,7 @@ import {
 export default function ProfileScreen() {
   const router = useRouter();
   const [profile, setProfile] = useState<{ fullName: string; phone: string } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
 
@@ -118,7 +120,22 @@ export default function ProfileScreen() {
           />
         </Pressable>
       </View>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void getRiderProfile({ force: true })
+                .then(setProfile)
+                .finally(() => setRefreshing(false));
+            }}
+            tintColor={colors.brand.primary}
+            colors={[colors.brand.primary]}
+          />
+        }
+      >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
             {(profile?.fullName || 'R')[0].toUpperCase()}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { serviceQuantityError } from '@ironcloud/db';
 
+import { notifyRiderNewPickup } from '@/lib/notify-rider-pickup';
 import { resolvePickupRiderForCommunity } from '@/lib/resolve-pickup-rider';
 
 type AdminClient = SupabaseClient<any>;
@@ -416,9 +417,17 @@ export async function createCustomerBooking(
 
   if (orderError || !order) {
     console.error('[create-booking] Order create error:', orderError);
+    const message = orderError?.message || 'Failed to create booking';
+    if (/pickup time is full/i.test(message)) {
+      return {
+        success: false,
+        error: 'This pickup time is full. Please choose the next available slot.',
+        status: 409,
+      };
+    }
     return {
       success: false,
-      error: orderError?.message || 'Failed to create booking',
+      error: message,
       status: 500,
     };
   }
@@ -471,6 +480,11 @@ export async function createCustomerBooking(
         status: 500,
       };
     }
+
+    await notifyRiderNewPickup(admin, {
+      riderId: assignedRider.riderId,
+      orderId: order.id,
+    });
   }
 
   return {

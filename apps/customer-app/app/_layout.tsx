@@ -14,10 +14,15 @@ import {
 } from '@expo-google-fonts/poppins';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Platform } from 'react-native';
 
 import { onAuthStateChange } from '../src/features/auth';
+import { ForceUpdateScreen } from '../src/features/app-update/ForceUpdateScreen';
+import {
+  checkRequiredUpdate,
+  type UpdatePolicy,
+} from '../src/features/app-update/policy';
 import {
   extractNotificationPath,
   registerForPushNotifications,
@@ -46,12 +51,44 @@ export default function RootLayout() {
     'Inter-Bold': Inter_700Bold,
   });
   const responseSub = useRef<{ remove: () => void } | null>(null);
+  const [updateGate, setUpdateGate] = useState<'checking' | 'ok' | 'required'>(
+    Platform.OS === 'web' ? 'ok' : 'checking',
+  );
+  const [updatePolicy, setUpdatePolicy] = useState<UpdatePolicy | null>(null);
+
+  const refreshUpdateGate = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      setUpdateGate('ok');
+      return;
+    }
+    try {
+      const result = await checkRequiredUpdate();
+      setUpdatePolicy(result.policy);
+      setUpdateGate(result.required ? 'required' : 'ok');
+    } catch {
+      setUpdateGate((current) => (current === 'required' ? 'required' : 'ok'));
+    }
+  }, []);
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    void refreshUpdateGate();
+    const timeout = setTimeout(() => {
+      setUpdateGate((current) => (current === 'checking' ? 'ok' : current));
+    }, 4000);
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void refreshUpdateGate();
+    });
+    return () => {
+      clearTimeout(timeout);
+      appState.remove();
+    };
+  }, [refreshUpdateGate]);
+
+  useEffect(() => {
+    if ((fontsLoaded || fontError) && updateGate !== 'checking') {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [fontsLoaded, fontError, updateGate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,6 +162,14 @@ export default function RootLayout() {
 
   if (!fontsLoaded && !fontError) {
     return null;
+  }
+
+  if (updateGate === 'checking') {
+    return null;
+  }
+
+  if (updateGate === 'required' && updatePolicy) {
+    return <ForceUpdateScreen policy={updatePolicy} />;
   }
 
   return <Stack screenOptions={{ headerShown: false }} />;

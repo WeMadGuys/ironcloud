@@ -26,6 +26,7 @@ export type RiderJobRow = {
   id: string;
   job_type: 'pickup' | 'delivery';
   status: string;
+  failure_reason: string | null;
   scheduled_start: string | null;
   order: {
     id: string;
@@ -101,6 +102,7 @@ const JOB_SELECT = `
   id,
   job_type,
   status,
+  failure_reason,
   scheduled_start,
   order:order_id (
     id,
@@ -233,10 +235,10 @@ function mapToFlatJob(job: RiderJobRow): FlatJob | null {
   };
 }
 
-/** Cancelled bookings mark jobs `failed` so they leave the queue — keep them out of the main list. */
+/** Customer cancellations leave the queue. A rider's failed door attempt stays visible. */
 function isMainQueueJob(job: RiderJobRow): boolean {
-  if (job.status === 'failed') return false;
   if (job.order?.status === 'cancelled') return false;
+  if (job.status === 'failed' && job.failure_reason === 'Customer cancelled') return false;
   return true;
 }
 

@@ -43,6 +43,8 @@ export const CommunityDetailPage = () => {
   const [selectedRiderId, setSelectedRiderId] = useState('');
   const [selectedStartHour, setSelectedStartHour] = useState(8);
   const [communityClosedDate, setCommunityClosedDate] = useState('');
+  const [capMax, setCapMax] = useState('');
+  const [capMemberIds, setCapMemberIds] = useState<string[]>([]);
   const [newBlockName, setNewBlockName] = useState('');
   const [expandedBlockId, setExpandedBlockId] = useState<string | null>(null);
   const [newFlatsText, setNewFlatsText] = useState('');
@@ -66,6 +68,13 @@ export const CommunityDetailPage = () => {
     { communityId: id },
     { enabled: Boolean(id), refetchOnWindowFocus: false },
   );
+  const orderCapQuery = trpc.communities.getOrderCap.useQuery(
+    { communityId: id },
+    { enabled: Boolean(id), refetchOnWindowFocus: false },
+  );
+  const communityOptionsQuery = trpc.communities.listOptions.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
   const blocksEnabled = Boolean(
     (data?.community as { blocks_enabled?: boolean } | null | undefined)
       ?.blocks_enabled,
@@ -123,6 +132,24 @@ export const CommunityDetailPage = () => {
       toast('Closed date added', 'success');
       setCommunityClosedDate('');
       await utils.communities.listClosedDates.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const saveOrderCapMutation = trpc.communities.saveOrderCap.useMutation({
+    onSuccess: async () => {
+      toast('Hourly order limit saved', 'success');
+      await utils.communities.getOrderCap.invalidate({ communityId: id });
+    },
+    onError: (err) => toast(err.message, 'error'),
+  });
+
+  const clearOrderCapMutation = trpc.communities.clearOrderCap.useMutation({
+    onSuccess: async () => {
+      toast('Hourly order limit removed', 'success');
+      setCapMax('');
+      setCapMemberIds([]);
+      await utils.communities.getOrderCap.invalidate({ communityId: id });
     },
     onError: (err) => toast(err.message, 'error'),
   });
@@ -220,6 +247,13 @@ export const CommunityDetailPage = () => {
       setLoading(false);
     });
   }, [id]);
+
+  useEffect(() => {
+    const cap = orderCapQuery.data;
+    if (!cap) return;
+    setCapMax(cap.maxOrders == null ? '' : String(cap.maxOrders));
+    setCapMemberIds(cap.memberIds.filter((memberId) => memberId !== id));
+  }, [orderCapQuery.data, id]);
 
   const reloadCommunity = () => {
     fetchCommunityById(id).then(setData);
@@ -366,6 +400,12 @@ export const CommunityDetailPage = () => {
     removeSlotMutation.isPending;
   const isClosedDateMutating =
     addClosedDateMutation.isPending || removeClosedDateMutation.isPending;
+  const isOrderCapMutating =
+    saveOrderCapMutation.isPending || clearOrderCapMutation.isPending;
+  const elsewhereCapIds = new Set(orderCapQuery.data?.elsewhereIds ?? []);
+  const shareableCommunities = (communityOptionsQuery.data ?? []).filter(
+    (community) => community.id !== id,
+  );
   const closedDates = closedDatesQuery.data ?? [];
   const communityOnlyClosedDates = closedDates.filter((row) => row.scope === 'community');
   const globalClosedDates = closedDates.filter((row) => row.scope === 'global');
@@ -655,6 +695,119 @@ export const CommunityDetailPage = () => {
                 </p>
               )}
             </div>
+          </div>
+        </Card>
+
+        <Card
+          title="Hourly order limit"
+          subtitle="Grey out a pickup hour in the customer app once this many orders are booked"
+        >
+          <div className={assignStyles.assignPanel}>
+            {orderCapQuery.isLoading ? (
+              <p className={assignStyles.statusLine}>Loading order limit…</p>
+            ) : (
+              <>
+                <p className={assignStyles.toggleHint}>
+                  Applies to each pickup hour. Leave communities unchecked to cap this
+                  community alone. Checked communities share one total for the same hour.
+                  Saving moves a community out of any other limit.
+                </p>
+                <div>
+                  <label className={assignStyles.assignLabel} htmlFor="order-cap-max">
+                    Max orders per hour
+                  </label>
+                  <input
+                    id="order-cap-max"
+                    type="number"
+                    min={1}
+                    max={500}
+                    inputMode="numeric"
+                    className={assignStyles.assignSelect}
+                    value={capMax}
+                    placeholder="No limit"
+                    onChange={(e) => setCapMax(e.target.value)}
+                    disabled={isOrderCapMutating}
+                  />
+                </div>
+                <div>
+                  <p className={assignStyles.assignLabel}>Share this limit</p>
+                  {communityOptionsQuery.isLoading ? (
+                    <p className={assignStyles.statusLine}>Loading communities…</p>
+                  ) : shareableCommunities.length === 0 ? (
+                    <p className={assignStyles.statusLine}>No other communities yet.</p>
+                  ) : (
+                    <ul className={assignStyles.capList}>
+                      {shareableCommunities.map((community) => {
+                        const checked = capMemberIds.includes(community.id);
+                        return (
+                          <li key={community.id}>
+                            <label className={assignStyles.capOption}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={isOrderCapMutating}
+                                onChange={() => {
+                                  setCapMemberIds((current) =>
+                                    checked
+                                      ? current.filter((memberId) => memberId !== community.id)
+                                      : [...current, community.id],
+                                  );
+                                }}
+                              />
+                              <span>
+                                {community.name}
+                                {community.city ? ` · ${community.city}` : ''}
+                                {elsewhereCapIds.has(community.id)
+                                  ? ' · already in another limit'
+                                  : ''}
+                              </span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+                <div className={assignStyles.assignControls}>
+                  <Button
+                    onClick={() => {
+                      const maxOrders = Number(capMax);
+                      if (!Number.isInteger(maxOrders) || maxOrders < 1 || maxOrders > 500) {
+                        toast('Enter a max between 1 and 500', 'error');
+                        return;
+                      }
+                      saveOrderCapMutation.mutate({
+                        communityId: id,
+                        maxOrders,
+                        memberIds: capMemberIds,
+                      });
+                    }}
+                    disabled={isOrderCapMutating}
+                  >
+                    {saveOrderCapMutation.isPending ? 'Saving…' : 'Save limit'}
+                  </Button>
+                  {orderCapQuery.data?.poolId ? (
+                    <Button
+                      variant="danger"
+                      disabled={isOrderCapMutating}
+                      onClick={() => clearOrderCapMutation.mutate({ communityId: id })}
+                    >
+                      {clearOrderCapMutation.isPending ? 'Removing…' : 'Remove limit'}
+                    </Button>
+                  ) : null}
+                </div>
+                {orderCapQuery.data?.poolId && capMemberIds.length > 0 ? (
+                  <p className={assignStyles.statusLine}>
+                    Remove limit clears it for every community in this shared pool.
+                  </p>
+                ) : null}
+                {orderCapQuery.isError ? (
+                  <p className={assignStyles.statusLine}>
+                    Could not load order limit: {orderCapQuery.error.message}
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
         </Card>
 
