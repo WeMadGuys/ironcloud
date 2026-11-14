@@ -1,17 +1,5 @@
 import { getSupabase } from '@/lib/supabase';
 
-export const fetchSystemSettings = async () => {
-  const supabase = getSupabase();
-  const { data } = await supabase.from('system_settings').select('*');
-  return data ?? [];
-};
-
-export const fetchRolePermissions = async () => {
-  const supabase = getSupabase();
-  const { data } = await supabase.from('role_permissions').select('*');
-  return data ?? [];
-};
-
 export const fetchAuditLogs = async (page = 1, pageSize = 25) => {
   const supabase = getSupabase();
   const from = (page - 1) * pageSize;

@@ -101,13 +101,13 @@ function SortableGroup({
   const name = rows[0]?.services?.name ?? 'service';
 
   return (
-    <div ref={setNodeRef} style={style}>
+    <div ref={setNodeRef} style={style} className={dragStyles.group}>
       {rows.map((row, index) => {
         const zebra = (rowOffset + index) % 2 === 1;
-        const cell = `${tableStyles.td} ${zebra ? dragStyles.altCell : ''}`;
+        const cell = `${dragStyles.cell} ${zebra ? dragStyles.altCell : ''}`;
         return (
           <div key={row.id} className={dragStyles.row}>
-            <div className={cell}>
+            <div className={`${cell} ${dragStyles.handleCell}`}>
               {index === 0 ? (
                 <button
                   type="button"
@@ -190,14 +190,14 @@ export function PricingRulesTable({
       <div className={tableStyles.container}>
         <div className={dragStyles.sheet}>
           <div className={dragStyles.head}>
-            <div className={tableStyles.th} aria-label="Reorder" />
-            <div className={tableStyles.th}>Service</div>
-            <div className={tableStyles.th}>Category</div>
-            <div className={tableStyles.th}>Scope</div>
-            <div className={tableStyles.th}>Target</div>
-            <div className={tableStyles.th}>Base Price</div>
-            <div className={tableStyles.th}>Express ×</div>
-            <div className={tableStyles.th}>Actions</div>
+            <div className={`${dragStyles.headCell} ${dragStyles.handleCell}`} aria-hidden />
+            <div className={dragStyles.headCell}>Service</div>
+            <div className={dragStyles.headCell}>Category</div>
+            <div className={dragStyles.headCell}>Scope</div>
+            <div className={dragStyles.headCell}>Target</div>
+            <div className={dragStyles.headCell}>Base Price</div>
+            <div className={dragStyles.headCell}>Express ×</div>
+            <div className={dragStyles.headCell}>Actions</div>
           </div>
           <SortableContext items={groups.map((group) => group.serviceId)} strategy={verticalListSortingStrategy}>
             {groups.map((group) => {

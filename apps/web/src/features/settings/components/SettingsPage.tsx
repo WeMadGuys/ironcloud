@@ -3,40 +3,30 @@
 import { useEffect, useState } from 'react';
 
 import { Card, Loader, Pagination, Table } from '@/components';
-import { useTheme } from '@/contexts/ThemeContext';
 import { formatRelativeTime } from '@/utils/format';
 
 import {
   fetchAuditLogs,
-  fetchRolePermissions,
   fetchServiceSlots,
-  fetchSystemSettings,
 } from '../services/settings.service';
 import { PricingRulesPanel } from './PricingRulesPanel';
 
 import pageStyles from '@/styles/pages.module.css';
 
 export const SettingsPage = () => {
-  const { theme, toggleTheme } = useTheme();
-  const [settings, setSettings] = useState<Awaited<ReturnType<typeof fetchSystemSettings>>>([]);
-  const [permissions, setPermissions] = useState<Awaited<ReturnType<typeof fetchRolePermissions>>>([]);
   const [auditLogs, setAuditLogs] = useState<Awaited<ReturnType<typeof fetchAuditLogs>>['data']>([]);
   const [auditTotal, setAuditTotal] = useState(0);
   const [slots, setSlots] = useState<Awaited<ReturnType<typeof fetchServiceSlots>>>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('general');
+  const [tab, setTab] = useState('pricing');
   const [auditPage, setAuditPage] = useState(1);
   const pageSize = 25;
 
   useEffect(() => {
     Promise.all([
-      fetchSystemSettings(),
-      fetchRolePermissions(),
       fetchAuditLogs(auditPage, pageSize),
       fetchServiceSlots(),
-    ]).then(([s, p, a, sl]) => {
-      setSettings(s);
-      setPermissions(p);
+    ]).then(([a, sl]) => {
       setAuditLogs(a.data);
       setAuditTotal(a.total);
       setSlots(sl);
@@ -46,7 +36,7 @@ export const SettingsPage = () => {
 
   if (loading) return <Loader fullPage />;
 
-  const tabs = ['general', 'pricing', 'slots', 'permissions', 'audit'];
+  const tabs = ['pricing', 'slots', 'audit'];
 
   return (
     <div>
@@ -58,16 +48,6 @@ export const SettingsPage = () => {
         ))}
       </div>
 
-      {tab === 'general' && (
-        <Card title="System Settings">
-          <p>Theme: {theme}</p>
-          <button type="button" onClick={toggleTheme}>Toggle Theme</button>
-          {settings.map((s) => (
-            <p key={s.key}><strong>{s.key}:</strong> {JSON.stringify(s.value)}</p>
-          ))}
-        </Card>
-      )}
-
       {tab === 'pricing' && <PricingRulesPanel />}
 
       {tab === 'slots' && (
@@ -78,16 +58,6 @@ export const SettingsPage = () => {
             { key: 'window', header: 'Window', render: (s) => `${new Date(s.window_start).toLocaleString()} - ${new Date(s.window_end).toLocaleString()}` },
             { key: 'capacity', header: 'Capacity', render: (s) => `${s.booked_count}/${s.capacity}` },
           ]} data={slots} keyExtractor={(s) => s.id} />
-        </Card>
-      )}
-
-      {tab === 'permissions' && (
-        <Card title="Role Permissions">
-          <Table columns={[
-            { key: 'role', header: 'Role', render: (p) => p.role },
-            { key: 'resource', header: 'Resource', render: (p) => p.resource },
-            { key: 'action', header: 'Action', render: (p) => p.action },
-          ]} data={permissions} keyExtractor={(p) => p.id} />
         </Card>
       )}
 
