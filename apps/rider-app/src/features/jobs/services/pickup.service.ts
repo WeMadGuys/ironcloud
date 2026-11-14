@@ -290,11 +290,22 @@ export async function getGarmentCatalog(opts: {
 }): Promise<GarmentCatalogItem[]> {
   const { communityId, userId, city } = opts;
 
-  const { data: services, error } = await (supabase
+  let { data: services, error } = await (supabase
     .from('services') as ReturnType<typeof supabase.from>)
-    .select('id, name, unit')
+    .select('id, name, unit, sort_order')
     .eq('is_active', true)
-    .order('name');
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error && /sort_order/i.test(error.message ?? '')) {
+    console.warn('[Pickup] sort_order unavailable:', error.message);
+    const fallback = await (supabase.from('services') as ReturnType<typeof supabase.from>)
+      .select('id, name, unit')
+      .eq('is_active', true)
+      .order('name');
+    services = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !services) {
     console.error('[Pickup] catalog error:', error);
@@ -319,12 +330,19 @@ export async function getGarmentCatalog(opts: {
     { userId, communityId, city },
   );
 
-  return (services as { id: string; name: string; unit?: string | null }[]).map((service) => ({
-    serviceId: service.id,
-    name: service.name,
-    unit: service.unit?.trim() || 'piece',
-    unitPrice: priceMap.get(service.id) ?? 0,
-  }));
+  return (services as { id: string; name: string; unit?: string | null; sort_order?: number | null }[])
+    .slice()
+    .sort((a, b) => {
+      const byOrder = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+      if (byOrder !== 0) return byOrder;
+      return a.name.localeCompare(b.name);
+    })
+    .map((service) => ({
+      serviceId: service.id,
+      name: service.name,
+      unit: service.unit?.trim() || 'piece',
+      unitPrice: priceMap.get(service.id) ?? 0,
+    }));
 }
 
 /**

@@ -119,6 +119,33 @@ async function listActiveServices(supabase: TypedSupabaseClient) {
   return data ?? [];
 }
 
+async function nextServiceSortOrder(supabase: TypedSupabaseClient): Promise<number> {
+  const { data, error } = await supabase
+    .from('services')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+  const current = data?.[0]?.sort_order;
+  return (typeof current === 'number' ? current : -1) + 1;
+}
+
+/** Keep services outside `orderedIds` in place, and write that subset in the new order. */
+function mergeServiceOrder(currentIds: string[], orderedIds: string[]): string[] {
+  const wanted = new Set(orderedIds);
+  const positions: number[] = [];
+  currentIds.forEach((id, index) => {
+    if (wanted.has(id)) positions.push(index);
+  });
+  const next = [...currentIds];
+  orderedIds.forEach((id, index) => {
+    const slot = positions[index];
+    if (slot !== undefined) next[slot] = id;
+  });
+  return next;
+}
+
 async function assertServiceNameAvailable(
   supabase: TypedSupabaseClient,
   name: string,
@@ -179,6 +206,7 @@ async function resolveServiceId(
         category: 'ironing',
         garment_category: garmentCategory,
         unit: 'piece',
+        sort_order: await nextServiceSortOrder(supabase),
         is_active: true,
       })
       .select('id')
@@ -308,6 +336,55 @@ export const settingsRouter = router({
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
         },
+      });
+
+      return { success: true };
+    }),
+
+  reorderServices: adminProcedure
+    .input(z.object({
+      orderedIds: z.array(z.string().uuid()).min(1),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const unique = new Set(input.orderedIds);
+      if (unique.size !== input.orderedIds.length) {
+        throw new Error('Duplicate services in order');
+      }
+
+      const { data, error } = await ctx.supabase
+        .from('services')
+        .select('id, name, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true })
+        .limit(500);
+
+      if (error) throw new Error(error.message);
+
+      const rows = data ?? [];
+      const known = new Set(rows.map((row) => row.id));
+      for (const id of input.orderedIds) {
+        if (!known.has(id)) throw new Error('Unknown service in order');
+      }
+
+      const next = mergeServiceOrder(rows.map((row) => row.id), input.orderedIds);
+      for (let index = 0; index < next.length; index += 1) {
+        const id = next[index];
+        const existing = rows.find((row) => row.id === id);
+        if (existing?.sort_order === index) continue;
+        const { error: updateError } = await ctx.supabase
+          .from('services')
+          .update({ sort_order: index })
+          .eq('id', id);
+        if (updateError) throw new Error(updateError.message);
+      }
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'pricing.reorder',
+        entityType: 'services',
+        after: { orderedIds: input.orderedIds },
       });
 
       return { success: true };

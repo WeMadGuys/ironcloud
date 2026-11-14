@@ -9,7 +9,6 @@ import {
   CreateEntityModal,
   Loader,
   Modal,
-  Table,
 } from '@/components';
 import { useToast } from '@/components/Toast/ToastProvider';
 import { CustomersGrid } from '@/features/customers/components/CustomersGrid';
@@ -18,7 +17,6 @@ import {
   type CommunityOption,
 } from '@/features/communities/services/communities.service';
 import { trpc } from '@/lib/trpc';
-import { formatCurrency } from '@/utils/format';
 import {
   listGarmentCategoryTabs,
   normalizeGarmentCategory,
@@ -29,6 +27,7 @@ import {
   fetchActiveServices,
   fetchPricingRules,
 } from '../services/settings.service';
+import { PricingRulesTable, type PricingRuleRow } from './PricingRulesTable';
 
 import formStyles from '@/styles/form.module.css';
 import pageStyles from '@/styles/pages.module.css';
@@ -39,7 +38,38 @@ type ServiceOption = Awaited<ReturnType<typeof fetchActiveServices>>[number];
 const NEW_SERVICE_VALUE = '__new__';
 const ADD_CATEGORY_VALUE = '__new_category__';
 
-type ServiceJoin = { name: string; garment_category?: string | null } | null;
+type ServiceJoin = {
+  name: string;
+  garment_category?: string | null;
+  sort_order?: number | null;
+} | null;
+
+function mergeServiceOrder(currentIds: string[], orderedIds: string[]): string[] {
+  const wanted = new Set(orderedIds);
+  const positions: number[] = [];
+  currentIds.forEach((id, index) => {
+    if (wanted.has(id)) positions.push(index);
+  });
+  const next = [...currentIds];
+  orderedIds.forEach((id, index) => {
+    const slot = positions[index];
+    if (slot !== undefined) next[slot] = id;
+  });
+  return next;
+}
+
+function comparePricingRows(a: PricingRow, b: PricingRow): number {
+  const orderA = Number(serviceJoin(a)?.sort_order ?? 0);
+  const orderB = Number(serviceJoin(b)?.sort_order ?? 0);
+  if (orderA !== orderB) return orderA - orderB;
+  const nameA = serviceJoin(a)?.name ?? '';
+  const nameB = serviceJoin(b)?.name ?? '';
+  const byName = nameA.localeCompare(nameB);
+  if (byName !== 0) return byName;
+  const byService = a.service_id.localeCompare(b.service_id);
+  if (byService !== 0) return byService;
+  return a.id.localeCompare(b.id);
+}
 
 type PricingForm = {
   serviceId: string;
@@ -128,6 +158,7 @@ export const PricingRulesPanel = () => {
   const createPricing = trpc.settings.createPricing.useMutation();
   const updatePricing = trpc.settings.updatePricing.useMutation();
   const deletePricing = trpc.settings.deletePricing.useMutation();
+  const reorderServices = trpc.settings.reorderServices.useMutation();
 
   const load = async () => {
     const [rules, svc, communityOpts] = await Promise.all([
@@ -328,6 +359,46 @@ export const PricingRulesPanel = () => {
     }
   };
 
+  const handleReorder = (orderedIds: string[]) => {
+    const currentIds = [...services]
+      .sort(
+        (a, b) =>
+          Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0) ||
+          a.name.localeCompare(b.name),
+      )
+      .map((service) => service.id);
+    const nextIds = mergeServiceOrder(currentIds, orderedIds);
+    const rank = new Map(nextIds.map((id, index) => [id, index]));
+    const previousServices = services;
+    const previousPricing = pricing;
+
+    setServices((prev) =>
+      prev.map((service) => ({
+        ...service,
+        sort_order: rank.get(service.id) ?? service.sort_order ?? 0,
+      })),
+    );
+    setPricing((prev) =>
+      prev.map((row) => {
+        const order = rank.get(row.service_id);
+        const joined = serviceJoin(row);
+        if (order == null || !joined) return row;
+        return { ...row, services: { ...joined, sort_order: order } };
+      }),
+    );
+
+    reorderServices.mutate(
+      { orderedIds },
+      {
+        onError: (err) => {
+          setServices(previousServices);
+          setPricing(previousPricing);
+          toast(err.message, 'error');
+        },
+      },
+    );
+  };
+
   const handleDelete = () => {
     if (!deleteId) return;
     deletePricing.mutate(
@@ -346,13 +417,14 @@ export const PricingRulesPanel = () => {
   if (loading) return <Loader />;
 
   const submitting = createPricing.isPending || updatePricing.isPending;
-  const visiblePricing =
+  const visiblePricing = (
     categoryTab === 'All'
       ? pricing
       : pricing.filter(
           (row) =>
             normalizeGarmentCategory(serviceJoin(row)?.garment_category) === categoryTab,
-        );
+        )
+  ).slice().sort(comparePricingRows);
   const showServiceDetails = Boolean(form.serviceId);
   const editingExistingService =
     showServiceDetails && form.serviceId !== NEW_SERVICE_VALUE;
@@ -385,63 +457,13 @@ export const PricingRulesPanel = () => {
         ) : visiblePricing.length === 0 ? (
           <p className={formStyles.hint}>No pricing rules in {categoryTab}.</p>
         ) : (
-          <Table
-            columns={[
-              {
-                key: 'service',
-                header: 'Service',
-                render: (p) => serviceJoin(p)?.name ?? '—',
-              },
-              {
-                key: 'category',
-                header: 'Category',
-                render: (p) =>
-                  normalizeGarmentCategory(serviceJoin(p)?.garment_category),
-              },
-              {
-                key: 'scope',
-                header: 'Scope',
-                render: (p) =>
-                  scopeLabel(
-                    (p.scope as string | null) ?? (p.community_id ? 'community' : 'all'),
-                  ),
-              },
-              {
-                key: 'target',
-                header: 'Target',
-                render: (p) => targetLabel(p),
-              },
-              {
-                key: 'price',
-                header: 'Base Price',
-                render: (p) => formatCurrency(Number(p.base_price)),
-              },
-              {
-                key: 'express',
-                header: 'Express ×',
-                render: (p) => String(p.express_multiplier ?? 1.5),
-              },
-              {
-                key: 'actions',
-                header: 'Actions',
-                render: (p) => (
-                  <div className={formStyles.rowActions}>
-                    <Button variant="secondary" size="sm" onClick={() => openEdit(p)}>
-                      Edit
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => setDeleteId(p.id)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                ),
-              },
-            ]}
-            data={visiblePricing}
-            keyExtractor={(p) => p.id}
+          <PricingRulesTable
+            rows={visiblePricing as PricingRuleRow[]}
+            scopeLabel={scopeLabel}
+            targetLabel={(row) => targetLabel(row as PricingRow)}
+            onEdit={(row) => openEdit(row as PricingRow)}
+            onDelete={setDeleteId}
+            onReorder={handleReorder}
           />
         )}
       </Card>

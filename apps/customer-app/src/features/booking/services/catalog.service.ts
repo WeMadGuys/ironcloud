@@ -98,9 +98,20 @@ export async function getGarmentCatalog(opts: {
     (supabase.from('services') as ReturnType<typeof supabase.from>);
 
   let { data: services, error } = await servicesQuery()
-    .select('id, name, unit, garment_category')
+    .select('id, name, unit, garment_category, sort_order')
     .eq('is_active', true)
-    .order('name');
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error && /sort_order/i.test(error.message ?? '')) {
+    console.warn('[Catalog] sort_order unavailable:', error.message);
+    const withCategory = await servicesQuery()
+      .select('id, name, unit, garment_category')
+      .eq('is_active', true)
+      .order('name');
+    services = withCategory.data;
+    error = withCategory.error;
+  }
 
   // Column is added in 039_service_garment_category.sql. Until it is applied, still show rates.
   if (error && /garment_category/i.test(error.message ?? '')) {
@@ -142,13 +153,21 @@ export async function getGarmentCatalog(opts: {
       name: string;
       unit?: string | null;
       garment_category?: string | null;
+      sort_order?: number | null;
     }[]
-  ).map((service) => ({
-    serviceId: service.id,
-    name: service.name,
-    unit: service.unit?.trim() || 'piece',
-    unitPrice: priceMap.get(service.id) ?? 0,
-    garmentCategory: normalizeGarmentCategory(service.garment_category),
-    icon: garmentIcon(service.name),
-  }));
+  )
+    .slice()
+    .sort((a, b) => {
+      const byOrder = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+      if (byOrder !== 0) return byOrder;
+      return a.name.localeCompare(b.name);
+    })
+    .map((service) => ({
+      serviceId: service.id,
+      name: service.name,
+      unit: service.unit?.trim() || 'piece',
+      unitPrice: priceMap.get(service.id) ?? 0,
+      garmentCategory: normalizeGarmentCategory(service.garment_category),
+      icon: garmentIcon(service.name),
+    }));
 }

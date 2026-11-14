@@ -1,0 +1,55 @@
+.sheet {
+  min-width: max-content;
+}
+
+.head,
+.row {
+  display: grid;
+  grid-template-columns:
+    44px
+    minmax(140px, 1.6fr)
+    minmax(100px, 1fr)
+    minmax(88px, 0.8fr)
+    minmax(140px, 1.3fr)
+    minmax(100px, 0.8fr)
+    minmax(88px, 0.6fr)
+    minmax(150px, auto);
+  align-items: center;
+}
+
+.altCell {
+  background: var(--ic-surface-section);
+}
+
+.overlay {
+  padding: var(--ic-spacing-sm) var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-light);
+  border-radius: var(--ic-radius-input);
+  background: var(--ic-surface-card);
+  color: var(--ic-text-heading);
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}
+
+.handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ic-radius-input);
+  background: transparent;
+  color: var(--ic-text-muted);
+  cursor: grab;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--ic-border-focus);
+  outline-offset: 2px;
+}

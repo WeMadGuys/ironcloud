@@ -459,6 +459,14 @@ export default function ProfileScreen() {
       showArrow: true,
     },
     {
+      id: 'prices',
+      icon: 'tag-outline',
+      label: 'Prices',
+      subtitle: 'View garment rates for your area',
+      onPress: () => router.push('/profile/prices'),
+      showArrow: true,
+    },
+    {
       id: 'notifications',
       icon: 'bell-outline',
       label: 'Notifications',

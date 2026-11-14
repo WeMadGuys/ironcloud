@@ -555,6 +555,7 @@ export interface Database {
           garment_category: string;
           name: string;
           unit: string;
+          sort_order: number;
           is_active: boolean;
           created_at: string;
         };
@@ -564,6 +565,7 @@ export interface Database {
           garment_category?: string;
           name: string;
           unit?: string;
+          sort_order?: number;
           is_active?: boolean;
           created_at?: string;
         };
@@ -573,6 +575,7 @@ export interface Database {
           garment_category?: string;
           name?: string;
           unit?: string;
+          sort_order?: number;
           is_active?: boolean;
           created_at?: string;
         };

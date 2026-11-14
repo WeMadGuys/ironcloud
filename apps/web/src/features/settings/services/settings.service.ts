@@ -29,8 +29,10 @@ export const fetchAuditLogs = async (page = 1, pageSize = 25) => {
 export const fetchPricingRules = async () => {
   const supabase = getSupabase();
   const selects = [
+    '*, services(name, garment_category, sort_order), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
     '*, services(name, garment_category), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
     '*, services(name), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
+    '*, services(name, garment_category, sort_order), communities(name)',
     '*, services(name, garment_category), communities(name)',
     '*, services(name), communities(name)',
   ];
@@ -49,12 +51,30 @@ export const fetchPricingRules = async () => {
 
 export const fetchActiveServices = async () => {
   const supabase = getSupabase();
+  const withOrder = await supabase
+    .from('services')
+    .select('id, name, garment_category, sort_order')
+    .eq('is_active', true)
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+  if (!withOrder.error) return withOrder.data ?? [];
+
+  if (!/sort_order|garment_category/i.test(withOrder.error.message ?? '')) {
+    console.error('[fetchActiveServices]', withOrder.error.message);
+    return [];
+  }
+
   const withCategory = await supabase
     .from('services')
     .select('id, name, garment_category')
     .eq('is_active', true)
     .order('name', { ascending: true });
-  if (!withCategory.error) return withCategory.data ?? [];
+  if (!withCategory.error) {
+    return (withCategory.data ?? []).map((service, index) => ({
+      ...service,
+      sort_order: index,
+    }));
+  }
 
   if (!/garment_category/i.test(withCategory.error.message ?? '')) {
     console.error('[fetchActiveServices]', withCategory.error.message);
@@ -71,7 +91,11 @@ export const fetchActiveServices = async () => {
     console.error('[fetchActiveServices]', error.message);
     return [];
   }
-  return (data ?? []).map((service) => ({ ...service, garment_category: 'Others' }));
+  return (data ?? []).map((service, index) => ({
+    ...service,
+    garment_category: 'Others',
+    sort_order: index,
+  }));
 };
 
 export const fetchServiceSlots = async () => {
