@@ -2,7 +2,8 @@
   background: var(--ic-surface-card);
   border: 1px solid var(--ic-border-light);
   border-radius: var(--ic-radius-card);
-  overflow: hidden;
+  overflow-x: auto;
+  max-width: 100%;
 }
 
 .scrollable {

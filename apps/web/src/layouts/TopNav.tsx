@@ -1,9 +1,10 @@
 'use client';
 
 import Icon from '@mdi/react';
-import { mdiBell, mdiThemeLightDark } from '@mdi/js';
+import { mdiBell, mdiMenu, mdiThemeLightDark } from '@mdi/js';
 import { useEffect, useRef, useState } from 'react';
 
+import { useSidebar } from '@/contexts/SidebarContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAdminRole } from '@/features/auth/hooks/useAdminRole';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -23,6 +24,7 @@ type TopNavProps = {
 
 export const TopNav = ({ title, subtitle }: TopNavProps) => {
   const { toggleTheme } = useTheme();
+  const { mobileOpen, toggleMobile } = useSidebar();
   const { user } = useAuth();
   const { profile } = useAdminRole();
   const [notifCount, setNotifCount] = useState(0);
@@ -76,8 +78,19 @@ export const TopNav = ({ title, subtitle }: TopNavProps) => {
     <>
       <header className={styles.topnav}>
         <div className={styles.left}>
-          <h1 className={styles.title}>{title}</h1>
-          {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+          <button
+            type="button"
+            className={`${styles.iconButton} ${styles.menuButton}`}
+            onClick={toggleMobile}
+            aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={mobileOpen}
+          >
+            <Icon path={mdiMenu} size={0.9} />
+          </button>
+          <div className={styles.heading}>
+            <h1 className={styles.title}>{title}</h1>
+            {subtitle && <p className={styles.subtitle}>{subtitle}</p>}
+          </div>
         </div>
         <div className={styles.right}>
           <SearchInput

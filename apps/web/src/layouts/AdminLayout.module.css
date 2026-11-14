@@ -22,7 +22,7 @@
   overflow: auto;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .main,
   .mainCollapsed {
     margin-left: 0;

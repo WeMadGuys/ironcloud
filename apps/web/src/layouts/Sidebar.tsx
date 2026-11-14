@@ -4,6 +4,7 @@ import Icon from '@mdi/react';
 import { mdiChevronLeft, mdiChevronRight, mdiLogout } from '@mdi/js';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useEffect } from 'react';
 
 import { NAV_ITEMS } from '@/constants/routes';
 import { useSidebar } from '@/contexts/SidebarContext';
@@ -16,18 +17,42 @@ import styles from './Sidebar.module.css';
 
 export const Sidebar = () => {
   const pathname = usePathname();
-  const { collapsed, toggleCollapsed } = useSidebar();
+  const { collapsed, toggleCollapsed, mobileOpen, closeMobile } = useSidebar();
   const { profile, role } = useAdminRole();
+  const compact = collapsed && !mobileOpen;
+
+  useEffect(() => {
+    closeMobile();
+  }, [pathname, closeMobile]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMobile();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mobileOpen, closeMobile]);
 
   const handleLogout = async () => {
+    closeMobile();
     await signOut();
     // Hard navigation so middleware sees cleared auth cookies
     window.location.assign('/admin/login');
   };
 
   return (
+    <>
+    {mobileOpen && (
+      <button
+        type="button"
+        className={styles.backdrop}
+        aria-label="Close navigation"
+        onClick={closeMobile}
+      />
+    )}
     <aside
-      className={`${styles.sidebar} ${collapsed ? styles.collapsed : ''}`}
+      className={`${styles.sidebar} ${compact ? styles.collapsed : ''} ${mobileOpen ? styles.open : ''}`}
       aria-label="Main navigation"
     >
       <button
@@ -47,7 +72,7 @@ export const Sidebar = () => {
           width={36}
           height={36}
         />
-        {!collapsed && <span className={styles.logoText}>IRON CLOUD ADMIN</span>}
+        {!compact && <span className={styles.logoText}>IRON CLOUD ADMIN</span>}
       </div>
 
       <nav className={styles.nav}>
@@ -58,12 +83,13 @@ export const Sidebar = () => {
               key={item.href}
               href={item.href}
               className={`${styles.navItem} ${isActive ? styles.active : ''}`}
-              title={collapsed ? item.label : undefined}
+              title={compact ? item.label : undefined}
+              onClick={closeMobile}
             >
               <span className={styles.navIcon}>
                 <Icon path={getNavIcon(item.icon)} size={0.75} />
               </span>
-              {!collapsed && item.label}
+              {!compact && item.label}
             </Link>
           );
         })}
@@ -71,11 +97,11 @@ export const Sidebar = () => {
           <span className={styles.navIcon}>
             <Icon path={mdiLogout} size={0.75} />
           </span>
-          {!collapsed && 'Logout'}
+          {!compact && 'Logout'}
         </button>
       </nav>
 
-      {!collapsed && profile && (
+      {!compact && profile && (
         <div className={styles.user}>
           <div className={styles.userCard}>
             <div className={styles.avatar}>{getInitials(profile.full_name)}</div>
@@ -87,5 +113,6 @@ export const Sidebar = () => {
         </div>
       )}
     </aside>
+    </>
   );
 };

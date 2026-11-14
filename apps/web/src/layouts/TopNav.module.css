@@ -13,8 +13,21 @@
 
 .left {
   display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-md);
+  min-width: 0;
+}
+
+.heading {
+  display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+}
+
+.menuButton {
+  display: none;
+  flex-shrink: 0;
 }
 
 .title {
@@ -99,6 +112,25 @@
 
 .dropdownItem:hover {
   background: var(--ic-surface-section);
+}
+
+@media (max-width: 900px) {
+  .menuButton {
+    display: inline-flex;
+  }
+
+  .topnav {
+    z-index: 110;
+    padding: 0 var(--ic-spacing-md);
+    gap: var(--ic-spacing-sm);
+  }
+
+  .title {
+    font-size: var(--ic-font-size-lg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .avatar {
