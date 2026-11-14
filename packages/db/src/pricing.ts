@@ -1,3 +1,41 @@
+export const DEFAULT_GARMENT_CATEGORIES = ['Men', 'Women', 'Kids', 'Others'] as const;
+
+const DEFAULT_GARMENT_CATEGORY_SET = new Set<string>(DEFAULT_GARMENT_CATEGORIES);
+
+/** Empty or unknown values land in Others. Default names match regardless of case. */
+export function normalizeGarmentCategory(value: string | null | undefined): string {
+  const trimmed = (value ?? '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) return 'Others';
+  const match = DEFAULT_GARMENT_CATEGORIES.find(
+    (category) => category.toLowerCase() === trimmed.toLowerCase(),
+  );
+  return match ?? trimmed;
+}
+
+/**
+ * Tab order: All, then Men / Women / Kids / Others, then any custom names A–Z.
+ * Customer rates pass includeEmptyDefaults false so empty groups stay hidden.
+ */
+export function listGarmentCategoryTabs(
+  usedCategories: Iterable<string | null | undefined>,
+  includeEmptyDefaults: boolean,
+): string[] {
+  const present = new Set<string>();
+  for (const raw of usedCategories) {
+    present.add(normalizeGarmentCategory(raw));
+  }
+
+  const defaults = includeEmptyDefaults
+    ? [...DEFAULT_GARMENT_CATEGORIES]
+    : DEFAULT_GARMENT_CATEGORIES.filter((category) => present.has(category));
+
+  const extras = Array.from(present)
+    .filter((category) => !DEFAULT_GARMENT_CATEGORY_SET.has(category))
+    .sort((a, b) => a.localeCompare(b));
+
+  return ['All', ...defaults, ...extras];
+}
+
 export type PricingScope = 'all' | 'city' | 'community' | 'user';
 
 export const PRICING_SCOPE_RANK: Record<PricingScope, number> = {

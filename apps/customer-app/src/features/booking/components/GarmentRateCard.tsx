@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -7,11 +7,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { isWeightService } from '@ironcloud/db';
+import { isWeightService, listGarmentCategoryTabs } from '@ironcloud/db';
 import {
   colors,
   radius,
@@ -21,7 +22,6 @@ import {
 
 import {
   getGarmentCatalog,
-  splitCatalog,
   type GarmentCatalogItem,
 } from '../services/catalog.service';
 
@@ -81,13 +81,33 @@ export function GarmentRateCard({ communityId, userId, city }: Props) {
   const [catalog, setCatalog] = useState<GarmentCatalogItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState('All');
 
   const catalogKey = `${communityId ?? ''}|${userId ?? ''}|${city ?? ''}`;
 
+  const categoryTabs = useMemo(
+    () => listGarmentCategoryTabs(
+      catalog.map((item) => item.garmentCategory),
+      false,
+    ),
+    [catalog],
+  );
+
+  useEffect(() => {
+    if (category !== 'All' && !categoryTabs.includes(category)) {
+      setCategory('All');
+    }
+  }, [category, categoryTabs]);
+
   const items = useMemo(() => {
-    const { primary, more } = splitCatalog(catalog);
-    return [...primary, ...more];
-  }, [catalog]);
+    const needle = query.trim().toLowerCase();
+    return catalog.filter((item) => {
+      if (category !== 'All' && item.garmentCategory !== category) return false;
+      if (needle && !item.name.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [catalog, category, query]);
 
   const loadCatalog = useCallback(async () => {
     if (!communityId) {
@@ -116,7 +136,13 @@ export function GarmentRateCard({ communityId, userId, city }: Props) {
     void loadCatalog();
   };
 
-  const closeSheet = () => setOpen(false);
+  const closeSheet = () => {
+    setOpen(false);
+    setQuery('');
+    setCategory('All');
+  };
+
+  const showFilters = Boolean(communityId) && !loading && catalog.length > 0;
 
   return (
     <>
@@ -151,10 +177,50 @@ export function GarmentRateCard({ communityId, userId, city }: Props) {
             </Pressable>
           </View>
 
+          {showFilters ? (
+            <View style={styles.filters}>
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search a service"
+                placeholderTextColor={colors.text.muted}
+                style={styles.search}
+                autoCorrect={false}
+                autoCapitalize="none"
+                clearButtonMode="while-editing"
+                accessibilityLabel="Search a service"
+              />
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.chipRow}
+              >
+                {categoryTabs.map((tab) => {
+                  const selected = tab === category;
+                  return (
+                    <Pressable
+                      key={tab}
+                      onPress={() => setCategory(tab)}
+                      style={[styles.chip, selected && styles.chipSelected]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                    >
+                      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
+                        {tab}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
+
           <ScrollView
             style={styles.scroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
             {!communityId ? (
               <View style={styles.emptyState}>
@@ -179,14 +245,18 @@ export function GarmentRateCard({ communityId, userId, city }: Props) {
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconWrap}>
                   <MaterialCommunityIcons
-                    name="tag-outline"
+                    name={catalog.length === 0 ? 'tag-outline' : 'magnify'}
                     size={28}
                     color={colors.icon.secondary}
                   />
                 </View>
-                <Text style={styles.emptyTitle}>Rates unavailable</Text>
+                <Text style={styles.emptyTitle}>
+                  {catalog.length === 0 ? 'Rates unavailable' : 'No matching service'}
+                </Text>
                 <Text style={styles.emptyHint}>
-                  Garment rates are not configured yet. Please check back soon.
+                  {catalog.length === 0
+                    ? 'Garment rates are not configured yet. Please check back soon.'
+                    : 'Try another name or category.'}
                 </Text>
               </View>
             ) : (
@@ -245,6 +315,51 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.semibold,
     fontSize: 18,
     color: colors.text.heading,
+  },
+  filters: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    gap: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  search: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface.elevated,
+    color: colors.text.heading,
+    fontFamily: fonts.inter.regular,
+    fontSize: 15,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingBottom: spacing.md,
+  },
+  chip: {
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    backgroundColor: colors.surface.elevated,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chipSelected: {
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
+  },
+  chipLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 13,
+    color: colors.text.heading,
+  },
+  chipLabelSelected: {
+    color: colors.brand.onPrimary,
   },
   scroll: {
     flex: 1,

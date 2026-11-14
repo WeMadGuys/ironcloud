@@ -19,7 +19,11 @@ import {
 } from '@/features/communities/services/communities.service';
 import { trpc } from '@/lib/trpc';
 import { formatCurrency } from '@/utils/format';
-import type { PricingScope } from '@ironcloud/db';
+import {
+  listGarmentCategoryTabs,
+  normalizeGarmentCategory,
+  type PricingScope,
+} from '@ironcloud/db';
 
 import {
   fetchActiveServices,
@@ -33,10 +37,16 @@ type PricingRow = Awaited<ReturnType<typeof fetchPricingRules>>[number];
 type ServiceOption = Awaited<ReturnType<typeof fetchActiveServices>>[number];
 
 const NEW_SERVICE_VALUE = '__new__';
+const ADD_CATEGORY_VALUE = '__new_category__';
+
+type ServiceJoin = { name: string; garment_category?: string | null } | null;
 
 type PricingForm = {
   serviceId: string;
   newServiceName: string;
+  serviceName: string;
+  garmentCategory: string;
+  newGarmentCategory: string;
   scope: PricingScope;
   city: string;
   communityId: string;
@@ -49,6 +59,9 @@ type PricingForm = {
 const emptyForm = (): PricingForm => ({
   serviceId: '',
   newServiceName: '',
+  serviceName: '',
+  garmentCategory: 'Men',
+  newGarmentCategory: '',
   scope: 'all',
   city: '',
   communityId: '',
@@ -69,6 +82,17 @@ function scopeLabel(scope: string | null | undefined): string {
     default:
       return 'All';
   }
+}
+
+function serviceJoin(row: PricingRow): ServiceJoin {
+  return (row.services as ServiceJoin) ?? null;
+}
+
+function resolvedCategory(form: PricingForm): string {
+  if (form.garmentCategory === ADD_CATEGORY_VALUE) {
+    return form.newGarmentCategory.trim();
+  }
+  return form.garmentCategory.trim();
 }
 
 function targetLabel(row: PricingRow): string {
@@ -99,6 +123,7 @@ export const PricingRulesPanel = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [userPickerOpen, setUserPickerOpen] = useState(false);
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
+  const [categoryTab, setCategoryTab] = useState('All');
 
   const createPricing = trpc.settings.createPricing.useMutation();
   const updatePricing = trpc.settings.updatePricing.useMutation();
@@ -148,6 +173,32 @@ export const PricingRulesPanel = () => {
     return list;
   }, [services, form.serviceId]);
 
+  const categoryTabs = useMemo(() => {
+    const used = [
+      ...services.map((service) => service.garment_category),
+      ...pricing.map((row) => serviceJoin(row)?.garment_category),
+    ];
+    return listGarmentCategoryTabs(used, true);
+  }, [pricing, services]);
+
+  const categoryChoices = useMemo(() => {
+    const used = categoryTabs.filter((tab) => tab !== 'All');
+    if (
+      form.garmentCategory &&
+      form.garmentCategory !== ADD_CATEGORY_VALUE &&
+      !used.includes(form.garmentCategory)
+    ) {
+      return listGarmentCategoryTabs([...used, form.garmentCategory], true).filter(
+        (tab) => tab !== 'All',
+      );
+    }
+    return used;
+  }, [categoryTabs, form.garmentCategory]);
+
+  useEffect(() => {
+    if (!categoryTabs.includes(categoryTab)) setCategoryTab('All');
+  }, [categoryTab, categoryTabs]);
+
   const closeModal = () => {
     setModalOpen(false);
     setEditing(null);
@@ -164,10 +215,17 @@ export const PricingRulesPanel = () => {
     const scope = ((row.scope as PricingScope | null) ??
       (row.community_id ? 'community' : 'all')) as PricingScope;
     const profile = row.profiles as { full_name: string; phone: string | null } | null;
+    const joined = serviceJoin(row);
+    const fromList = services.find((service) => service.id === row.service_id);
     setEditing(row);
     setForm({
       serviceId: row.service_id,
       newServiceName: '',
+      serviceName: joined?.name ?? fromList?.name ?? '',
+      garmentCategory: normalizeGarmentCategory(
+        joined?.garment_category ?? fromList?.garment_category,
+      ),
+      newGarmentCategory: '',
       scope,
       city: row.city ?? '',
       communityId: row.community_id ?? '',
@@ -193,6 +251,20 @@ export const PricingRulesPanel = () => {
       toast('Enter a service name', 'error');
       return;
     }
+    if (!isNewService && !form.serviceName.trim()) {
+      toast('Enter a service name', 'error');
+      return;
+    }
+    const garmentCategory = resolvedCategory(form);
+    if (!garmentCategory) {
+      toast(
+        form.garmentCategory === ADD_CATEGORY_VALUE
+          ? 'Enter a category name'
+          : 'Select a category',
+        'error',
+      );
+      return;
+    }
     const basePrice = Number(form.basePrice);
     if (!Number.isFinite(basePrice) || basePrice <= 0) {
       toast('Enter a valid base price', 'error');
@@ -214,8 +286,13 @@ export const PricingRulesPanel = () => {
     const expressMultiplier = Number(form.expressMultiplier);
     const payload = {
       ...(isNewService
-        ? { newServiceName: form.newServiceName.trim(), serviceId: null }
-        : { serviceId: form.serviceId, newServiceName: null }),
+        ? { newServiceName: form.newServiceName.trim(), serviceId: null, serviceName: null }
+        : {
+            serviceId: form.serviceId,
+            newServiceName: null,
+            serviceName: form.serviceName.trim(),
+          }),
+      garmentCategory,
       scope: form.scope,
       city: form.scope === 'city' ? form.city.trim() : null,
       communityId: form.scope === 'community' ? form.communityId : null,
@@ -269,6 +346,16 @@ export const PricingRulesPanel = () => {
   if (loading) return <Loader />;
 
   const submitting = createPricing.isPending || updatePricing.isPending;
+  const visiblePricing =
+    categoryTab === 'All'
+      ? pricing
+      : pricing.filter(
+          (row) =>
+            normalizeGarmentCategory(serviceJoin(row)?.garment_category) === categoryTab,
+        );
+  const showServiceDetails = Boolean(form.serviceId);
+  const editingExistingService =
+    showServiceDetails && form.serviceId !== NEW_SERVICE_VALUE;
 
   return (
     <>
@@ -279,16 +366,37 @@ export const PricingRulesPanel = () => {
         </div>
       </div>
 
+      <div className={`${pageStyles.tabs} ${pageStyles.tabsScroll}`}>
+        {categoryTabs.map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            className={`${pageStyles.tab} ${categoryTab === tab ? pageStyles.tabActive : ''}`}
+            onClick={() => setCategoryTab(tab)}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
       <Card title="Pricing Rules">
         {pricing.length === 0 ? (
           <p className={formStyles.hint}>No pricing rules yet. Add a platform default or audience-specific override.</p>
+        ) : visiblePricing.length === 0 ? (
+          <p className={formStyles.hint}>No pricing rules in {categoryTab}.</p>
         ) : (
           <Table
             columns={[
               {
                 key: 'service',
                 header: 'Service',
-                render: (p) => (p.services as { name: string } | null)?.name ?? '—',
+                render: (p) => serviceJoin(p)?.name ?? '—',
+              },
+              {
+                key: 'category',
+                header: 'Category',
+                render: (p) =>
+                  normalizeGarmentCategory(serviceJoin(p)?.garment_category),
               },
               {
                 key: 'scope',
@@ -332,7 +440,7 @@ export const PricingRulesPanel = () => {
                 ),
               },
             ]}
-            data={pricing}
+            data={visiblePricing}
             keyExtractor={(p) => p.id}
           />
         )}
@@ -356,14 +464,20 @@ export const PricingRulesPanel = () => {
               id="pricing-service"
               className={formStyles.select}
               value={form.serviceId}
-              onChange={(e) =>
+              onChange={(e) => {
+                const serviceId = e.target.value;
+                const selected = uniqueServices.find((service) => service.id === serviceId);
                 setForm((f) => ({
                   ...f,
-                  serviceId: e.target.value,
-                  newServiceName:
-                    e.target.value === NEW_SERVICE_VALUE ? f.newServiceName : '',
-                }))
-              }
+                  serviceId,
+                  newServiceName: serviceId === NEW_SERVICE_VALUE ? f.newServiceName : '',
+                  serviceName: selected?.name ?? '',
+                  garmentCategory: selected
+                    ? normalizeGarmentCategory(selected.garment_category)
+                    : 'Men',
+                  newGarmentCategory: '',
+                }));
+              }}
             >
               <option value="">Select service</option>
               {uniqueServices.map((s) => (
@@ -391,6 +505,68 @@ export const PricingRulesPanel = () => {
                 placeholder="e.g. Blazer"
                 autoFocus
               />
+            </div>
+          )}
+
+          {editingExistingService && (
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-service-name">
+                Service name *
+              </label>
+              <input
+                id="pricing-service-name"
+                className={formStyles.input}
+                type="text"
+                value={form.serviceName}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, serviceName: e.target.value }))
+                }
+              />
+              <p className={formStyles.hint}>
+                Name and category apply to this service everywhere, including other price rules and the customer app.
+              </p>
+            </div>
+          )}
+
+          {showServiceDetails && (
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-category">
+                Category *
+              </label>
+              <select
+                id="pricing-category"
+                className={formStyles.select}
+                value={form.garmentCategory}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    garmentCategory: e.target.value,
+                    newGarmentCategory:
+                      e.target.value === ADD_CATEGORY_VALUE ? f.newGarmentCategory : '',
+                  }))
+                }
+              >
+                {categoryChoices.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+                <option value={ADD_CATEGORY_VALUE}>Add category</option>
+              </select>
+              {form.garmentCategory === ADD_CATEGORY_VALUE && (
+                <input
+                  id="pricing-new-category"
+                  className={formStyles.input}
+                  type="text"
+                  value={form.newGarmentCategory}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, newGarmentCategory: e.target.value }))
+                  }
+                  placeholder="e.g. House"
+                  aria-label="New category name"
+                  autoFocus
+                />
+              )}
             </div>
           )}
 

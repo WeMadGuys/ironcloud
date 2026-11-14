@@ -552,6 +552,7 @@ export interface Database {
         Row: {
           id: string;
           category: string;
+          garment_category: string;
           name: string;
           unit: string;
           is_active: boolean;
@@ -560,6 +561,7 @@ export interface Database {
         Insert: {
           id?: string;
           category?: string;
+          garment_category?: string;
           name: string;
           unit?: string;
           is_active?: boolean;
@@ -568,6 +570,7 @@ export interface Database {
         Update: {
           id?: string;
           category?: string;
+          garment_category?: string;
           name?: string;
           unit?: string;
           is_active?: boolean;

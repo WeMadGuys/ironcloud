@@ -116,6 +116,15 @@
   margin-bottom: var(--ic-spacing-lg);
 }
 
+.tabsScroll {
+  overflow-x: auto;
+}
+
+.tabsScroll .tab {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .tab {
   padding: var(--ic-spacing-sm) var(--ic-spacing-lg);
   color: var(--ic-text-secondary);

@@ -1,6 +1,7 @@
 import type { ComponentProps } from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
+  normalizeGarmentCategory,
   pickBestUnitPrices,
   type PricingRuleCandidate,
   type PricingScope,
@@ -15,6 +16,7 @@ export type GarmentCatalogItem = {
   name: string;
   unit: string;
   unitPrice: number;
+  garmentCategory: string;
   icon: IconName;
 };
 
@@ -92,11 +94,24 @@ export async function getGarmentCatalog(opts: {
 }): Promise<GarmentCatalogItem[]> {
   const { communityId, userId, city } = opts;
 
-  const { data: services, error } = await (supabase
-    .from('services') as ReturnType<typeof supabase.from>)
-    .select('id, name, unit')
+  const servicesQuery = () =>
+    (supabase.from('services') as ReturnType<typeof supabase.from>);
+
+  let { data: services, error } = await servicesQuery()
+    .select('id, name, unit, garment_category')
     .eq('is_active', true)
     .order('name');
+
+  // Column is added in 039_service_garment_category.sql. Until it is applied, still show rates.
+  if (error && /garment_category/i.test(error.message ?? '')) {
+    console.warn('[Catalog] garment_category unavailable:', error.message);
+    const fallback = await servicesQuery()
+      .select('id, name, unit')
+      .eq('is_active', true)
+      .order('name');
+    services = fallback.data;
+    error = fallback.error;
+  }
 
   if (error || !services) {
     console.error('[Catalog] services error:', error);
@@ -121,11 +136,19 @@ export async function getGarmentCatalog(opts: {
     { userId, communityId, city },
   );
 
-  return (services as { id: string; name: string; unit?: string | null }[]).map((service) => ({
+  return (
+    services as {
+      id: string;
+      name: string;
+      unit?: string | null;
+      garment_category?: string | null;
+    }[]
+  ).map((service) => ({
     serviceId: service.id,
     name: service.name,
     unit: service.unit?.trim() || 'piece',
     unitPrice: priceMap.get(service.id) ?? 0,
+    garmentCategory: normalizeGarmentCategory(service.garment_category),
     icon: garmentIcon(service.name),
   }));
 }

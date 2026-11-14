@@ -69,7 +69,9 @@ export async function getClosedDatesForCommunity(
   }
 
   return new Set(
-    ((data ?? []) as { closed_date: string }[]).map((row) => row.closed_date),
+    ((data ?? []) as { closed_date: string }[]).map((row) =>
+      row.closed_date.slice(0, 10),
+    ),
   );
 }
 

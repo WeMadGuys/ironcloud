@@ -245,18 +245,21 @@ export default function HomeScreen() {
   });
   const [promoBanner, setPromoBanner] = useState<PromoBanner | null>(null);
   const bannerCheckedRef = useRef(false);
-  /** Recompute past-slot filtering when the screen is focused. */
+  /** Recompute past-slot filtering / refetch closed dates when focused or a day is tapped. */
   const [slotClock, setSlotClock] = useState(() => Date.now());
+  const slotsCommunityRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!communityId) {
       setPickupSlots([]);
       setClosedDates(new Set());
       setSelectedStartHour(null);
+      slotsCommunityRef.current = null;
       return;
     }
     let cancelled = false;
-    setSlotsLoading(true);
+    const isNewCommunity = slotsCommunityRef.current !== communityId;
+    if (isNewCommunity) setSlotsLoading(true);
     Promise.all([
       getCommunityPickupSlots(communityId),
       getClosedDatesForCommunity(communityId),
@@ -265,10 +268,11 @@ export default function HomeScreen() {
         if (cancelled) return;
         setPickupSlots(slots);
         setClosedDates(closed);
+        slotsCommunityRef.current = communityId;
       })
       .catch((error) => {
         console.error('Error loading pickup slots:', error);
-        if (!cancelled) {
+        if (!cancelled && isNewCommunity) {
           setPickupSlots([]);
           setClosedDates(new Set());
         }
@@ -279,7 +283,8 @@ export default function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [communityId]);
+    // slotClock: date tap, focus, pull-refresh, and resume refetch closed dates.
+  }, [communityId, slotClock]);
 
   useEffect(() => {
     if (!communityId || pickupSlots.length === 0) {
@@ -477,6 +482,7 @@ export default function HomeScreen() {
 
   const handlePullRefresh = useCallback(async () => {
     setPullRefreshing(true);
+    setSlotClock(Date.now());
     try {
       await loadHomeData(selectedDay, 'content');
     } finally {
@@ -507,6 +513,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const onAppState = (next: AppStateStatus) => {
       if (next === 'active') {
+        setSlotClock(Date.now());
         void refreshWalletBalance();
       }
     };
@@ -823,11 +830,20 @@ export default function HomeScreen() {
         {days.map((day, index) => {
           const isSelected = selectedDay === index;
           const hasBooking = bookedDays.includes(index);
+          const isClosed = closedDates.has(
+            dayOffsetToLocalDateKey(index, new Date(slotClock)),
+          );
           return (
             <Pressable
               key={index}
-              style={[styles.dayItem, isSelected && styles.dayItemSelected]}
+              style={[
+                styles.dayItem,
+                isSelected && styles.dayItemSelected,
+                isClosed && !isSelected && styles.dayItemClosed,
+              ]}
               onPress={() => handleSelectDay(index)}
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${day.isToday ? 'Today' : day.day} ${day.date}${isClosed ? ', pickup closed' : ''}`}
             >
               <Text style={[styles.dayName, isSelected && styles.dayNameSelected]}>
                 {day.isToday ? 'Today' : day.day}
@@ -846,6 +862,9 @@ export default function HomeScreen() {
               </View>
               {hasBooking && !isSelected && (
                 <View style={styles.dayBookedIndicator} />
+              )}
+              {isClosed && !hasBooking && !isSelected && (
+                <View style={styles.dayClosedIndicator} />
               )}
               {isSelected && <View style={styles.dayIndicator} />}
             </Pressable>
@@ -960,11 +979,15 @@ export default function HomeScreen() {
             </View>
           ) : daySlots.length === 0 ? (
             <View style={styles.slotsEmpty}>
-              <Text style={styles.slotsEmptyTitle}>No slots available</Text>
+              <Text style={styles.slotsEmptyTitle}>
+                {selectedDayClosed ? 'Pickup unavailable' : 'No slots available'}
+              </Text>
               <Text style={styles.slotsEmptyHint}>
-                {selectedDay === 0
-                  ? 'All pickup times for today have already passed. Please choose another day.'
-                  : 'No pickup times are available for this day. Please choose another day.'}
+                {selectedDayClosed
+                  ? 'Pickup is closed on this date. Please choose another day.'
+                  : selectedDay === 0
+                    ? 'All pickup times for today have already passed. Please choose another day.'
+                    : 'No pickup times are available for this day. Please choose another day.'}
               </Text>
               {nextOpenSlot ? (
                 <Pressable
@@ -1415,6 +1438,16 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: colors.status.success.foreground,
+    marginTop: spacing.xs,
+  },
+  dayItemClosed: {
+    opacity: 0.45,
+  },
+  dayClosedIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.text.muted,
     marginTop: spacing.xs,
   },
   section: {

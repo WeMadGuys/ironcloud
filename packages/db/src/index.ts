@@ -27,7 +27,10 @@ export type {
 } from './types';
 
 export {
+  DEFAULT_GARMENT_CATEGORIES,
   PRICING_SCOPE_RANK,
+  listGarmentCategoryTabs,
+  normalizeGarmentCategory,
   pickBestUnitPrices,
   pricingRuleMatchesAudience,
   type PricingAudienceContext,

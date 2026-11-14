@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { TypedSupabaseClient } from '@ironcloud/db';
+import { normalizeGarmentCategory, type TypedSupabaseClient } from '@ironcloud/db';
 
 import { writeAuditLog } from '../../lib/audit';
 import { adminProcedure, superAdminProcedure, router } from '../../trpc/init';
@@ -66,6 +66,8 @@ function audienceColumns(input: PricingAudience) {
 const pricingServiceObject = z.object({
   serviceId: z.string().uuid().optional().nullable(),
   newServiceName: z.string().optional().nullable(),
+  serviceName: z.string().optional().nullable(),
+  garmentCategory: z.string().min(1),
   basePrice: z.number().positive(),
   expressMultiplier: z.number().positive().optional(),
 });
@@ -82,32 +84,100 @@ function refinePricingService(val: PricingServiceInput, ctx: z.RefinementCtx) {
       path: ['serviceId'],
     });
   }
+  if (!val.garmentCategory?.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Select a category',
+      path: ['garmentCategory'],
+    });
+  }
+}
+
+function requireServiceName(value: string): string {
+  const name = value.trim().replace(/\s+/g, ' ');
+  if (!name) throw new Error('Enter a service name');
+  if (name.length > 80) throw new Error('Service name is too long');
+  return name;
+}
+
+function requireGarmentCategory(value: string | null | undefined): string {
+  const trimmed = (value ?? '').trim();
+  if (!trimmed) throw new Error('Select a category');
+  const category = normalizeGarmentCategory(trimmed);
+  if (category.length > 40) throw new Error('Category name is too long');
+  return category;
+}
+
+async function listActiveServices(supabase: TypedSupabaseClient) {
+  const { data, error } = await supabase
+    .from('services')
+    .select('id, name')
+    .eq('is_active', true)
+    .limit(500);
+
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+async function assertServiceNameAvailable(
+  supabase: TypedSupabaseClient,
+  name: string,
+  exceptId?: string,
+) {
+  const active = await listActiveServices(supabase);
+  const clash = active.find(
+    (row) =>
+      row.id !== exceptId &&
+      row.name.trim().toLowerCase() === name.trim().toLowerCase(),
+  );
+  if (clash) throw new Error('A service with that name already exists');
+}
+
+async function updateServiceDetails(
+  supabase: TypedSupabaseClient,
+  serviceId: string,
+  name: string | null,
+  garmentCategory: string,
+) {
+  const patch: { garment_category: string; name?: string } = {
+    garment_category: garmentCategory,
+  };
+  if (name) {
+    await assertServiceNameAvailable(supabase, name, serviceId);
+    patch.name = name;
+  }
+
+  const { error } = await supabase.from('services').update(patch).eq('id', serviceId);
+  if (error) throw new Error(error.message);
 }
 
 async function resolveServiceId(
   supabase: TypedSupabaseClient,
-  input: Pick<PricingServiceInput, 'serviceId' | 'newServiceName'>,
+  input: Pick<
+    PricingServiceInput,
+    'serviceId' | 'newServiceName' | 'serviceName' | 'garmentCategory'
+  >,
 ): Promise<string> {
-  const name = input.newServiceName?.trim();
-  if (name) {
-    const { data: active, error: listError } = await supabase
-      .from('services')
-      .select('id, name')
-      .eq('is_active', true)
-      .limit(500);
+  const garmentCategory = requireGarmentCategory(input.garmentCategory);
+  const newName = input.newServiceName?.trim();
 
-    if (listError) throw new Error(listError.message);
-
-    const existing = (active ?? []).find(
+  if (newName) {
+    const name = requireServiceName(newName);
+    const active = await listActiveServices(supabase);
+    const existing = active.find(
       (row) => row.name.trim().toLowerCase() === name.toLowerCase(),
     );
-    if (existing) return existing.id;
+    if (existing) {
+      await updateServiceDetails(supabase, existing.id, null, garmentCategory);
+      return existing.id;
+    }
 
     const { data, error } = await supabase
       .from('services')
       .insert({
         name,
         category: 'ironing',
+        garment_category: garmentCategory,
         unit: 'piece',
         is_active: true,
       })
@@ -120,6 +190,11 @@ async function resolveServiceId(
   }
 
   if (!input.serviceId) throw new Error('Service is required');
+
+  const rename = input.serviceName?.trim()
+    ? requireServiceName(input.serviceName)
+    : null;
+  await updateServiceDetails(supabase, input.serviceId, rename, garmentCategory);
   return input.serviceId;
 }
 
@@ -192,6 +267,8 @@ export const settingsRouter = router({
         after: {
           serviceId,
           newServiceName: input.newServiceName?.trim() || null,
+          serviceName: input.serviceName?.trim() || null,
+          garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
         },
       });
@@ -227,6 +304,8 @@ export const settingsRouter = router({
         after: {
           serviceId,
           newServiceName: input.newServiceName?.trim() || null,
+          serviceName: input.serviceName?.trim() || null,
+          garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
         },
       });
