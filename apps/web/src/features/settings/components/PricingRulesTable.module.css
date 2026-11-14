@@ -1,62 +1,45 @@
-.sheet {
-  --pricing-cols:
-    40px
-    minmax(160px, 1.6fr)
-    minmax(120px, 1fr)
-    minmax(96px, 0.8fr)
-    minmax(140px, 1.2fr)
-    minmax(110px, 0.8fr)
-    minmax(88px, 0.6fr)
-    minmax(168px, auto);
-  display: grid;
-  grid-template-columns: var(--pricing-cols);
-  min-width: 980px;
+.table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
 }
 
-.group {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: var(--pricing-cols);
-  grid-template-columns: subgrid;
-}
-
-.head,
-.row {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: var(--pricing-cols);
-  grid-template-columns: subgrid;
-  align-items: center;
-}
-
-.cell {
-  min-width: 0;
-  padding: 12px;
-  color: var(--ic-text-primary);
-  font-size: var(--ic-font-size-base);
+.table th,
+.table td {
+  padding: 12px 16px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
   border-bottom: 1px solid var(--ic-border-divider);
-  overflow-wrap: anywhere;
 }
 
-.headCell {
-  min-width: 0;
-  padding: 12px;
+.table th {
   background: var(--ic-surface-section);
   color: var(--ic-text-secondary);
   font-size: var(--ic-font-size-sm);
   font-weight: 600;
-  border-bottom: 1px solid var(--ic-border-divider);
 }
 
-.handleCell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 0;
+.table td {
+  color: var(--ic-text-primary);
+  font-size: var(--ic-font-size-base);
 }
 
-.altCell {
+.table th.handleCell,
+.table td.handleCell {
+  width: 44px;
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.alt td {
   background: var(--ic-surface-section);
+}
+
+.actions {
+  display: flex;
+  gap: var(--ic-spacing-xs);
+  justify-content: flex-end;
 }
 
 .overlay {

@@ -69,10 +69,11 @@ export function ActiveOrderCard({
 }: Props) {
   const router = useRouter();
   const isAwaiting = booking.phase === 'awaiting_pickup';
+  const pickupFailed = isAwaiting && !!booking.pickupFailureReason;
   const isDelivered = booking.phase === 'delivered';
   const showGarments = booking.isPickupComplete;
   const hasGarments = booking.items.length > 0;
-  const canCancel = isAwaiting && !!onCancel;
+  const canCancel = isAwaiting && !pickupFailed && !!onCancel;
   const needsPayment =
     booking.isPickupComplete && booking.paymentStatus === 'insufficient_funds';
   const showEstimateCompare =
@@ -83,7 +84,9 @@ export function ActiveOrderCard({
 
   const [showDetails, setShowDetails] = useState(false);
 
-  const statusColor = colors.status.success.foreground;
+  const statusColor = pickupFailed
+    ? colors.status.warning.foreground
+    : colors.status.success.foreground;
 
   const handleCall = () => {
     if (booking.riderPhone) {
@@ -108,18 +111,33 @@ export function ActiveOrderCard({
         <View
           style={[
             styles.statusIconWrap,
-            { backgroundColor: colors.status.success.background },
+            {
+              backgroundColor: pickupFailed
+                ? colors.status.warning.background
+                : colors.status.success.background,
+            },
           ]}
         >
           <MaterialCommunityIcons
-            name={isAwaiting ? 'clock-outline' : 'check-circle-outline'}
+            name={
+              pickupFailed
+                ? 'alert-circle-outline'
+                : isAwaiting
+                  ? 'clock-outline'
+                  : 'check-circle-outline'
+            }
             size={22}
             color={statusColor}
           />
         </View>
-        <Text style={[styles.statusTitle, { color: statusColor }]}>
-          {booking.statusLabel}
-        </Text>
+        <View style={styles.statusCopy}>
+          <Text style={[styles.statusTitle, { color: statusColor }]}>
+            {booking.statusLabel}
+          </Text>
+          {pickupFailed ? (
+            <Text style={styles.failureReason}>{booking.pickupFailureReason}</Text>
+          ) : null}
+        </View>
       </View>
 
       {needsPayment && (
@@ -368,10 +386,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  statusCopy: { flex: 1, gap: 2 },
   statusTitle: {
-    flex: 1,
     fontFamily: fonts.poppins.bold,
     fontSize: 18,
+  },
+  failureReason: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.text.secondary,
   },
   paymentRequired: {
     flexDirection: 'row',

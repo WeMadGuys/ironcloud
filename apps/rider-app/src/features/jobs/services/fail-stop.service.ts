@@ -6,6 +6,7 @@ import { clearJobsCache } from './jobs.service';
 import { getRiderId } from './job-utils';
 
 export const PICKUP_FAILURE_REASONS = [
+  'Unable to reach customer',
   'No answer on call',
   'No answer at the door',
   'Customer not at home',
@@ -110,4 +111,41 @@ export async function failRiderStop(
   } catch (err) {
     console.warn('[Stop failed] customer notice:', err);
   }
+}
+
+/**
+ * Customer called back after a failed pickup. Reopen the same job so the rider
+ * can collect and confirm pickup.
+ */
+export async function resumeFailedPickup(orderId: string): Promise<void> {
+  const riderId = await getRiderId();
+  if (!riderId) throw new Error('Rider not authenticated');
+
+  const { data: updated, error } = await (supabase
+    .from('rider_jobs') as ReturnType<typeof supabase.from>)
+    .update({
+      status: 'assigned',
+      failure_reason: null,
+      completed_at: null,
+    })
+    .eq('order_id', orderId)
+    .eq('job_type', 'pickup')
+    .eq('rider_id', riderId)
+    .eq('status', 'failed')
+    .select('id');
+
+  if (error) throw new Error(error.message);
+  if (!updated || (updated as { id: string }[]).length === 0) {
+    throw new Error('This pickup can no longer be collected.');
+  }
+
+  await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
+    order_id: orderId,
+    status: 'pickup_assigned',
+    note: 'Pickup resumed after a failed attempt',
+    actor_id: AUTH_PROVIDER === 'mock' ? MOCK_RIDER_ID : riderId,
+    metadata: { kind: 'stop_resumed', jobType: 'pickup' },
+  });
+
+  clearJobsCache();
 }

@@ -100,6 +100,8 @@ export type ActiveBooking = {
   estimatedAmount: number | null;
   paymentStatus: 'unpaid' | 'paid' | 'insufficient_funds';
   pickupConfirmNote: string | null;
+  /** Set when the latest pickup attempt failed and the order is still waiting. */
+  pickupFailureReason: string | null;
 };
 
 /** @deprecated Use ActiveBooking */
@@ -306,7 +308,32 @@ export function getHomeOrderPhase(status: string): HomeOrderPhase {
   return 'picked_up';
 }
 
-function statusLabel(status: string, phase: HomeOrderPhase): string {
+function latestPickupFailureReason(
+  events: OrderRow['order_events'],
+): string | null {
+  const attempts = (events ?? [])
+    .filter((event) => {
+      const meta = event.metadata;
+      return (
+        meta?.jobType === 'pickup' &&
+        (meta.kind === 'stop_failed' || meta.kind === 'stop_resumed')
+      );
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  const latest = attempts[0]?.metadata;
+  if (latest?.kind !== 'stop_failed') return null;
+  return latest.reason?.trim() || null;
+}
+
+function statusLabel(
+  status: string,
+  phase: HomeOrderPhase,
+  pickupFailureReason: string | null,
+): string {
+  if (phase === 'awaiting_pickup' && pickupFailureReason) return 'Pickup failed';
   if (phase === 'awaiting_pickup') {
     return status === 'pickup_in_progress' ? 'Pickup In Progress' : 'Awaiting Pickup';
   }
@@ -321,7 +348,9 @@ function statusDescription(
   status: string,
   phase: HomeOrderPhase,
   pickupTimeLabel: string,
+  pickupFailureReason: string | null,
 ): string {
+  if (phase === 'awaiting_pickup' && pickupFailureReason) return pickupFailureReason;
   if (phase === 'awaiting_pickup') {
     return status === 'pickup_in_progress'
       ? 'Your pickup partner is on the way to your address.'
@@ -528,6 +557,9 @@ type OrderRow = {
           final_amount?: number;
           difference?: number;
           reason_lines?: string[];
+          kind?: string;
+          jobType?: string;
+          reason?: string;
         } | null;
         note: string | null;
         created_at: string;
@@ -718,6 +750,8 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
   });
 
   const pickupComplete = isPickupCompleteStatus(row.status);
+  const pickupFailureReason =
+    phase === 'awaiting_pickup' ? latestPickupFailureReason(row.order_events) : null;
   const pickedUpAt = pickedUpEvent ? new Date(pickedUpEvent.created_at) : null;
   const deliveredAt = deliveredEvent ? new Date(deliveredEvent.created_at) : null;
 
@@ -738,11 +772,12 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     orderNumber: row.order_number,
     status: row.status,
     phase,
-    statusLabel: statusLabel(row.status, phase),
+    statusLabel: statusLabel(row.status, phase, pickupFailureReason),
     statusDescription: statusDescription(
       row.status,
       phase,
       schedule.pickupTimeLabel,
+      pickupFailureReason,
     ),
     specialInstructions: row.special_instructions,
     pickupDateLabel: schedule.pickupDateLabel,
@@ -766,6 +801,7 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
       row.estimated_amount != null ? Number(row.estimated_amount) : null,
     paymentStatus: row.payment_status ?? 'unpaid',
     pickupConfirmNote: pickedUpEvent?.note ?? null,
+    pickupFailureReason,
   };
 }
 

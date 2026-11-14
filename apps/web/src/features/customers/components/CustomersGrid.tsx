@@ -31,13 +31,14 @@ export type CustomerColumnKey =
   | 'name'
   | 'phone'
   | 'email'
+  | 'address'
   | 'community'
   | 'city'
   | 'joined'
   | 'actions';
 
 const DEFAULT_VISIBLE: Record<CustomerGridMode, CustomerColumnKey[]> = {
-  list: ['name', 'phone', 'email', 'joined', 'actions'],
+  list: ['name', 'phone', 'email', 'address', 'joined', 'actions'],
   picker: ['name', 'phone', 'email', 'community', 'city', 'joined'],
 };
 
@@ -45,11 +46,34 @@ const COLUMN_LABELS: Record<CustomerColumnKey, string> = {
   name: 'Name',
   phone: 'Phone',
   email: 'Email',
+  address: 'Address',
   community: 'Community',
   city: 'City',
   joined: 'Joined',
   actions: 'Actions',
 };
+
+/** Existing saved layouts predate the Address column. Add it once, then respect later toggles. */
+const ADDRESS_COLUMN_FLAG = 'ironcloud_customers_columns_address_added';
+
+function withDefaultAddressColumn(columns: CustomerColumnKey[]): CustomerColumnKey[] {
+  try {
+    if (localStorage.getItem(ADDRESS_COLUMN_FLAG) === '1') return columns;
+    localStorage.setItem(ADDRESS_COLUMN_FLAG, '1');
+  } catch {
+    return columns;
+  }
+  if (columns.includes('address')) return columns;
+  const order = Object.keys(COLUMN_LABELS) as CustomerColumnKey[];
+  return order.filter((k) => columns.includes(k) || k === 'address');
+}
+
+function formatCustomerAddress(row: CustomerListRow): string {
+  const tower = row.tower?.trim();
+  const flat = row.flat_number?.trim();
+  if (tower && flat) return `${tower} · ${flat}`;
+  return flat || tower || '—';
+}
 
 const STORAGE_PREFIX = 'ironcloud_customers_columns_';
 
@@ -62,7 +86,9 @@ function loadVisibleColumns(
   );
   try {
     const raw = localStorage.getItem(`${STORAGE_PREFIX}${mode}`);
-    if (!raw) return fallback;
+    if (!raw) {
+      return mode === 'list' ? withDefaultAddressColumn(fallback) : fallback;
+    }
     const parsed = JSON.parse(raw) as string[];
     if (!Array.isArray(parsed)) return fallback;
     const allowed = new Set(
@@ -73,7 +99,8 @@ function loadVisibleColumns(
     const next = parsed.filter((k): k is CustomerColumnKey =>
       allowed.has(k as CustomerColumnKey),
     );
-    return next.length > 0 ? next : fallback;
+    const columns = next.length > 0 ? next : fallback;
+    return mode === 'list' ? withDefaultAddressColumn(columns) : columns;
   } catch {
     return fallback;
   }
@@ -270,6 +297,12 @@ export function CustomersGrid({
           key: 'email',
           header: 'Email',
           render: (c) => c.email ?? '—',
+        });
+      } else if (key === 'address') {
+        cols.push({
+          key: 'address',
+          header: 'Address',
+          render: (c) => formatCustomerAddress(c),
         });
       } else if (key === 'community') {
         cols.push({

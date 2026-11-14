@@ -390,6 +390,74 @@ export const settingsRouter = router({
       return { success: true };
     }),
 
+  updateAppVersionPolicy: adminProcedure
+    .input(z.object({
+      platform: z.enum(['ios', 'android']),
+      minVersion: z
+        .string()
+        .trim()
+        .regex(/^\d+(\.\d+){0,2}$/, 'Use a version like 1.2.0'),
+      storeUrl: z
+        .string()
+        .trim()
+        .url('Store URL must start with http or https')
+        .refine((value) => {
+          const protocol = new URL(value).protocol;
+          return protocol === 'http:' || protocol === 'https:';
+        }, 'Store URL must start with http or https'),
+      title: z.string().trim().max(120),
+      message: z.string().trim().min(1, 'Message is required').max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { data: existing, error: readError } = await ctx.supabase
+        .from('app_version_policy')
+        .select('platform, min_version, store_url, title, message')
+        .eq('platform', input.platform)
+        .maybeSingle();
+
+      if (readError) throw new Error(readError.message);
+      if (!existing) throw new Error('No version policy for this platform');
+
+      const title = input.title || 'Update required';
+      const { data, error } = await ctx.supabase
+        .from('app_version_policy')
+        .update({
+          min_version: input.minVersion,
+          store_url: input.storeUrl,
+          title,
+          message: input.message,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('platform', input.platform)
+        .select('platform, min_version, store_url, title, message, updated_at')
+        .single();
+
+      if (error) throw new Error(error.message);
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'app_version_policy.update',
+        entityType: 'app_version_policy',
+        before: {
+          platform: existing.platform,
+          min_version: existing.min_version,
+          store_url: existing.store_url,
+          title: existing.title,
+          message: existing.message,
+        },
+        after: {
+          platform: data.platform,
+          min_version: data.min_version,
+          store_url: data.store_url,
+          title: data.title,
+          message: data.message,
+        },
+      });
+
+      return data;
+    }),
+
   deletePricing: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {

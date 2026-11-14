@@ -3,11 +3,14 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -23,19 +26,34 @@ type Props = {
   orderId: string;
   jobType: 'pickup' | 'delivery';
   onFailed: () => void;
+  /** Quiet text action for a list card. The sheet is unchanged. */
+  compact?: boolean;
 };
 
-export function FailStopButton({ orderId, jobType, onFailed }: Props) {
+/** Not a saved reason. Pickup only: rider types the message instead. */
+const OTHER_REASON = '__other__';
+const CUSTOM_REASON_MAX = 200;
+
+export function FailStopButton({ orderId, jobType, onFailed, compact = false }: Props) {
   const reasons = jobType === 'pickup' ? PICKUP_FAILURE_REASONS : DELIVERY_FAILURE_REASONS;
+  const allowCustom = jobType === 'pickup';
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [customMessage, setCustomMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const trimmedCustom = customMessage.trim();
+  const usingCustom = allowCustom && selected === OTHER_REASON;
+  const reasonToSave = usingCustom ? trimmedCustom : selected;
+  const canSubmit = Boolean(
+    reasonToSave && reasonToSave.length > 0 && reasonToSave.length <= CUSTOM_REASON_MAX,
+  );
+
   const submit = async () => {
-    if (!selected) return;
+    if (!canSubmit || !reasonToSave) return;
     setSubmitting(true);
     try {
-      await failRiderStop(orderId, jobType, selected);
+      await failRiderStop(orderId, jobType, reasonToSave);
       setOpen(false);
       Alert.alert(
         'Saved as failed',
@@ -54,19 +72,39 @@ export function FailStopButton({ orderId, jobType, onFailed }: Props) {
     }
   };
 
+  const openSheet = () => {
+    setSelected(null);
+    setCustomMessage('');
+    setOpen(true);
+  };
+
   return (
     <>
-      <Pressable
-        style={styles.failBtn}
-        onPress={() => {
-          setSelected(null);
-          setOpen(true);
-        }}
-        accessibilityRole="button"
-        accessibilityLabel="Could not complete this stop"
-      >
-        <Text style={styles.failText}>Could not complete</Text>
-      </Pressable>
+      {compact ? (
+        <Pressable
+          style={styles.failLink}
+          onPress={openSheet}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Could not complete this stop"
+        >
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={14}
+            color={colors.status.warning.foreground}
+          />
+          <Text style={styles.failLinkText}>Couldn't complete</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          style={styles.failBtn}
+          onPress={openSheet}
+          accessibilityRole="button"
+          accessibilityLabel="Could not complete this stop"
+        >
+          <Text style={styles.failText}>Could not complete</Text>
+        </Pressable>
+      )}
 
       <Modal
         visible={open}
@@ -76,13 +114,24 @@ export function FailStopButton({ orderId, jobType, onFailed }: Props) {
           if (!submitting) setOpen(false);
         }}
       >
-        <View style={styles.backdrop}>
+        <KeyboardAvoidingView
+          style={styles.backdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
           <View style={styles.sheet}>
             <Text style={styles.title}>
               {jobType === 'pickup' ? 'Pickup failed' : 'Delivery failed'}
             </Text>
-            <Text style={styles.hint}>Choose one reason. The order stays open.</Text>
-            <ScrollView style={styles.list}>
+            <Text style={styles.hint}>
+              {allowCustom
+                ? 'Choose one reason, or write your own. The order stays open.'
+                : 'Choose one reason. The order stays open.'}
+            </Text>
+            <ScrollView
+              style={styles.list}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+            >
               {reasons.map((reason) => {
                 const active = selected === reason;
                 return (
@@ -101,10 +150,40 @@ export function FailStopButton({ orderId, jobType, onFailed }: Props) {
                   </Pressable>
                 );
               })}
+              {allowCustom ? (
+                <Pressable
+                  style={[styles.reason, usingCustom && styles.reasonActive]}
+                  onPress={() => setSelected(OTHER_REASON)}
+                  disabled={submitting}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: usingCustom }}
+                >
+                  <MaterialCommunityIcons
+                    name={usingCustom ? 'radiobox-marked' : 'radiobox-blank'}
+                    size={20}
+                    color={usingCustom ? colors.brand.primary : colors.icon.secondary}
+                  />
+                  <Text style={styles.reasonText}>Other</Text>
+                </Pressable>
+              ) : null}
+              {usingCustom ? (
+                <TextInput
+                  style={styles.customInput}
+                  value={customMessage}
+                  onChangeText={setCustomMessage}
+                  placeholder="What happened?"
+                  placeholderTextColor={colors.text.muted}
+                  multiline
+                  maxLength={CUSTOM_REASON_MAX}
+                  editable={!submitting}
+                  textAlignVertical="top"
+                  accessibilityLabel="Custom failure message"
+                />
+              ) : null}
             </ScrollView>
             <Pressable
-              style={[styles.submit, (!selected || submitting) && styles.submitDisabled]}
-              disabled={!selected || submitting}
+              style={[styles.submit, (!canSubmit || submitting) && styles.submitDisabled]}
+              disabled={!canSubmit || submitting}
               onPress={() => void submit()}
             >
               {submitting ? (
@@ -121,7 +200,7 @@ export function FailStopButton({ orderId, jobType, onFailed }: Props) {
               <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -142,6 +221,18 @@ const styles = StyleSheet.create({
   failText: {
     fontFamily: fonts.inter.semibold,
     fontSize: 15,
+    color: colors.status.warning.foreground,
+  },
+  failLink: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  failLinkText: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 13,
     color: colors.status.warning.foreground,
   },
   backdrop: {
@@ -167,7 +258,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.muted,
   },
-  list: { marginTop: spacing.sm },
+  list: { marginTop: spacing.sm, flexGrow: 0, flexShrink: 1 },
   reason: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -180,6 +271,20 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.regular,
     fontSize: 15,
     color: colors.text.primary,
+  },
+  customInput: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    minHeight: 88,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontFamily: fonts.inter.regular,
+    fontSize: 15,
+    color: colors.text.primary,
+    backgroundColor: colors.surface.background,
   },
   submit: {
     marginTop: spacing.sm,

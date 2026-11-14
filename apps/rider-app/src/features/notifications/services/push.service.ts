@@ -24,6 +24,58 @@ function emitPickupPush(): void {
   pickupListeners.forEach((listener) => listener());
 }
 
+/**
+ * While the rider app is open, a newly assigned pickup refreshes the list.
+ * Web has no phone push, so it also shows the notice here.
+ */
+export function listenForNewOrderBookings(): () => void {
+  let channel: ReturnType<typeof supabase.channel> | null = null;
+  let disposed = false;
+
+  const stop = () => {
+    if (!channel) return;
+    void supabase.removeChannel(channel);
+    channel = null;
+  };
+
+  const start = (riderId: string) => {
+    stop();
+    channel = supabase
+      .channel(`rider-new-orders-${riderId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'rider_jobs',
+          filter: `rider_id=eq.${riderId}`,
+        },
+        (payload) => {
+          const row = payload.new as { job_type?: string; status?: string };
+          if (row.job_type !== 'pickup' || row.status !== 'assigned') return;
+          emitPickupPush();
+          if (Platform.OS === 'web' && typeof window !== 'undefined') {
+            window.alert('New order booked\n\nA customer just booked a pickup.');
+          }
+        },
+      )
+      .subscribe();
+  };
+
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+    if (disposed) return;
+    const riderId = session?.user?.id;
+    if (riderId) start(riderId);
+    else stop();
+  });
+
+  return () => {
+    disposed = true;
+    data.subscription.unsubscribe();
+    stop();
+  };
+}
+
 async function loadNativeModules(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {

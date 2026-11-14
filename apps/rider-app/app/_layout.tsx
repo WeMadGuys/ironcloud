@@ -20,6 +20,7 @@ import { Platform } from 'react-native';
 import { supabase } from '../src/lib/supabase';
 import {
   extractNotificationPath,
+  listenForNewOrderBookings,
   listenForPickupPushes,
   registerRiderPush,
 } from '../src/features/notifications/services/push.service';
@@ -75,6 +76,8 @@ export default function RootLayout() {
       authSub.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => listenForNewOrderBookings(), []);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;

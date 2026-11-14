@@ -18,7 +18,16 @@ export async function notifyRiderNewPickup(
         admin.from('push_tokens').select('expo_push_token').eq('user_id', params.riderId),
         admin
           .from('orders')
-          .select('order_number, community_id')
+          .select(
+            `
+            order_number,
+            address:address_id (
+              flat_number,
+              tower,
+              community:community_id (name)
+            )
+          `,
+          )
           .eq('id', params.orderId)
           .maybeSingle(),
       ]);
@@ -40,23 +49,33 @@ export async function notifyRiderNewPickup(
       return;
     }
 
-    let communityName = 'your community';
-    if (order?.community_id) {
-      const { data: community } = await admin
-        .from('communities')
-        .select('name')
-        .eq('id', order.community_id)
-        .maybeSingle();
-      if (community?.name) communityName = community.name;
-    }
+    const address = (
+      order as {
+        address?: {
+          flat_number?: string | null;
+          tower?: string | null;
+          community?: { name?: string | null } | null;
+        } | null;
+      } | null
+    )?.address;
+    const communityName = address?.community?.name?.trim() || 'your community';
+    const place = [
+      address?.tower?.trim() ? `Tower ${address.tower.trim()}` : null,
+      address?.flat_number?.trim() ? `Flat ${address.flat_number.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    const body = place
+      ? `Pickup at ${communityName}, ${place}.`
+      : `Pickup at ${communityName}.`;
 
-    const orderNumber = order?.order_number || 'New order';
     const path = `/jobs/order/${params.orderId}/pickup`;
     const messages = tokens.map((token) => ({
       to: token,
       sound: 'default',
-      title: 'New pickup',
-      body: `${orderNumber} · ${communityName}`,
+      title: 'New order booked',
+      body,
+      priority: 'high' as const,
       channelId: 'pickups',
       data: { path, orderId: params.orderId },
     }));
@@ -71,9 +90,16 @@ export async function notifyRiderNewPickup(
       body: JSON.stringify(messages),
     });
 
+    const payload = (await res.json().catch(() => null)) as {
+      data?: { status?: string; message?: string }[];
+    } | null;
     if (!res.ok) {
-      const text = await res.text();
-      console.warn('[rider-push] Expo send failed:', res.status, text.slice(0, 300));
+      console.warn('[rider-push] Expo send failed:', res.status);
+      return;
+    }
+    const rejected = (payload?.data ?? []).filter((ticket) => ticket.status === 'error');
+    if (rejected.length > 0) {
+      console.warn('[rider-push] Expo rejected:', rejected[0]?.message);
     }
   } catch (err) {
     console.warn(

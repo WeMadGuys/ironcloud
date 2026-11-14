@@ -50,6 +50,8 @@ export type Order = {
   deliveryStart: string | null;
   deliveryEnd: string | null;
   pickedUpAt: string | null;
+  /** Latest pickup attempt failure, while the order is still waiting for pickup. */
+  pickupFailureReason: string | null;
 };
 
 const ACTIVE_STATUSES: OrderStatus[] = [
@@ -107,7 +109,13 @@ function mapOrder(row: {
         service: { name: string } | null;
       }[]
     | null;
-  order_events: { status: OrderStatus; created_at: string }[] | null;
+  order_events:
+    | {
+        status: OrderStatus;
+        created_at: string;
+        metadata: { kind?: string; jobType?: string; reason?: string } | null;
+      }[]
+    | null;
 }): Order {
   const items: OrderItem[] = (row.order_items || []).map((item) => {
     const quantity = item.quantity || 0;
@@ -125,6 +133,12 @@ function mapOrder(row: {
   const pickedUpEvent = (row.order_events || []).find(
     (event) => event.status === 'picked_up',
   );
+  const awaitingPickup = ['booked', 'pickup_assigned', 'pickup_in_progress'].includes(
+    row.status,
+  );
+  const pickupFailureReason = awaitingPickup
+    ? latestPickupFailureReason(row.order_events)
+    : null;
 
   return {
     id: row.id,
@@ -142,7 +156,28 @@ function mapOrder(row: {
     deliveryStart: row.delivery_slot?.window_start ?? null,
     deliveryEnd: row.delivery_slot?.window_end ?? null,
     pickedUpAt: pickedUpEvent?.created_at ?? null,
+    pickupFailureReason,
   };
+}
+
+function latestPickupFailureReason(
+  events: Parameters<typeof mapOrder>[0]['order_events'],
+): string | null {
+  const attempts = (events ?? [])
+    .filter((event) => {
+      const meta = event.metadata;
+      return (
+        meta?.jobType === 'pickup' &&
+        (meta.kind === 'stop_failed' || meta.kind === 'stop_resumed')
+      );
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  const latest = attempts[0]?.metadata;
+  if (latest?.kind !== 'stop_failed') return null;
+  return latest.reason?.trim() || null;
 }
 
 export async function getCustomerOrders(options?: {
@@ -176,7 +211,7 @@ export async function getCustomerOrders(options?: {
           unit_price,
           service:service_id (name)
         ),
-        order_events (status, created_at)
+        order_events (status, created_at, metadata)
       `,
       )
       .eq('customer_id', userId)
@@ -254,7 +289,7 @@ export async function getCustomerOrderById(orderId: string): Promise<Order | nul
         unit_price,
         service:service_id (name)
       ),
-      order_events (status, created_at)
+      order_events (status, created_at, metadata)
     `,
     )
     .eq('id', orderId)
@@ -268,6 +303,18 @@ export async function getCustomerOrderById(orderId: string): Promise<Order | nul
   if (!data) return null;
 
   return mapOrder(data as Parameters<typeof mapOrder>[0]);
+}
+
+export function orderStatusLabel(order: Pick<Order, 'status' | 'pickupFailureReason'>): string {
+  if (order.pickupFailureReason) return 'Pickup failed';
+  return getStatusLabel(order.status);
+}
+
+export function orderStatusDescription(
+  order: Pick<Order, 'status' | 'pickupFailureReason'>,
+): string {
+  if (order.pickupFailureReason) return order.pickupFailureReason;
+  return getStatusDescription(order.status);
 }
 
 export function getStatusLabel(status: OrderStatus): string {

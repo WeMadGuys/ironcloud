@@ -17,12 +17,16 @@ export type CustomerListRow = {
   community_id: string | null;
   community_name: string | null;
   city: string | null;
+  tower: string | null;
+  flat_number: string | null;
 };
 
 type AddressEmbed = {
   customer_id: string;
   is_default: boolean;
   community_id: string;
+  tower: string | null;
+  flat_number: string | null;
   communities: { id: string; name: string; city: string } | null;
 };
 
@@ -56,10 +60,15 @@ async function customerIdsForLocation(
 function pickAddressForCustomer(
   customerId: string,
   addresses: AddressEmbed[],
+  communityId?: string,
 ): AddressEmbed | null {
   const mine = addresses.filter((a) => a.customer_id === customerId);
   if (mine.length === 0) return null;
-  return mine.find((a) => a.is_default) ?? mine[0];
+  const pool = communityId
+    ? mine.filter((a) => a.community_id === communityId)
+    : mine;
+  const choices = pool.length > 0 ? pool : mine;
+  return choices.find((a) => a.is_default) ?? choices[0];
 }
 
 export const fetchCustomers = async (
@@ -104,7 +113,7 @@ export const fetchCustomers = async (
 
   const { data: addressRows } = await supabase
     .from('addresses')
-    .select('customer_id, is_default, community_id, communities(id, name, city)')
+    .select('customer_id, is_default, community_id, tower, flat_number, communities(id, name, city)')
     .in(
       'customer_id',
       profiles.map((p) => p.id),
@@ -113,7 +122,7 @@ export const fetchCustomers = async (
   const addresses = (addressRows ?? []) as unknown as AddressEmbed[];
 
   const rows: CustomerListRow[] = profiles.map((p) => {
-    const addr = pickAddressForCustomer(p.id, addresses);
+    const addr = pickAddressForCustomer(p.id, addresses, communityId);
     return {
       id: p.id,
       full_name: p.full_name,
@@ -123,6 +132,8 @@ export const fetchCustomers = async (
       community_id: addr?.community_id ?? null,
       community_name: addr?.communities?.name ?? null,
       city: addr?.communities?.city ?? null,
+      tower: addr?.tower ?? null,
+      flat_number: addr?.flat_number ?? null,
     };
   });
 

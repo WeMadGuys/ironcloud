@@ -8,14 +8,19 @@ export async function notifyCustomerPickupEta(orderId: string): Promise<void> {
   const accessToken = session?.access_token;
   if (!accessToken) throw new Error('Sign in again to notify the customer.');
 
-  const response = await fetch(`${getApiBaseUrl()}/api/rider/notify-pickup-eta`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ orderId }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${getApiBaseUrl()}/api/rider/notify-pickup-eta`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ orderId }),
+    });
+  } catch {
+    throw new Error('Could not reach the server. Check that you are online.');
+  }
 
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as { error?: string } | null;

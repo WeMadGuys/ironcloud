@@ -86,6 +86,16 @@ export const fetchActiveServices = async () => {
   }));
 };
 
+export const fetchAppVersionPolicies = async () => {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('app_version_policy')
+    .select('platform, min_version, store_url, title, message, updated_at')
+    .order('platform', { ascending: true });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+};
+
 export const fetchServiceSlots = async () => {
   const supabase = getSupabase();
   const { data } = await supabase

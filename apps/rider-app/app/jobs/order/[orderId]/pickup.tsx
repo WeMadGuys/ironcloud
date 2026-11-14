@@ -27,7 +27,6 @@ import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDeta
 import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
 import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
 import { NotifyPickupEtaButton } from '../../../../src/features/jobs/components/NotifyPickupEtaButton';
-import { FailStopButton } from '../../../../src/features/jobs/components/FailStopButton';
 import { PickupPhotosSection } from '../../../../src/features/jobs/components/PickupPhotosSection';
 import {
   attachBoxToOrder,
@@ -366,13 +365,6 @@ export default function PickupScreen() {
             >
               <Text style={styles.continueText}>Continue to garments</Text>
             </Pressable>
-            {orderId ? (
-              <FailStopButton
-                orderId={orderId}
-                jobType="pickup"
-                onFailed={() => router.back()}
-              />
-            ) : null}
           </View>
         </>
       ) : (
@@ -532,13 +524,6 @@ export default function PickupScreen() {
                 </Text>
               )}
             </Pressable>
-            {!isEditMode && orderId ? (
-              <FailStopButton
-                orderId={orderId}
-                jobType="pickup"
-                onFailed={() => router.back()}
-              />
-            ) : null}
           </View>
         </>
       )}

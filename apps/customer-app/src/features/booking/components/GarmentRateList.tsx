@@ -93,7 +93,9 @@ export function GarmentRateList({ communityId, userId, city }: Props) {
       setLoading(true);
       try {
         const next = await getGarmentCatalog({ communityId, userId, city });
-        if (!cancelled) setCatalog(next);
+        // No matching price means the service is not offered here. ₹0 is not a rate.
+        const priced = next.filter((item) => item.unitPrice > 0);
+        if (!cancelled) setCatalog(priced);
       } catch (error) {
         console.error('[GarmentRateList] catalog error:', error);
         if (!cancelled) setCatalog([]);

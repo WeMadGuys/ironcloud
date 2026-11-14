@@ -3,7 +3,9 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,7 +17,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
+import { FailStopButton } from '../../../../src/features/jobs/components/FailStopButton';
 import { NotifyPickupEtaButton } from '../../../../src/features/jobs/components/NotifyPickupEtaButton';
+import { resumeFailedPickup } from '../../../../src/features/jobs/services/fail-stop.service';
 import {
   getFlatJobs,
   type FlatJob,
@@ -58,6 +62,7 @@ export default function FlatListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [flats, setFlats] = useState<FlatJob[]>([]);
+  const [resumingOrderId, setResumingOrderId] = useState<string | null>(null);
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async (force = false) => {
@@ -101,7 +106,34 @@ export default function FlatListScreen() {
     if (dayOffset > 0 && flat.buttonState !== 'collected' && flat.buttonState !== 'delivered') {
       return;
     }
-    if (flat.buttonState === 'delivered' || flat.buttonState === 'failed') return;
+    if (flat.buttonState === 'delivered') return;
+    if (flat.buttonState === 'failed') {
+      if (flat.jobType !== 'pickup' || dayOffset !== 0 || resumingOrderId) return;
+      const resume = () => {
+        setResumingOrderId(flat.orderId);
+        void resumeFailedPickup(flat.orderId)
+          .then(() => openPickup(flat, false))
+          .catch((error: unknown) => {
+            Alert.alert(
+              'Could not collect',
+              error instanceof Error ? error.message : 'Try again',
+            );
+          })
+          .finally(() => setResumingOrderId(null));
+      };
+      const message =
+        'The customer may be available now. Make this pickup active so you can collect it?';
+      if (Platform.OS === 'web') {
+        const confirmed = typeof window === 'undefined' || window.confirm(message);
+        if (confirmed) resume();
+        return;
+      }
+      Alert.alert('Make pickup active?', message, [
+        { text: 'Not now', style: 'cancel' },
+        { text: 'Make active', onPress: resume },
+      ]);
+      return;
+    }
 
     if (flat.buttonState === 'collect') {
       openPickup(flat, false);
@@ -166,8 +198,16 @@ export default function FlatListScreen() {
             const isFuture =
               dayOffset > 0 &&
               (flat.buttonState === 'collect' || flat.buttonState === 'deliver');
-            const disabled = isDelivered || isFailed || isFuture;
+            const canRetryPickup =
+              isFailed && flat.jobType === 'pickup' && dayOffset === 0;
+            const disabled =
+              isDelivered ||
+              (isFailed && !canRetryPickup) ||
+              isFuture ||
+              resumingOrderId === flat.orderId;
             const canCall = Boolean(telHref(flat.customerPhone));
+            const canFailPickup =
+              flat.jobType === 'pickup' && flat.buttonState === 'collect' && dayOffset === 0;
 
             return (
               <View key={`${flat.jobId}`} style={styles.card}>
@@ -207,6 +247,14 @@ export default function FlatListScreen() {
                       {flat.garmentCount > 0 ? ` • ${flat.garmentCount} items` : ''}
                       {flat.itemsFromEstimate ? ' (estimate)' : ''}
                     </Text>
+                    {canFailPickup ? (
+                      <FailStopButton
+                        compact
+                        orderId={flat.orderId}
+                        jobType="pickup"
+                        onFailed={() => void load(true)}
+                      />
+                    ) : null}
                   </View>
                   <Pressable
                     style={[
@@ -229,7 +277,9 @@ export default function FlatListScreen() {
                         isFuture && styles.actionTextUpcoming,
                       ]}
                     >
-                      {actionLabel(flat.buttonState, dayOffset)}
+                      {resumingOrderId === flat.orderId
+                        ? 'Opening…'
+                        : actionLabel(flat.buttonState, dayOffset)}
                     </Text>
                   </Pressable>
                 </View>

@@ -213,6 +213,8 @@ export default function HomeScreen() {
   const [closedDates, setClosedDates] = useState<Set<string>>(() => new Set());
   const [fullSlotKeys, setFullSlotKeys] = useState<Set<string>>(() => new Set());
   const queuedHourRef = useRef<number | null>(null);
+  /** Slot this session just booked, so cancel can clear "Full" before the refetch. */
+  const bookedSlotKeyRef = useRef<string | null>(null);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [showAllSlots, setShowAllSlots] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
@@ -633,7 +635,9 @@ export default function HomeScreen() {
       setSpecialInstructions('');
       setShowInstructions(false);
       setEstimateCounts({});
-      // Only refresh booking strip — skip wallet/profile/address refetch.
+      bookedSlotKeyRef.current = `${selectedDay}:${selectedStartHour}`;
+      // Capacity includes this order now — refresh Full chips, not just the booking strip.
+      setSlotClock(Date.now());
       await refreshBookingState(selectedDay);
     } catch (error) {
       const message =
@@ -686,6 +690,18 @@ export default function HomeScreen() {
         // Optimistic UI — don't wait on a full home reload.
         setDayBooking(null);
         setBookedDays((prev) => prev.filter((d) => d !== cancelledDay));
+        const slotKey = bookedSlotKeyRef.current;
+        if (slotKey?.startsWith(`${cancelledDay}:`)) {
+          bookedSlotKeyRef.current = null;
+          setFullSlotKeys((prev) => {
+            if (!prev.has(slotKey)) return prev;
+            const next = new Set(prev);
+            next.delete(slotKey);
+            return next;
+          });
+        }
+        // Refetch capacity so a slot filled by this order stops showing Full.
+        setSlotClock(Date.now());
         void refreshBookingState(cancelledDay);
       } catch (error) {
         const message =
@@ -911,7 +927,7 @@ export default function HomeScreen() {
               dayBooking.phase === 'delivered' ? handleBookAgain : undefined
             }
             onCancel={
-              dayBooking.phase === 'awaiting_pickup'
+              dayBooking.phase === 'awaiting_pickup' && !dayBooking.pickupFailureReason
                 ? handleCancelBooking
                 : undefined
             }

@@ -23,8 +23,8 @@ import {
   formatOrderDate,
   formatSlotRange,
   getCustomerOrderById,
-  getStatusDescription,
-  getStatusLabel,
+  orderStatusDescription,
+  orderStatusLabel,
   type Order,
 } from '../../src/features/orders/services/orders.service';
 
@@ -109,9 +109,13 @@ export default function OrderDetailsScreen() {
         >
           <View style={styles.card}>
             <Text style={styles.orderId}>Order #{order.orderNumber}</Text>
-            <Text style={styles.status}>{getStatusLabel(order.status)}</Text>
+            <Text
+              style={[styles.status, order.pickupFailureReason && styles.statusFailed]}
+            >
+              {orderStatusLabel(order)}
+            </Text>
             <Text style={styles.statusDesc}>
-              {getStatusDescription(order.status)}
+              {orderStatusDescription(order)}
             </Text>
             <Text style={styles.meta}>
               Placed {formatOrderDate(order.createdAt)}
@@ -250,6 +254,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.brand.accent,
     marginTop: spacing.xs,
+  },
+  statusFailed: {
+    color: colors.status.warning.foreground,
   },
   statusDesc: {
     fontFamily: fonts.inter.regular,

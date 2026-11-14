@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet } from 'react-native';
 
 import { colors, radius } from '@ironcloud/ui';
 
@@ -14,15 +14,18 @@ export function NotifyPickupEtaButton({ orderId }: Props) {
   const [sending, setSending] = useState(false);
 
   const send = async () => {
+    if (sending) return;
     setSending(true);
     try {
       await notifyCustomerPickupEta(orderId);
-      Alert.alert('Customer notified', "They're asked to keep the clothes ready.");
     } catch (error) {
-      Alert.alert(
-        'Not sent',
-        error instanceof Error ? error.message : 'Could not send the notification.',
-      );
+      const message =
+        error instanceof Error ? error.message : 'Could not send the notification.';
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert(message);
+      } else {
+        Alert.alert('Not sent', message);
+      }
     } finally {
       setSending(false);
     }
@@ -34,17 +37,8 @@ export function NotifyPickupEtaButton({ orderId }: Props) {
       disabled={sending}
       hitSlop={8}
       accessibilityRole="button"
-      accessibilityLabel="Tell the customer you are 5 to 10 minutes away"
-      onPress={() => {
-        Alert.alert(
-          'Notify customer?',
-          "We'll tell them you're 5–10 minutes away and to keep the clothes ready.",
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Send', onPress: () => void send() },
-          ],
-        );
-      }}
+      accessibilityLabel="Tell the customer you are on the way"
+      onPress={() => void send()}
     >
       {sending ? (
         <ActivityIndicator size="small" color={colors.brand.primary} />

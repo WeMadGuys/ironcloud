@@ -35,7 +35,7 @@ const bearerToken = (req: Request): string | null => {
 };
 
 /**
- * Rider tells the customer they will arrive for pickup in 5–10 minutes.
+ * Rider tells the customer they are on the way for pickup.
  * Message text is fixed on the server. Only the assigned rider can send it,
  * and only while the pickup is still open.
  */
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
     if (!result.sent) {
       return json(
-        { error: 'Customer has no phone registered for notifications.' },
+        { error: 'This customer has no notification device yet. Ask them to open the app on their phone.' },
         404,
       );
     }
@@ -132,7 +132,7 @@ export async function POST(req: Request) {
     await admin.from('order_events').insert({
       order_id: orderId,
       status: order.status,
-      note: 'Customer notified: pickup in 5–10 minutes',
+      note: 'Customer notified: rider is on the way',
       actor_id: user.id,
       metadata: { kind: 'pickup_eta' },
     });

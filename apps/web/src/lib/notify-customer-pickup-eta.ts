@@ -4,9 +4,8 @@ const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
 type AdminClient = SupabaseClient<any>;
 
-export const PICKUP_ETA_TITLE = 'Pickup in 5–10 min';
-export const PICKUP_ETA_BODY =
-  "We're on the way. Please keep your clothes ready to hand over.";
+export const PICKUP_ETA_TITLE = 'Your rider is on the way';
+export const PICKUP_ETA_BODY = 'Please keep your clothes ready for pickup.';
 
 /**
  * Push the assigned customer a short pickup-arrival notice.
@@ -50,9 +49,18 @@ export async function notifyCustomerPickupEta(
     body: JSON.stringify(messages),
   });
 
+  const payload = (await res.json().catch(() => null)) as {
+    data?: { status?: string; message?: string }[];
+  } | null;
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Push failed (${res.status}): ${text.slice(0, 180)}`);
+    throw new Error('The notification service rejected the message.');
+  }
+
+  const tickets = payload?.data ?? [];
+  const delivered = tickets.some((ticket) => ticket.status === 'ok');
+  if (tickets.length > 0 && !delivered) {
+    throw new Error(tickets[0]?.message || 'The notification could not be delivered.');
   }
 
   return { sent: true };

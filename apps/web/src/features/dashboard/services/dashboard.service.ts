@@ -20,6 +20,9 @@ export type DashboardKPIs = {
   trends: Record<string, { value: number; previous: number }>;
 };
 
+const ADDRESS_PAGE = 1000;
+const CUSTOMER_ID_CHUNK = 150;
+
 const PENDING_PICKUP_STATUSES = ['booked', 'pickup_assigned', 'pickup_in_progress'];
 const IN_PROGRESS_STATUSES = [
   'picked_up',
@@ -100,6 +103,70 @@ async function fetchActiveOrderCount(range: DateRange, communityId?: string): Pr
   return rows.length;
 }
 
+/** Customers belong to a community through their addresses, not through wallets. */
+async function customerIdsInCommunity(communityId: string): Promise<string[]> {
+  const supabase = getSupabase();
+  const ids = new Set<string>();
+
+  for (let from = 0; ; from += ADDRESS_PAGE) {
+    const { data, error } = await supabase
+      .from('addresses')
+      .select('customer_id')
+      .eq('community_id', communityId)
+      .order('id', { ascending: true })
+      .range(from, from + ADDRESS_PAGE - 1);
+
+    if (error) {
+      console.error('[dashboard] community customers', error.message);
+      return [];
+    }
+
+    const page = castRows<{ customer_id: string }>(data);
+    for (const row of page) {
+      if (row.customer_id) ids.add(row.customer_id);
+    }
+    if (page.length < ADDRESS_PAGE) break;
+  }
+
+  return [...ids];
+}
+
+async function sumWalletBalance(communityId?: string): Promise<number> {
+  const supabase = getSupabase();
+
+  if (!communityId) {
+    const { data } = await supabase.from('wallets').select('balance');
+    return castRows<{ balance: number }>(data).reduce(
+      (s, w) => s + Number(w.balance ?? 0),
+      0,
+    );
+  }
+
+  const customerIds = await customerIdsInCommunity(communityId);
+  if (customerIds.length === 0) return 0;
+
+  let total = 0;
+  for (let i = 0; i < customerIds.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = customerIds.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('wallets')
+      .select('balance')
+      .in('customer_id', chunk);
+
+    if (error) {
+      console.error('[dashboard] wallets', error.message);
+      continue;
+    }
+
+    total += castRows<{ balance: number }>(data).reduce(
+      (s, w) => s + Number(w.balance ?? 0),
+      0,
+    );
+  }
+
+  return total;
+}
+
 export const fetchDashboardKPIs = async (
   range: DateRange,
   communityId?: string,
@@ -111,14 +178,14 @@ export const fetchDashboardKPIs = async (
 
   const prevRange = previousDateRange(effectiveRange);
 
-  const [orderRows, totalYesterday, wallets, partners, riders] = await Promise.all([
+  const [orderRows, totalYesterday, walletBalance, partners, riders] = await Promise.all([
     fetchActiveOrdersInRange(
       effectiveRange,
       'id, status, total_amount, customer_id, pickup_slot_id, delivery_slot_id',
       communityId,
     ),
     fetchActiveOrderCount(prevRange, communityId),
-    supabase.from('wallets').select('balance'),
+    sumWalletBalance(communityId),
     supabase.from('partners').select('id', { count: 'exact', head: true }).eq('is_active', true),
     supabase.from('riders').select('id', { count: 'exact', head: true }),
   ]);
@@ -130,10 +197,6 @@ export const fetchDashboardKPIs = async (
     orders.filter((o) => statuses.includes(o.status)).length;
 
   const revenueToday = orders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-  const walletBalance = castRows<{ balance: number }>(wallets.data).reduce(
-    (s, w) => s + Number(w.balance ?? 0),
-    0,
-  );
 
   const totalToday = orders.length;
 
@@ -322,16 +385,53 @@ export const fetchTopPartners = async (limit = 5) => {
     .slice(0, limit);
 };
 
-export const fetchLowWalletUsers = async (threshold = 100, limit = 5) => {
+export const fetchLowWalletUsers = async (
+  threshold = 100,
+  limit = 5,
+  communityId?: string,
+) => {
   const supabase = getSupabase();
-  const { data } = await supabase
-    .from('wallets')
-    .select('balance, profiles!wallets_customer_id_fkey(full_name, phone)')
-    .lt('balance', threshold)
-    .order('balance', { ascending: true })
-    .limit(limit);
+  const select = 'balance, profiles!wallets_customer_id_fkey(full_name, phone)';
 
-  return data ?? [];
+  if (!communityId) {
+    const { data } = await supabase
+      .from('wallets')
+      .select(select)
+      .lt('balance', threshold)
+      .order('balance', { ascending: true })
+      .limit(limit);
+
+    return data ?? [];
+  }
+
+  const customerIds = await customerIdsInCommunity(communityId);
+  if (customerIds.length === 0) return [];
+
+  type LowWalletRow = {
+    balance: number;
+    profiles: { full_name: string; phone: string } | null;
+  };
+
+  const rows: LowWalletRow[] = [];
+  for (let i = 0; i < customerIds.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = customerIds.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('wallets')
+      .select(select)
+      .in('customer_id', chunk)
+      .lt('balance', threshold);
+
+    if (error) {
+      console.error('[dashboard] low wallets', error.message);
+      continue;
+    }
+
+    rows.push(...castRows<LowWalletRow>(data));
+  }
+
+  return rows
+    .sort((a, b) => Number(a.balance) - Number(b.balance))
+    .slice(0, limit);
 };
 
 export type DashboardKpiKey =
@@ -381,6 +481,50 @@ export type DashboardWalletDetail = {
   balance: number;
   profiles: { full_name: string; phone: string } | null;
 };
+
+const WALLET_DETAIL_SELECT =
+  'id, balance, profiles!wallets_customer_id_fkey(full_name, phone)';
+
+async function fetchWalletDetails(communityId?: string): Promise<DashboardWalletDetail[]> {
+  const supabase = getSupabase();
+
+  if (!communityId) {
+    const { data, error } = await supabase
+      .from('wallets')
+      .select(WALLET_DETAIL_SELECT)
+      .order('balance', { ascending: false })
+      .limit(100);
+
+    if (error) {
+      console.error('[fetchDashboardKpiDetails] wallets', error.message);
+      return [];
+    }
+
+    return castRows<DashboardWalletDetail>(data);
+  }
+
+  const customerIds = await customerIdsInCommunity(communityId);
+  if (customerIds.length === 0) return [];
+
+  const rows: DashboardWalletDetail[] = [];
+  for (let i = 0; i < customerIds.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = customerIds.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('wallets')
+      .select(WALLET_DETAIL_SELECT)
+      .in('customer_id', chunk);
+
+    if (error) {
+      console.error('[fetchDashboardKpiDetails] wallets', error.message);
+      continue;
+    }
+
+    rows.push(...castRows<DashboardWalletDetail>(data));
+  }
+
+  rows.sort((a, b) => Number(b.balance) - Number(a.balance));
+  return rows.slice(0, 100);
+}
 
 export type DashboardCustomerDetail = {
   id: string;
@@ -458,20 +602,9 @@ export const fetchDashboardKpiDetails = async (
   }
 
   if (kpi === 'walletBalance') {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('id, balance, profiles!wallets_customer_id_fkey(full_name, phone)')
-      .order('balance', { ascending: false })
-      .limit(100);
-
-    if (error) {
-      console.error('[fetchDashboardKpiDetails] wallets', error.message);
-      return { kind: 'wallets', rows: [] };
-    }
-
     return {
       kind: 'wallets',
-      rows: castRows<DashboardWalletDetail>(data),
+      rows: await fetchWalletDetails(communityId),
     };
   }
 
@@ -561,7 +694,7 @@ export const fetchDashboardBundle = async (
       fetchTopCommunities(),
       fetchTopPartners(),
       fetchRecentOrders(8, communityId),
-      fetchLowWalletUsers(),
+      fetchLowWalletUsers(100, 5, communityId),
     ]);
 
   return {

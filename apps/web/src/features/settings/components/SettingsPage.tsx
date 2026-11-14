@@ -9,6 +9,7 @@ import {
   fetchAuditLogs,
   fetchServiceSlots,
 } from '../services/settings.service';
+import { AppUpdatePanel } from './AppUpdatePanel';
 import { PricingRulesPanel } from './PricingRulesPanel';
 
 import pageStyles from '@/styles/pages.module.css';
@@ -36,19 +37,26 @@ export const SettingsPage = () => {
 
   if (loading) return <Loader fullPage />;
 
-  const tabs = ['pricing', 'slots', 'audit'];
+  const tabs = [
+    { id: 'pricing', label: 'Pricing' },
+    { id: 'slots', label: 'Slots' },
+    { id: 'app-update', label: 'App update' },
+    { id: 'audit', label: 'Audit' },
+  ];
 
   return (
     <div>
-      <div className={pageStyles.tabs}>
-        {tabs.map((t) => (
-          <button key={t} type="button" className={`${pageStyles.tab} ${tab === t ? pageStyles.tabActive : ''}`} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
+      <div className={`${pageStyles.tabs} ${pageStyles.tabsScroll}`}>
+        {tabs.map((item) => (
+          <button key={item.id} type="button" className={`${pageStyles.tab} ${tab === item.id ? pageStyles.tabActive : ''}`} onClick={() => setTab(item.id)}>
+            {item.label}
           </button>
         ))}
       </div>
 
       {tab === 'pricing' && <PricingRulesPanel />}
+
+      {tab === 'app-update' && <AppUpdatePanel />}
 
       {tab === 'slots' && (
         <Card title="Service Slots">

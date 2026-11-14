@@ -18,10 +18,9 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import Icon from '@mdi/react';
 import { mdiDragVertical } from '@mdi/js';
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components';
 import tableStyles from '@/components/Table/Table.module.css';
@@ -29,7 +28,6 @@ import { formatCurrency } from '@/utils/format';
 import { normalizeGarmentCategory } from '@ironcloud/db';
 
 import dragStyles from './PricingRulesTable.module.css';
-import formStyles from '@/styles/form.module.css';
 
 type ServiceJoin = {
   name: string;
@@ -90,60 +88,47 @@ function SortableGroup({
   onEdit: Props['onEdit'];
   onDelete: Props['onDelete'];
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: serviceId,
   });
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.65 : 1,
-  };
   const name = rows[0]?.services?.name ?? 'service';
 
   return (
-    <div ref={setNodeRef} style={style} className={dragStyles.group}>
-      {rows.map((row, index) => {
-        const zebra = (rowOffset + index) % 2 === 1;
-        const cell = `${dragStyles.cell} ${zebra ? dragStyles.altCell : ''}`;
-        return (
-          <div key={row.id} className={dragStyles.row}>
-            <div className={`${cell} ${dragStyles.handleCell}`}>
-              {index === 0 ? (
-                <button
-                  type="button"
-                  className={dragStyles.handle}
-                  aria-label={`Reorder ${name}`}
-                  {...attributes}
-                  {...listeners}
-                >
-                  <Icon path={mdiDragVertical} size={0.8} />
-                </button>
-              ) : null}
+    <tbody ref={setNodeRef} style={{ opacity: isDragging ? 0.45 : 1 }}>
+      {rows.map((row, index) => (
+        <tr key={row.id} className={(rowOffset + index) % 2 === 1 ? dragStyles.alt : undefined}>
+          <td className={dragStyles.handleCell}>
+            {index === 0 ? (
+              <button
+                type="button"
+                className={dragStyles.handle}
+                aria-label={`Reorder ${name}`}
+                {...attributes}
+                {...listeners}
+              >
+                <Icon path={mdiDragVertical} size={0.8} />
+              </button>
+            ) : null}
+          </td>
+          <td>{row.services?.name ?? '—'}</td>
+          <td>{normalizeGarmentCategory(row.services?.garment_category)}</td>
+          <td>{scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all'))}</td>
+          <td>{targetLabel(row)}</td>
+          <td>{formatCurrency(Number(row.base_price))}</td>
+          <td>{String(row.express_multiplier ?? 1.5)}</td>
+          <td>
+            <div className={dragStyles.actions}>
+              <Button variant="secondary" size="sm" onClick={() => onEdit(row)}>
+                Edit
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => onDelete(row.id)}>
+                Delete
+              </Button>
             </div>
-            <div className={cell}>{row.services?.name ?? '—'}</div>
-            <div className={cell}>
-              {normalizeGarmentCategory(row.services?.garment_category)}
-            </div>
-            <div className={cell}>
-              {scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all'))}
-            </div>
-            <div className={cell}>{targetLabel(row)}</div>
-            <div className={cell}>{formatCurrency(Number(row.base_price))}</div>
-            <div className={cell}>{String(row.express_multiplier ?? 1.5)}</div>
-            <div className={cell}>
-              <div className={formStyles.rowActions}>
-                <Button variant="secondary" size="sm" onClick={() => onEdit(row)}>
-                  Edit
-                </Button>
-                <Button variant="danger" size="sm" onClick={() => onDelete(row.id)}>
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+          </td>
+        </tr>
+      ))}
+    </tbody>
   );
 }
 
@@ -188,17 +173,19 @@ export function PricingRulesTable({
       }}
     >
       <div className={tableStyles.container}>
-        <div className={dragStyles.sheet}>
-          <div className={dragStyles.head}>
-            <div className={`${dragStyles.headCell} ${dragStyles.handleCell}`} aria-hidden />
-            <div className={dragStyles.headCell}>Service</div>
-            <div className={dragStyles.headCell}>Category</div>
-            <div className={dragStyles.headCell}>Scope</div>
-            <div className={dragStyles.headCell}>Target</div>
-            <div className={dragStyles.headCell}>Base Price</div>
-            <div className={dragStyles.headCell}>Express ×</div>
-            <div className={dragStyles.headCell}>Actions</div>
-          </div>
+        <table className={dragStyles.table}>
+          <thead>
+            <tr>
+              <th className={dragStyles.handleCell} aria-label="Reorder" />
+              <th>Service</th>
+              <th>Category</th>
+              <th>Scope</th>
+              <th>Target</th>
+              <th>Base Price</th>
+              <th>Express ×</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
           <SortableContext items={groups.map((group) => group.serviceId)} strategy={verticalListSortingStrategy}>
             {groups.map((group) => {
               const rowOffset = offset;
@@ -217,7 +204,7 @@ export function PricingRulesTable({
               );
             })}
           </SortableContext>
-        </div>
+        </table>
       </div>
       <DragOverlay>
         {activeGroup ? (

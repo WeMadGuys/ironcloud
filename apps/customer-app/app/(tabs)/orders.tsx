@@ -27,8 +27,9 @@ import {
   getCachedCustomerOrders,
   getCustomerOrders,
   getProgressStepIndex,
-  getStatusDescription,
   getStatusLabel,
+  orderStatusDescription,
+  orderStatusLabel,
   type Order,
 } from '../../src/features/orders/services/orders.service';
 
@@ -93,19 +94,33 @@ export default function OrdersScreen() {
         </View>
 
         <View style={styles.statusRow}>
-          <View style={styles.statusIconWrap}>
+          <View
+            style={[
+              styles.statusIconWrap,
+              order.pickupFailureReason && styles.statusIconWrapFailed,
+            ]}
+          >
             <MaterialCommunityIcons
-              name="shopping"
+              name={order.pickupFailureReason ? 'alert-circle-outline' : 'shopping'}
               size={28}
-              color={colors.status.success.foreground}
+              color={
+                order.pickupFailureReason
+                  ? colors.status.warning.foreground
+                  : colors.status.success.foreground
+              }
             />
           </View>
           <View style={styles.statusCopy}>
-            <Text style={styles.statusTitle}>
-              {getStatusLabel(order.status)}
+            <Text
+              style={[
+                styles.statusTitle,
+                order.pickupFailureReason && styles.statusTitleFailed,
+              ]}
+            >
+              {orderStatusLabel(order)}
             </Text>
             <Text style={styles.statusSubtitle}>
-              {getStatusDescription(order.status)}
+              {orderStatusDescription(order)}
             </Text>
           </View>
         </View>
@@ -564,6 +579,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
   },
+  statusIconWrapFailed: {
+    backgroundColor: colors.status.warning.background,
+  },
   statusCopy: {
     flex: 1,
   },
@@ -571,6 +589,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.poppins.semibold,
     fontSize: 18,
     color: colors.text.heading,
+  },
+  statusTitleFailed: {
+    color: colors.status.warning.foreground,
   },
   statusSubtitle: {
     fontFamily: fonts.inter.regular,
