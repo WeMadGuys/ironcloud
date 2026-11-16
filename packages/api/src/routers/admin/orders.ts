@@ -259,4 +259,80 @@ export const ordersRouter = router({
 
     return { success: true, advanced };
   }),
+
+  refund: adminProcedure
+    .input(z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('items'),
+        orderId: z.string().uuid(),
+        idempotencyKey: z.string().uuid(),
+        lines: z.array(z.object({
+          orderItemId: z.string().uuid(),
+          quantity: z.number().int().positive(),
+        })).min(1),
+      }),
+      z.object({
+        kind: z.literal('custom'),
+        orderId: z.string().uuid(),
+        idempotencyKey: z.string().uuid(),
+        amount: z.number().positive(),
+      }),
+    ]))
+    .mutation(async ({ ctx, input }) => {
+      const { data, error } = await ctx.supabase.rpc('refund_order_to_wallet', {
+        p_order_id: input.orderId,
+        p_actor_id: ctx.userId,
+        p_idempotency_key: input.idempotencyKey,
+        p_kind: input.kind,
+        p_custom_amount: input.kind === 'custom' ? input.amount : null,
+        p_lines: input.kind === 'items'
+          ? input.lines.map((line) => ({
+            order_item_id: line.orderItemId,
+            quantity: line.quantity,
+          }))
+          : [],
+      });
+
+      if (error) throw new Error(error.message);
+      if (!data || typeof data !== 'object') throw new Error('Refund failed');
+
+      const receipt = data as {
+        amount?: number | string;
+        balance?: number | string;
+        description?: string;
+        remaining?: number | string;
+        idempotent?: boolean;
+      };
+
+      const amount = Number(receipt.amount);
+      const balance = Number(receipt.balance);
+      const remaining = Number(receipt.remaining);
+      if (!Number.isFinite(amount) || !Number.isFinite(balance) || !Number.isFinite(remaining)) {
+        throw new Error('Refund failed');
+      }
+
+      if (!receipt.idempotent) {
+        await writeAuditLog({
+          supabase: ctx.supabase,
+          actorId: ctx.userId,
+          action: 'wallet.refund',
+          entityType: 'order',
+          entityId: input.orderId,
+          after: {
+            amount,
+            kind: input.kind,
+            description: receipt.description ?? '',
+            balance,
+            remaining,
+          },
+        });
+      }
+
+      return {
+        amount,
+        balance,
+        description: receipt.description ?? '',
+        remaining,
+      };
+    }),
 });

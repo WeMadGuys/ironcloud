@@ -2,21 +2,24 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   clampServiceQuantity,
   isWeightService,
+  listGarmentCategoryTabs,
   maxQuantityForService,
   type BoxScanResult,
   type OrderBoxRow,
 } from '@ironcloud/db';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -34,7 +37,9 @@ import {
   resolveBoxScan,
 } from '../../../../src/features/jobs/services/box.service';
 import {
+  cancelCollectedOrder,
   confirmPickup,
+  fetchGarmentCategoryOrder,
   getGarmentCatalog,
   getOrderEstimatePrefill,
   getOrderItemsPrefill,
@@ -57,7 +62,7 @@ function telHref(phone: string | null | undefined): string | null {
   return `tel:+91${digits.slice(-10)}`;
 }
 
-type Step = 'boxes' | 'garments';
+type Step = 'boxes' | 'garments' | 'review';
 
 export default function PickupScreen() {
   const router = useRouter();
@@ -90,6 +95,9 @@ export default function PickupScreen() {
   const [scanBusy, setScanBusy] = useState(false);
   const [scanResult, setScanResult] = useState<BoxScanResult | null>(null);
   const [acting, setActing] = useState(false);
+  const [garmentQuery, setGarmentQuery] = useState('');
+  const [garmentCategory, setGarmentCategory] = useState('All');
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
 
   const refreshBoxes = useCallback(async () => {
     if (!orderId) return;
@@ -103,12 +111,13 @@ export default function PickupScreen() {
       if (showLoader) setLoading(true);
       try {
         const pricingCtx = await getOrderPricingContext(orderId);
-        const [items, estimatePrefill, itemsPrefill, details] = await Promise.all([
+        const [items, categoryNames, estimatePrefill, itemsPrefill, details] = await Promise.all([
           getGarmentCatalog({
             communityId: pricingCtx.communityId || communityId,
             userId: pricingCtx.customerId,
             city: pricingCtx.city,
           }),
+          fetchGarmentCategoryOrder(),
           getOrderEstimatePrefill(orderId),
           getOrderItemsPrefill(orderId),
           getOrderPickupDetails(orderId),
@@ -121,6 +130,7 @@ export default function PickupScreen() {
           : estimatePrefill.counts;
 
         setCatalog(items);
+        setCategoryOrder(categoryNames);
         setCounts(
           Object.fromEntries(
             items.map((item) => [item.serviceId, sourceCounts[item.serviceId] || 0]),
@@ -161,10 +171,48 @@ export default function PickupScreen() {
     if (href) void Linking.openURL(href);
   };
 
+  const categoryTabs = useMemo(
+    () => listGarmentCategoryTabs(
+      catalog.map((item) => item.garmentCategory),
+      false,
+      categoryOrder,
+    ),
+    [catalog, categoryOrder],
+  );
+
+  useEffect(() => {
+    if (garmentCategory !== 'All' && !categoryTabs.includes(garmentCategory)) {
+      setGarmentCategory('All');
+    }
+  }, [categoryTabs, garmentCategory]);
+
+  const visibleGarments = useMemo(() => {
+    const needle = garmentQuery.trim().toLowerCase();
+    return catalog.filter((item) => {
+      if (garmentCategory !== 'All' && item.garmentCategory !== garmentCategory) return false;
+      if (needle && !item.name.toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [catalog, garmentCategory, garmentQuery]);
+
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
   const runningTotal = catalog.reduce(
     (sum, item) => sum + (counts[item.serviceId] || 0) * item.unitPrice,
     0,
+  );
+  const selectedLines = useMemo(
+    () =>
+      catalog
+        .map((item) => {
+          const quantity = counts[item.serviceId] || 0;
+          return {
+            item,
+            quantity,
+            lineTotal: quantity * item.unitPrice,
+          };
+        })
+        .filter((line) => line.quantity > 0),
+    [catalog, counts],
   );
 
   const adjust = (serviceId: string, delta: number) => {
@@ -260,12 +308,50 @@ export default function PickupScreen() {
     }
   };
 
+  const handleCancelOrder = async () => {
+    if (!orderId || submitting) return;
+    const message =
+      'The full collected amount goes back to the customer wallet.';
+    const confirmed =
+      Platform.OS === 'web'
+        ? typeof window === 'undefined' || window.confirm(`Cancel this order? ${message}`)
+        : await new Promise<boolean>((resolve) => {
+            Alert.alert(
+              'Cancel this order?',
+              message,
+              [
+                { text: 'Keep order', style: 'cancel', onPress: () => resolve(false) },
+                { text: 'Cancel order', style: 'destructive', onPress: () => resolve(true) },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            );
+          });
+    if (!confirmed) return;
+
+    setSubmitting(true);
+    try {
+      await cancelCollectedOrder(orderId);
+      router.back();
+    } catch (error) {
+      Alert.alert(
+        'Cancel failed',
+        error instanceof Error ? error.message : 'Could not cancel this order',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <Pressable
           style={styles.back}
           onPress={() => {
+            if (step === 'review') {
+              setStep('garments');
+              return;
+            }
             if (step === 'garments' && !isEditMode) {
               setStep('boxes');
               return;
@@ -277,10 +363,14 @@ export default function PickupScreen() {
         </Pressable>
         <Text style={styles.title}>
           {isEditMode
-            ? `Edit items — Flat ${flat}`
+            ? step === 'review'
+              ? `Review — Flat ${flat}`
+              : `Edit items — Flat ${flat}`
             : step === 'boxes'
               ? `Boxes — Flat ${flat}`
-              : `Collect — Flat ${flat}`}
+              : step === 'review'
+                ? `Review — Flat ${flat}`
+                : `Collect — Flat ${flat}`}
         </Text>
         <View style={styles.back} />
       </View>
@@ -367,10 +457,71 @@ export default function PickupScreen() {
             </Pressable>
           </View>
         </>
+      ) : step === 'review' ? (
+        <>
+          <ScrollView
+            contentContainerStyle={[styles.list, isEditMode && styles.listWithCancel]}
+          >
+            <Text style={styles.sectionTitle}>Selected garments</Text>
+            {selectedLines.map((line) => {
+              const unitSuffix = isWeightService(line.item) ? '/ kg' : 'each';
+              return (
+                <View key={line.item.serviceId} style={styles.row}>
+                  <View style={styles.rowLeft}>
+                    <MaterialCommunityIcons
+                      name="hanger"
+                      size={20}
+                      color={colors.icon.secondary}
+                    />
+                    <View style={styles.rowText}>
+                      <Text style={styles.rowName}>{line.item.name}</Text>
+                      <Text style={styles.rowPrice}>
+                        ₹{line.item.unitPrice} {unitSuffix} · × {line.quantity}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.rowLineTotal}>₹{line.lineTotal}</Text>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <Text style={styles.totalLabel}>
+              Total items: {total}
+              {total > 0 ? `  ·  ₹${runningTotal}` : ''}
+            </Text>
+            <Pressable
+              style={[styles.confirmBtn, (total === 0 || submitting) && styles.confirmDisabled]}
+              onPress={handleConfirm}
+              disabled={total === 0 || submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.brand.onPrimary} />
+              ) : (
+                <Text style={styles.confirmText}>
+                  {isEditMode ? 'Save item changes' : 'Confirm and Pick Up'}
+                </Text>
+              )}
+            </Pressable>
+            {isEditMode ? (
+              <Pressable
+                style={[styles.cancelBtn, submitting && styles.confirmDisabled]}
+                onPress={() => void handleCancelOrder()}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel order"
+              >
+                <Text style={styles.cancelText}>Cancel order</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </>
       ) : (
         <>
           <ScrollView
             contentContainerStyle={styles.list}
+            keyboardShouldPersistTaps="handled"
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -454,14 +605,73 @@ export default function PickupScreen() {
                 No services available. Check pricing / services setup.
               </Text>
             ) : (
-              catalog.map((item) => {
+              <>
+                <View style={styles.filters}>
+                  <View style={styles.searchWrap}>
+                    <TextInput
+                      value={garmentQuery}
+                      onChangeText={setGarmentQuery}
+                      placeholder="Search a service"
+                      placeholderTextColor={colors.text.muted}
+                      style={[styles.search, garmentQuery.length > 0 && styles.searchWithClear]}
+                      autoCorrect={false}
+                      autoCapitalize="none"
+                      accessibilityLabel="Search a service"
+                    />
+                    {garmentQuery.length > 0 ? (
+                      <Pressable
+                        onPress={() => setGarmentQuery('')}
+                        style={styles.searchClear}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear search"
+                      >
+                        <MaterialCommunityIcons
+                          name="close-circle"
+                          size={20}
+                          color={colors.icon.secondary}
+                        />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={styles.chipRow}
+                  >
+                    {categoryTabs.map((tab) => {
+                      const selected = tab === garmentCategory;
+                      return (
+                        <Pressable
+                          key={tab}
+                          onPress={() => setGarmentCategory(tab)}
+                          style={[styles.chip, selected && styles.chipSelected]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                        >
+                          <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
+                            {tab}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+                {visibleGarments.length === 0 ? (
+                  <Text style={styles.emptyCatalog}>No garments match.</Text>
+                ) : null}
+                {visibleGarments.map((item) => {
                 const count = counts[item.serviceId] || 0;
                 const atMin = count <= 0;
                 const atMax = count >= maxQuantityForService(item);
                 const unitSuffix = isWeightService(item) ? '/ kg' : 'each';
 
                 return (
-                  <View key={item.serviceId} style={styles.row}>
+                  <View
+                    key={item.serviceId}
+                    style={[styles.row, count > 0 && styles.rowSelected]}
+                  >
                     <View style={styles.rowLeft}>
                       <MaterialCommunityIcons name="hanger" size={20} color={colors.icon.secondary} />
                       <View style={styles.rowText}>
@@ -498,7 +708,8 @@ export default function PickupScreen() {
                     </View>
                   </View>
                 );
-              })
+              })}
+              </>
             )}
 
             {orderId ? (
@@ -512,17 +723,11 @@ export default function PickupScreen() {
               {total > 0 ? `  ·  ₹${runningTotal}` : ''}
             </Text>
             <Pressable
-              style={[styles.confirmBtn, (total === 0 || submitting) && styles.confirmDisabled]}
-              onPress={handleConfirm}
-              disabled={total === 0 || submitting}
+              style={[styles.confirmBtn, total === 0 && styles.confirmDisabled]}
+              onPress={() => setStep('review')}
+              disabled={total === 0}
             >
-              {submitting ? (
-                <ActivityIndicator color={colors.brand.onPrimary} />
-              ) : (
-                <Text style={styles.confirmText}>
-                  {isEditMode ? 'Save item changes' : 'Confirm and Pick Up'}
-                </Text>
-              )}
+              <Text style={styles.confirmText}>Next</Text>
             </Pressable>
           </View>
         </>
@@ -562,6 +767,7 @@ const styles = StyleSheet.create({
   },
   loader: { marginTop: spacing['2xl'] },
   list: { padding: spacing.lg, paddingBottom: 160 },
+  listWithCancel: { paddingBottom: 230 },
   metaCard: {
     backgroundColor: colors.surface.elevated,
     borderRadius: radius.lg,
@@ -635,6 +841,65 @@ const styles = StyleSheet.create({
     color: colors.text.muted,
     marginTop: spacing.sm,
   },
+  filters: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  searchWrap: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  search: {
+    width: '100%',
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface.elevated,
+    color: colors.text.heading,
+    fontFamily: fonts.inter.regular,
+    fontSize: 15,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  searchWithClear: {
+    paddingRight: 40,
+  },
+  searchClear: {
+    position: 'absolute',
+    right: spacing.sm,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 28,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  chip: {
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    backgroundColor: colors.surface.elevated,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  chipSelected: {
+    backgroundColor: colors.brand.primary,
+    borderColor: colors.brand.primary,
+  },
+  chipLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 13,
+    color: colors.text.heading,
+  },
+  chipLabelSelected: {
+    color: colors.brand.onPrimary,
+  },
   estimateBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -661,6 +926,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border.default,
+  },
+  rowSelected: {
+    backgroundColor: colors.brand.accentMuted,
+    borderColor: colors.brand.accentSoft,
+  },
+  rowLineTotal: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+    marginLeft: spacing.sm,
   },
   rowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: spacing.sm },
   rowText: { flex: 1 },
@@ -732,4 +1007,19 @@ const styles = StyleSheet.create({
   },
   confirmDisabled: { opacity: 0.6 },
   confirmText: { fontFamily: fonts.poppins.semibold, fontSize: 16, color: colors.brand.onPrimary },
+  cancelBtn: {
+    backgroundColor: colors.surface.elevated,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.status.error.foreground,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  cancelText: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.status.error.foreground,
+  },
 });

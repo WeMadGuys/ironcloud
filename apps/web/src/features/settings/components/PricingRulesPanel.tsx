@@ -25,8 +25,10 @@ import {
 
 import {
   fetchActiveServices,
+  fetchGarmentCategories,
   fetchPricingRules,
 } from '../services/settings.service';
+import { CategoryTabBar } from './CategoryTabBar';
 import { PricingRulesTable, type PricingRuleRow } from './PricingRulesTable';
 
 import formStyles from '@/styles/form.module.css';
@@ -154,21 +156,25 @@ export const PricingRulesPanel = () => {
   const [userPickerOpen, setUserPickerOpen] = useState(false);
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
   const [categoryTab, setCategoryTab] = useState('All');
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
 
   const createPricing = trpc.settings.createPricing.useMutation();
   const updatePricing = trpc.settings.updatePricing.useMutation();
   const deletePricing = trpc.settings.deletePricing.useMutation();
   const reorderServices = trpc.settings.reorderServices.useMutation();
+  const reorderGarmentCategories = trpc.settings.reorderGarmentCategories.useMutation();
 
   const load = async () => {
-    const [rules, svc, communityOpts] = await Promise.all([
+    const [rules, svc, communityOpts, categories] = await Promise.all([
       fetchPricingRules(),
       fetchActiveServices(),
       fetchCommunityOptions(),
+      fetchGarmentCategories(),
     ]);
     setPricing(rules);
     setServices(svc);
     setCommunities(communityOpts);
+    setCategoryOrder(categories);
   };
 
   useEffect(() => {
@@ -209,8 +215,8 @@ export const PricingRulesPanel = () => {
       ...services.map((service) => service.garment_category),
       ...pricing.map((row) => serviceJoin(row)?.garment_category),
     ];
-    return listGarmentCategoryTabs(used, true);
-  }, [pricing, services]);
+    return listGarmentCategoryTabs(used, true, categoryOrder);
+  }, [pricing, services, categoryOrder]);
 
   const categoryChoices = useMemo(() => {
     const used = categoryTabs.filter((tab) => tab !== 'All');
@@ -219,12 +225,14 @@ export const PricingRulesPanel = () => {
       form.garmentCategory !== ADD_CATEGORY_VALUE &&
       !used.includes(form.garmentCategory)
     ) {
-      return listGarmentCategoryTabs([...used, form.garmentCategory], true).filter(
-        (tab) => tab !== 'All',
-      );
+      return listGarmentCategoryTabs(
+        [...used, form.garmentCategory],
+        true,
+        categoryOrder,
+      ).filter((tab) => tab !== 'All');
     }
     return used;
-  }, [categoryTabs, form.garmentCategory]);
+  }, [categoryTabs, categoryOrder, form.garmentCategory]);
 
   useEffect(() => {
     if (!categoryTabs.includes(categoryTab)) setCategoryTab('All');
@@ -399,6 +407,24 @@ export const PricingRulesPanel = () => {
     );
   };
 
+  const handleReorderCategories = (orderedNames: string[]) => {
+    const visible = new Set(categoryTabs.filter((tab) => tab !== 'All'));
+    const base = categoryOrder.length > 0 ? categoryOrder : Array.from(visible);
+    const rest = base.filter((name) => !orderedNames.includes(name) && !visible.has(name));
+    const next = [...orderedNames, ...rest];
+    const previous = categoryOrder;
+    setCategoryOrder(next);
+    reorderGarmentCategories.mutate(
+      { orderedNames: next },
+      {
+        onError: (err) => {
+          setCategoryOrder(previous);
+          toast(err.message, 'error');
+        },
+      },
+    );
+  };
+
   const handleDelete = () => {
     if (!deleteId) return;
     deletePricing.mutate(
@@ -439,16 +465,19 @@ export const PricingRulesPanel = () => {
       </div>
 
       <div className={`${pageStyles.tabs} ${pageStyles.tabsScroll}`}>
-        {categoryTabs.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            className={`${pageStyles.tab} ${categoryTab === tab ? pageStyles.tabActive : ''}`}
-            onClick={() => setCategoryTab(tab)}
-          >
-            {tab}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={`${pageStyles.tab} ${categoryTab === 'All' ? pageStyles.tabActive : ''}`}
+          onClick={() => setCategoryTab('All')}
+        >
+          All
+        </button>
+        <CategoryTabBar
+          tabs={categoryTabs.filter((tab) => tab !== 'All')}
+          active={categoryTab}
+          onSelect={setCategoryTab}
+          onReorder={handleReorderCategories}
+        />
       </div>
 
       <Card title="Pricing Rules">

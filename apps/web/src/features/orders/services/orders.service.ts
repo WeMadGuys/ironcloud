@@ -355,6 +355,89 @@ export const fetchOrderById = async (orderId: string) => {
   return { data, error };
 };
 
+export type OrderRefundLine = {
+  id: string;
+  order_item_id: string;
+  quantity: number;
+  unit_price: number;
+  line_amount: number;
+};
+
+export type OrderRefundRecord = {
+  id: string;
+  amount: number;
+  kind: 'items' | 'custom';
+  description: string;
+  created_at: string;
+  lines: OrderRefundLine[];
+};
+
+function asMoney(value: unknown): number {
+  const amount = Number(value ?? 0);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round(amount * 100) / 100;
+}
+
+export const fetchOrderRefundContext = async (orderId: string): Promise<{
+  refunds: OrderRefundRecord[];
+  debitedAmount: number;
+  error: string | null;
+}> => {
+  const supabase = getSupabase();
+  const [refundsRes, debitsRes] = await Promise.all([
+    supabase
+      .from('order_refunds')
+      .select('id, amount, kind, description, created_at, order_refund_lines(id, order_item_id, quantity, unit_price, line_amount)')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: false }),
+    supabase
+      .from('wallet_transactions')
+      .select('amount')
+      .eq('order_id', orderId)
+      .eq('type', 'debit'),
+  ]);
+
+  const refunds: OrderRefundRecord[] = ((refundsRes.data ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
+    let kind: OrderRefundRecord['kind'];
+    if (row.kind === 'items') kind = 'items';
+    else if (row.kind === 'custom') kind = 'custom';
+    else return [];
+    if (typeof row.id !== 'string' || typeof row.created_at !== 'string') return [];
+    const rawLines = Array.isArray(row.order_refund_lines) ? row.order_refund_lines : [];
+    const lines = rawLines.flatMap((line) => {
+      if (!line || typeof line !== 'object') return [];
+      const item = line as Record<string, unknown>;
+      if (typeof item.id !== 'string' || typeof item.order_item_id !== 'string') return [];
+      return [{
+        id: item.id,
+        order_item_id: item.order_item_id,
+        quantity: Math.max(0, Math.round(asMoney(item.quantity))),
+        unit_price: asMoney(item.unit_price),
+        line_amount: asMoney(item.line_amount),
+      }];
+    });
+    return [{
+      id: row.id,
+      amount: asMoney(row.amount),
+      kind,
+      description: typeof row.description === 'string' ? row.description : '',
+      created_at: row.created_at,
+      lines,
+    }];
+  });
+
+  const debitedAmount = ((debitsRes.data ?? []) as Array<{ amount?: unknown }>).reduce(
+    (sum, row) => sum + Math.abs(asMoney(row.amount)),
+    0,
+  );
+
+  return {
+    refunds,
+    debitedAmount: Math.round(debitedAmount * 100) / 100,
+    error: refundsRes.error?.message ?? debitsRes.error?.message ?? null,
+  };
+};
+
 export const fetchOrderEvents = async (orderId: string) => {
   const supabase = getSupabase();
   const { data } = await supabase

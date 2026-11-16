@@ -18,7 +18,6 @@ export type CreateAddressData = {
 export type OnboardingData = {
   profile: UpdateProfileData;
   address: CreateAddressData;
-  promoCode?: string;
 };
 
 export type AddressResult = {
@@ -28,16 +27,6 @@ export type AddressResult = {
   tower: string | null;
   flat_number: string;
   is_default: boolean;
-};
-
-export type CouponResult = {
-  id: string;
-  code: string;
-  discount_type: string;
-  discount_value: number;
-  max_discount: number | null;
-  usage_limit: number | null;
-  used_count: number;
 };
 
 export type UserProfileData = {
@@ -318,40 +307,6 @@ export async function createAddress(data: CreateAddressData): Promise<AddressRes
   }
 
   return address as AddressResult;
-}
-
-/**
- * Validates a promo code
- */
-export async function validatePromoCode(code: string) {
-  const { data: coupon, error } = await (supabase
-    .from('coupons') as ReturnType<typeof supabase.from>)
-    .select('*')
-    .eq('code', code.toUpperCase())
-    .gte('valid_to', new Date().toISOString())
-    .lte('valid_from', new Date().toISOString())
-    .single();
-
-  if (error || !coupon) {
-    return { valid: false, message: 'Invalid or expired promo code' };
-  }
-
-  const typedCoupon = coupon as CouponResult;
-
-  if (typedCoupon.usage_limit && typedCoupon.used_count >= typedCoupon.usage_limit) {
-    return { valid: false, message: 'Promo code usage limit reached' };
-  }
-
-  return {
-    valid: true,
-    coupon: {
-      id: typedCoupon.id,
-      code: typedCoupon.code,
-      discountType: typedCoupon.discount_type,
-      discountValue: typedCoupon.discount_value,
-      maxDiscount: typedCoupon.max_discount,
-    },
-  };
 }
 
 /**

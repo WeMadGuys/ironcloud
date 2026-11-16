@@ -13,8 +13,16 @@ export const APP_SUPPORT_PHONE = '+91 72073 70303';
 export const APP_SUPPORT_PHONE_TEL = '+917207370303';
 
 export const APP_WEBSITE_URL = 'https://ironcloud.co.in';
+export const APP_DOWNLOAD_URL = `${APP_WEBSITE_URL}/get-app`;
 export const APP_PRIVACY_POLICY_URL = `${APP_WEBSITE_URL}/privacy-policy`;
 export const APP_TERMS_URL = `${APP_WEBSITE_URL}/terms-and-conditions`;
+
+/** Append the store redirect when a share message does not already include it. */
+export function withAppDownloadLink(message: string): string {
+  const body = message.trim();
+  if (body.includes(APP_DOWNLOAD_URL)) return body;
+  return `${body}\n\nDownload the app: ${APP_DOWNLOAD_URL}`;
+}
 
 export const PRIVACY_POLICY_TITLE = 'Privacy Policy';
 export const TERMS_TITLE = 'Terms of Service';

@@ -1,0 +1,58 @@
+.tab {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: var(--ic-spacing-sm) var(--ic-spacing-lg) var(--ic-spacing-sm) var(--ic-spacing-xs);
+  color: var(--ic-text-secondary);
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+}
+
+.active {
+  color: var(--ic-brand-primary);
+  border-bottom-color: var(--ic-brand-accent);
+}
+
+.handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ic-radius-input);
+  background: transparent;
+  color: var(--ic-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.handle:active {
+  cursor: grabbing;
+}
+
+.handle:focus-visible {
+  outline: 2px solid var(--ic-border-focus);
+  outline-offset: 2px;
+}
+
+.label {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.overlay {
+  padding: var(--ic-spacing-sm) var(--ic-spacing-md);
+  border: 1px solid var(--ic-border-light);
+  border-bottom: 2px solid var(--ic-brand-accent);
+  background: var(--ic-surface-card);
+  color: var(--ic-brand-primary);
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+}

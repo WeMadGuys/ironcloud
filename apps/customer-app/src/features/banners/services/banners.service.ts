@@ -35,6 +35,28 @@ type BannerRow = {
 
 const bannersCache = createTtlCache<PromoBanner[]>(BANNERS_CACHE_TTL_MS);
 
+function asStringList(value: unknown): string[] | null {
+  if (value == null) return null;
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  const inner =
+    trimmed.startsWith('{') && trimmed.endsWith('}')
+      ? trimmed.slice(1, -1)
+      : trimmed;
+  if (!inner.trim()) return [];
+  return inner
+    .split(',')
+    .map((part) => part.trim().replace(/^"|"$/g, ''))
+    .filter(Boolean);
+}
+
 function mapRow(row: BannerRow): PromoBanner | null {
   if (!row.image_url?.trim()) return null;
   return {
@@ -44,10 +66,14 @@ function mapRow(row: BannerRow): PromoBanner | null {
     link: row.link?.trim() || null,
     position: row.position ?? 'home',
     maxImpressions: Math.max(1, row.max_impressions ?? 1),
-    communityIds: row.community_ids,
-    cities: row.cities,
-    userIds: row.user_ids,
+    communityIds: asStringList(row.community_ids),
+    cities: asStringList(row.cities),
+    userIds: asStringList(row.user_ids),
   };
+}
+
+function normalizedIds(ids: string[] | null | undefined): string[] {
+  return (ids ?? []).map((id) => id.trim().toLowerCase()).filter(Boolean);
 }
 
 /**
@@ -60,14 +86,16 @@ export function matchesBannerAudience(
   banner: PromoBanner,
   ctx: BannerAudienceContext,
 ): boolean {
-  const userIds = banner.userIds ?? [];
+  const userIds = normalizedIds(banner.userIds);
   if (userIds.length > 0) {
-    return Boolean(ctx.userId && userIds.includes(ctx.userId));
+    const userId = ctx.userId?.trim().toLowerCase() ?? '';
+    return Boolean(userId && userIds.includes(userId));
   }
 
-  const communities = banner.communityIds ?? [];
+  const communities = normalizedIds(banner.communityIds);
   if (communities.length > 0) {
-    if (!ctx.communityId || !communities.includes(ctx.communityId)) return false;
+    const communityId = ctx.communityId?.trim().toLowerCase() ?? '';
+    if (!communityId || !communities.includes(communityId)) return false;
   }
 
   const cities = (banner.cities ?? [])
@@ -99,7 +127,7 @@ export async function fetchActiveHomeBanners(options?: {
 
     if (error) {
       console.error('Error fetching banners:', error);
-      return [];
+      throw error;
     }
 
     return ((data as BannerRow[] | null) ?? [])

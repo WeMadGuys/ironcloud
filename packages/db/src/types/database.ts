@@ -548,6 +548,24 @@ export interface Database {
         };
         Relationships: [];
       };
+      garment_categories: {
+        Row: {
+          name: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          name: string;
+          sort_order: number;
+          created_at?: string;
+        };
+        Update: {
+          name?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       services: {
         Row: {
           id: string;
@@ -1397,6 +1415,69 @@ export interface Database {
         };
         Relationships: [];
       };
+      order_refunds: {
+        Row: {
+          id: string;
+          order_id: string;
+          wallet_transaction_id: string;
+          amount: number;
+          kind: 'items' | 'custom';
+          description: string;
+          created_by: string;
+          idempotency_key: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          wallet_transaction_id: string;
+          amount: number;
+          kind: 'items' | 'custom';
+          description: string;
+          created_by: string;
+          idempotency_key: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          wallet_transaction_id?: string;
+          amount?: number;
+          kind?: 'items' | 'custom';
+          description?: string;
+          created_by?: string;
+          idempotency_key?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      order_refund_lines: {
+        Row: {
+          id: string;
+          refund_id: string;
+          order_item_id: string;
+          quantity: number;
+          unit_price: number;
+          line_amount: number;
+        };
+        Insert: {
+          id?: string;
+          refund_id: string;
+          order_item_id: string;
+          quantity: number;
+          unit_price: number;
+          line_amount: number;
+        };
+        Update: {
+          id?: string;
+          refund_id?: string;
+          order_item_id?: string;
+          quantity?: number;
+          unit_price?: number;
+          line_amount?: number;
+        };
+        Relationships: [];
+      };
       rider_jobs: {
         Row: {
           id: string;
@@ -1844,6 +1925,21 @@ export interface Database {
         Args: { p_order_id: string };
         Returns: number;
       };
+      order_refund_receipt: {
+        Args: { p_refund_id: string };
+        Returns: Json;
+      };
+      refund_order_to_wallet: {
+        Args: {
+          p_order_id: string;
+          p_actor_id: string;
+          p_idempotency_key: string;
+          p_kind: string;
+          p_custom_amount?: number | null;
+          p_lines?: Json;
+        };
+        Returns: Json;
+      };
       pickup_capacity_for_windows: {
         Args: {
           p_community_id: string;
@@ -1855,6 +1951,21 @@ export interface Database {
           max_orders: number | null;
           is_full: boolean;
         }[];
+      };
+      release_service_slot_seat: {
+        Args: { p_slot_id: string };
+        Returns: undefined;
+      };
+      claim_customer_pickup_day: {
+        Args: {
+          p_customer_id: string;
+          p_pickup_day: string;
+          p_time_zone: string;
+          p_reserved_pickup_slot_id: string;
+          p_reserved_delivery_slot_id: string;
+          p_order: Json;
+        };
+        Returns: Json;
       };
     };
     Enums: {

@@ -247,6 +247,12 @@ export default function HomeScreen() {
   });
   const [promoBanner, setPromoBanner] = useState<PromoBanner | null>(null);
   const bannerCheckedRef = useRef(false);
+  const bannerDismissedRef = useRef(false);
+  const bannerRequestRef = useRef(0);
+  const audienceRef = useRef<{ communityId: string | null; city: string | null }>({
+    communityId: null,
+    city: null,
+  });
   /** Recompute past-slot filtering / refetch closed dates when focused or a day is tapped. */
   const [slotClock, setSlotClock] = useState(() => Date.now());
   const slotsCommunityRef = useRef<string | null>(null);
@@ -387,6 +393,52 @@ export default function HomeScreen() {
 
   const hasLoadedOnceRef = useRef(false);
 
+  const tryShowPromoBanner = useCallback(
+    async (
+      ctx: { communityId: string | null; city: string | null },
+      options?: { force?: boolean },
+    ) => {
+      if (bannerDismissedRef.current) return;
+      if (bannerCheckedRef.current && !options?.force) return;
+
+      const requestId = ++bannerRequestRef.current;
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (requestId !== bannerRequestRef.current || bannerDismissedRef.current) return;
+
+        const candidate = await pickEligibleHomeBanner(
+          {
+            userId: sessionData.session?.user?.id ?? null,
+            communityId: ctx.communityId,
+            city: ctx.city,
+          },
+          { force: options?.force },
+        );
+        if (requestId !== bannerRequestRef.current || bannerDismissedRef.current) return;
+        if (!candidate) {
+          // A community banner cannot be ruled out until the address has loaded.
+          if (ctx.communityId) bannerCheckedRef.current = true;
+          return;
+        }
+
+        const ok = await shouldShowBanner(candidate.id, candidate.maxImpressions);
+        if (requestId !== bannerRequestRef.current || bannerDismissedRef.current) return;
+        if (!ok) {
+          bannerCheckedRef.current = true;
+          return;
+        }
+
+        bannerCheckedRef.current = true;
+        setPromoBanner((current) =>
+          current?.id === candidate.id ? current : candidate,
+        );
+      } catch (error) {
+        console.error('Error loading promo banner:', error);
+      }
+    },
+    [],
+  );
+
   const handleCatalogLoaded = useCallback((items: GarmentCatalogItem[]) => {
     setEstimateCatalog(items);
   }, []);
@@ -426,9 +478,13 @@ export default function HomeScreen() {
 
       const defaultAddress =
         addresses.find((address) => address.isDefault) || addresses[0];
+      let nextCommunityId: string | null = null;
+      let nextCity: string | null = null;
       if (defaultAddress) {
-        setCommunityId(defaultAddress.communityId);
-        setCommunityCity(defaultAddress.city || null);
+        nextCommunityId = defaultAddress.communityId || null;
+        nextCity = defaultAddress.city || null;
+        setCommunityId(nextCommunityId);
+        setCommunityCity(nextCity);
         setHeaderAddress({
           name: defaultAddress.communityName,
           detail: [
@@ -447,7 +503,12 @@ export default function HomeScreen() {
       } else {
         setCommunityId(null);
         setCommunityCity(null);
+        audienceRef.current = { communityId: null, city: null };
       }
+      if (defaultAddress) {
+        audienceRef.current = { communityId: nextCommunityId, city: nextCity };
+      }
+      void tryShowPromoBanner(audienceRef.current);
       hasLoadedOnceRef.current = true;
     } catch (error) {
       console.error('Error loading home data:', error);
@@ -455,7 +516,7 @@ export default function HomeScreen() {
       setInitialLoading(false);
       setContentLoading(false);
     }
-  }, [router]);
+  }, [router, tryShowPromoBanner]);
 
   const refreshBookingState = useCallback(async (dayOffset: number) => {
     try {
@@ -485,6 +546,7 @@ export default function HomeScreen() {
   const handlePullRefresh = useCallback(async () => {
     setPullRefreshing(true);
     setSlotClock(Date.now());
+    if (!bannerDismissedRef.current) bannerCheckedRef.current = false;
     try {
       await loadHomeData(selectedDay, 'content');
     } finally {
@@ -517,60 +579,21 @@ export default function HomeScreen() {
       if (next === 'active') {
         setSlotClock(Date.now());
         void refreshWalletBalance();
+        // A banner created while the app was backgrounded should show on return.
+        if (!bannerDismissedRef.current) {
+          bannerCheckedRef.current = false;
+          void tryShowPromoBanner(audienceRef.current, { force: true });
+        }
       }
     };
     const sub = AppState.addEventListener('change', onAppState);
     return () => sub.remove();
-  }, [refreshWalletBalance]);
-
-  // Promo banner: load after home is ready so it never blocks first paint.
-  useEffect(() => {
-    if (initialLoading || bannerCheckedRef.current) return;
-
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const userId = sessionData.session?.user?.id ?? null;
-        const candidate = await pickEligibleHomeBanner({
-          userId,
-          communityId,
-          city: communityCity,
-        });
-        if (cancelled) return;
-        if (!candidate) {
-          bannerCheckedRef.current = true;
-          return;
-        }
-
-        const ok = await shouldShowBanner(
-          candidate.id,
-          candidate.maxImpressions,
-        );
-        if (!ok || cancelled) {
-          bannerCheckedRef.current = true;
-          return;
-        }
-
-        // Prefetch image so the modal opens with less flicker.
-        await Image.prefetch(candidate.imageUrl).catch(() => undefined);
-        if (cancelled) return;
-
-        bannerCheckedRef.current = true;
-        setPromoBanner(candidate);
-      } catch (error) {
-        console.error('Error loading promo banner:', error);
-        bannerCheckedRef.current = true;
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialLoading, communityId, communityCity]);
+  }, [refreshWalletBalance, tryShowPromoBanner]);
 
   const handleClosePromoBanner = useCallback(async () => {
     const current = promoBanner;
+    bannerDismissedRef.current = true;
+    bannerCheckedRef.current = true;
     setPromoBanner(null);
     if (!current) return;
     try {
@@ -826,12 +849,17 @@ export default function HomeScreen() {
     </View>
   );
 
+  const promoBannerModal = promoBanner ? (
+    <PromoBannerModal banner={promoBanner} onClose={handleClosePromoBanner} />
+  ) : null;
+
   if (initialLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.checkingContainer}>
           <ActivityIndicator size="large" color={colors.brand.primary} />
         </View>
+        {promoBannerModal}
       </SafeAreaView>
     );
   }
@@ -934,6 +962,7 @@ export default function HomeScreen() {
             isCancelling={isCancelling}
           />
         </ScrollView>
+        {promoBannerModal}
       </SafeAreaView>
     );
   }
@@ -946,6 +975,7 @@ export default function HomeScreen() {
         {dateStrip}
         {statusBanner}
         {contentLoader}
+        {promoBannerModal}
       </SafeAreaView>
     );
   }
@@ -1242,9 +1272,7 @@ export default function HomeScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      {promoBanner ? (
-        <PromoBannerModal banner={promoBanner} onClose={handleClosePromoBanner} />
-      ) : null}
+      {promoBannerModal}
 
       {/* Bottom CTA */}
       <View style={styles.bottomCta}>

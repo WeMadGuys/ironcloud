@@ -9,6 +9,7 @@ import {
   releaseBenefitClaim,
   resolveUserPhoneDigits,
 } from '@ironcloud/api/benefit-identity';
+import { withAppDownloadLink } from '@ironcloud/config/legal';
 
 import type { CustomerTargetContext } from '@/lib/wallet-coupons';
 
@@ -167,7 +168,7 @@ export function buildShareMessage(
     program.share_message_template?.trim() ||
     'Join IronCloud with my code {{code}} and get ₹{{referee_reward}} after your first wallet recharge of ₹{{min_topup}}+!';
 
-  return template
+  const message = template
     .replace(/\{\{code\}\}/g, code)
     .replace(
       /\{\{referee_reward\}\}/g,
@@ -181,6 +182,8 @@ export function buildShareMessage(
       /\{\{min_topup\}\}/g,
       String(Number(program.min_referee_topup_amount)),
     );
+
+  return withAppDownloadLink(message);
 }
 
 export type ApplyReferralResult =

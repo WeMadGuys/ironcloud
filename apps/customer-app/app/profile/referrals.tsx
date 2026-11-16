@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { withAppDownloadLink } from '@ironcloud/config/legal';
 import {
   colors,
   radius,
@@ -91,9 +92,10 @@ export default function ReferralsScreen() {
 
   const handleShare = async () => {
     if (!data?.code) return;
-    const message =
+    const message = withAppDownloadLink(
       data.program?.shareMessage ||
-      `Use my IronCloud referral code ${data.code} when you sign up!`;
+        `Use my IronCloud referral code ${data.code} when you sign up!`,
+    );
     try {
       await Share.share({ message });
     } catch {

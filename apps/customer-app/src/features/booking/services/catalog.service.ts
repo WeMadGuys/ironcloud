@@ -83,6 +83,22 @@ export function splitCatalog(items: GarmentCatalogItem[]): {
   };
 }
 
+/** Saved category tab order. Empty when the table is not migrated yet. */
+export async function fetchGarmentCategoryOrder(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('garment_categories')
+    .select('name, sort_order')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    console.warn('[Catalog] garment_categories unavailable:', error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => row.name);
+}
+
 /**
  * Active services with audience-aware unit prices.
  * Precedence: user > community > city > all (platform default).

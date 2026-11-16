@@ -15,7 +15,7 @@ import {
   type CommunityOption,
 } from '@/features/communities/services/communities.service';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { formatRelativeTime } from '@/utils/format';
+import { formatCurrency, formatRelativeTime } from '@/utils/format';
 
 import {
   fetchCustomers,
@@ -32,13 +32,14 @@ export type CustomerColumnKey =
   | 'phone'
   | 'email'
   | 'address'
+  | 'wallet'
   | 'community'
   | 'city'
   | 'joined'
   | 'actions';
 
 const DEFAULT_VISIBLE: Record<CustomerGridMode, CustomerColumnKey[]> = {
-  list: ['name', 'phone', 'email', 'address', 'joined', 'actions'],
+  list: ['name', 'phone', 'email', 'address', 'wallet', 'joined', 'actions'],
   picker: ['name', 'phone', 'email', 'community', 'city', 'joined'],
 };
 
@@ -47,6 +48,7 @@ const COLUMN_LABELS: Record<CustomerColumnKey, string> = {
   phone: 'Phone',
   email: 'Email',
   address: 'Address',
+  wallet: 'Wallet',
   community: 'Community',
   city: 'City',
   joined: 'Joined',
@@ -55,17 +57,31 @@ const COLUMN_LABELS: Record<CustomerColumnKey, string> = {
 
 /** Existing saved layouts predate the Address column. Add it once, then respect later toggles. */
 const ADDRESS_COLUMN_FLAG = 'ironcloud_customers_columns_address_added';
+/** Existing saved layouts predate the Wallet column. Add it once, then respect later toggles. */
+const WALLET_COLUMN_FLAG = 'ironcloud_customers_columns_wallet_added';
 
-function withDefaultAddressColumn(columns: CustomerColumnKey[]): CustomerColumnKey[] {
+function insertColumnOnce(
+  columns: CustomerColumnKey[],
+  key: CustomerColumnKey,
+  flag: string,
+): CustomerColumnKey[] {
   try {
-    if (localStorage.getItem(ADDRESS_COLUMN_FLAG) === '1') return columns;
-    localStorage.setItem(ADDRESS_COLUMN_FLAG, '1');
+    if (localStorage.getItem(flag) === '1') return columns;
+    localStorage.setItem(flag, '1');
   } catch {
     return columns;
   }
-  if (columns.includes('address')) return columns;
+  if (columns.includes(key)) return columns;
   const order = Object.keys(COLUMN_LABELS) as CustomerColumnKey[];
-  return order.filter((k) => columns.includes(k) || k === 'address');
+  return order.filter((k) => columns.includes(k) || k === key);
+}
+
+function withDefaultListColumns(columns: CustomerColumnKey[]): CustomerColumnKey[] {
+  return insertColumnOnce(
+    insertColumnOnce(columns, 'address', ADDRESS_COLUMN_FLAG),
+    'wallet',
+    WALLET_COLUMN_FLAG,
+  );
 }
 
 function formatCustomerAddress(row: CustomerListRow): string {
@@ -87,7 +103,7 @@ function loadVisibleColumns(
   try {
     const raw = localStorage.getItem(`${STORAGE_PREFIX}${mode}`);
     if (!raw) {
-      return mode === 'list' ? withDefaultAddressColumn(fallback) : fallback;
+      return mode === 'list' ? withDefaultListColumns(fallback) : fallback;
     }
     const parsed = JSON.parse(raw) as string[];
     if (!Array.isArray(parsed)) return fallback;
@@ -100,7 +116,7 @@ function loadVisibleColumns(
       allowed.has(k as CustomerColumnKey),
     );
     const columns = next.length > 0 ? next : fallback;
-    return mode === 'list' ? withDefaultAddressColumn(columns) : columns;
+    return mode === 'list' ? withDefaultListColumns(columns) : columns;
   } catch {
     return fallback;
   }
@@ -303,6 +319,12 @@ export function CustomersGrid({
           key: 'address',
           header: 'Address',
           render: (c) => formatCustomerAddress(c),
+        });
+      } else if (key === 'wallet') {
+        cols.push({
+          key: 'wallet',
+          header: 'Wallet',
+          render: (c) => formatCurrency(c.wallet_balance),
         });
       } else if (key === 'community') {
         cols.push({

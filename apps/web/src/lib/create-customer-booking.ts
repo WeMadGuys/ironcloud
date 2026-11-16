@@ -160,25 +160,20 @@ async function ensureServiceSlot(
   throw new Error(insertError?.message || `Failed to reserve ${params.slotType} slot`);
 }
 
-async function markOrderReadyForRebook(
+async function releaseReservedSlots(
   admin: AdminClient,
-  orderId: string,
+  pickupSlotId: string,
+  deliverySlotId: string,
 ): Promise<void> {
-  const { error } = await admin
-    .from('orders')
-    .update({ status: 'completed' })
-    .eq('id', orderId);
-
-  if (error) {
-    throw new Error(error.message);
+  const releases = [pickupSlotId, deliverySlotId].map((slotId) =>
+    admin.rpc('release_service_slot_seat', { p_slot_id: slotId }),
+  );
+  const results = await Promise.all(releases);
+  for (const result of results) {
+    if (result.error) {
+      console.warn('[create-booking] slot seat release failed:', result.error.message);
+    }
   }
-
-  await admin.from('order_events').insert({
-    order_id: orderId,
-    status: 'completed',
-    note: 'Order closed — customer ready to book again',
-    metadata: {},
-  });
 }
 
 /**
@@ -219,7 +214,8 @@ export async function createCustomerBooking(
     Intl.DateTimeFormat().resolvedOptions().timeZone ||
     'Asia/Kolkata';
 
-  // Same-day active booking guard (UI usually prevents this; keep for races).
+  // Fast path when the order is already saved. Overlapping creates are
+  // settled by claim_customer_pickup_day, which locks the day and inserts.
   const { data: existingRows, error: existingError } = await admin
     .from('orders')
     .select(
@@ -255,17 +251,13 @@ export async function createCustomerBooking(
     return isSameZonedDay(pickup, pickupStart, timeZone);
   });
 
-  if (existingForDay) {
-    const phase = getHomeOrderPhase(existingForDay.status);
-    if (phase !== 'delivered') {
-      return {
-        success: true,
-        orderId: existingForDay.id,
-        orderNumber: existingForDay.order_number,
-        alreadyExisted: true,
-      };
-    }
-    await markOrderReadyForRebook(admin, existingForDay.id);
+  if (existingForDay && getHomeOrderPhase(existingForDay.status) !== 'delivered') {
+    return {
+      success: true,
+      orderId: existingForDay.id,
+      orderNumber: existingForDay.order_number,
+      alreadyExisted: true,
+    };
   }
 
   const { data: address, error: addressError } = await admin
@@ -369,55 +361,40 @@ export async function createCustomerBooking(
           0,
         );
 
-  const baseOrderPayload = {
-    order_number: generateOrderNumber(),
-    customer_id: input.customerId,
-    address_id: address.id,
-    community_id: address.community_id,
-    status: 'pickup_assigned' as const,
-    pickup_slot_id: pickupSlotId,
-    delivery_slot_id: deliverySlotId,
-    special_instructions: input.specialInstructions?.trim() || null,
-    subtotal: 0,
-    total_amount: 0,
-  };
+  const { data: claimed, error: claimError } = await admin.rpc(
+    'claim_customer_pickup_day',
+    {
+      p_customer_id: input.customerId,
+      p_pickup_day: pickupDayKey,
+      p_time_zone: timeZone,
+      p_reserved_pickup_slot_id: pickupSlotId,
+      p_reserved_delivery_slot_id: deliverySlotId,
+      p_order: {
+        order_number: generateOrderNumber(),
+        address_id: address.id,
+        community_id: address.community_id,
+        pickup_slot_id: pickupSlotId,
+        delivery_slot_id: deliverySlotId,
+        special_instructions: input.specialInstructions?.trim() || null,
+        payment_status: 'unpaid',
+        estimated_amount: estimateLines.length > 0 ? estimatedAmount : null,
+        estimated_garments:
+          estimateLines.length > 0
+            ? estimateLines.map((line) => ({
+                service_id: line.serviceId,
+                name: line.name,
+                quantity: line.quantity,
+                unit_price: line.unitPrice,
+              }))
+            : null,
+      },
+    },
+  );
 
-  const estimatePayload =
-    estimateLines.length > 0
-      ? {
-          payment_status: 'unpaid',
-          estimated_amount: estimatedAmount,
-          estimated_garments: estimateLines.map((line) => ({
-            service_id: line.serviceId,
-            name: line.name,
-            quantity: line.quantity,
-            unit_price: line.unitPrice,
-          })),
-        }
-      : { payment_status: 'unpaid' };
-
-  let { data: order, error: orderError } = await admin
-    .from('orders')
-    .insert({ ...baseOrderPayload, ...estimatePayload })
-    .select('id, order_number')
-    .single();
-
-  if (orderError && /estimated_|payment_status/i.test(orderError.message || '')) {
-    console.warn(
-      '[create-booking] Estimate columns missing; booking without estimate. Apply migration 010.',
-    );
-    const retry = await admin
-      .from('orders')
-      .insert(baseOrderPayload)
-      .select('id, order_number')
-      .single();
-    order = retry.data;
-    orderError = retry.error;
-  }
-
-  if (orderError || !order) {
-    console.error('[create-booking] Order create error:', orderError);
-    const message = orderError?.message || 'Failed to create booking';
+  if (claimError || !claimed) {
+    console.error('[create-booking] Order claim error:', claimError);
+    await releaseReservedSlots(admin, pickupSlotId, deliverySlotId);
+    const message = claimError?.message || 'Failed to create booking';
     if (/pickup time is full/i.test(message)) {
       return {
         success: false,
@@ -432,15 +409,35 @@ export async function createCustomerBooking(
     };
   }
 
+  const order = claimed as {
+    already_existed?: boolean;
+    order_id?: string;
+    order_number?: string;
+  };
+
+  if (!order.order_id || !order.order_number) {
+    await releaseReservedSlots(admin, pickupSlotId, deliverySlotId);
+    return { success: false, error: 'Failed to create booking', status: 500 };
+  }
+
+  if (order.already_existed) {
+    return {
+      success: true,
+      orderId: order.order_id,
+      orderNumber: order.order_number,
+      alreadyExisted: true,
+    };
+  }
+
   const { error: eventsError } = await admin.from('order_events').insert([
     {
-      order_id: order.id,
+      order_id: order.order_id,
       status: 'booked',
       note: 'Order booked by customer',
       metadata: {},
     },
     {
-      order_id: order.id,
+      order_id: order.order_id,
       status: 'pickup_assigned',
       note: 'Pickup partner assigned',
       metadata: {
@@ -458,13 +455,13 @@ export async function createCustomerBooking(
   const { data: existingJob } = await admin
     .from('rider_jobs')
     .select('id')
-    .eq('order_id', order.id)
+    .eq('order_id', order.order_id)
     .eq('job_type', 'pickup')
     .maybeSingle();
 
   if (!existingJob) {
     const { error: jobError } = await admin.from('rider_jobs').insert({
-      order_id: order.id,
+      order_id: order.order_id,
       rider_id: assignedRider.riderId,
       job_type: 'pickup',
       status: 'assigned',
@@ -481,15 +478,15 @@ export async function createCustomerBooking(
       };
     }
 
-    await notifyRiderNewPickup(admin, {
+    void notifyRiderNewPickup(admin, {
       riderId: assignedRider.riderId,
-      orderId: order.id,
+      orderId: order.order_id,
     });
   }
 
   return {
     success: true,
-    orderId: order.id,
+    orderId: order.order_id,
     orderNumber: order.order_number,
     alreadyExisted: false,
   };

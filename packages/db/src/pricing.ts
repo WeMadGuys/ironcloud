@@ -1,7 +1,5 @@
 export const DEFAULT_GARMENT_CATEGORIES = ['Men', 'Women', 'Kids', 'Others'] as const;
 
-const DEFAULT_GARMENT_CATEGORY_SET = new Set<string>(DEFAULT_GARMENT_CATEGORIES);
-
 /** Empty or unknown values land in Others. Default names match regardless of case. */
 export function normalizeGarmentCategory(value: string | null | undefined): string {
   const trimmed = (value ?? '').trim().replace(/\s+/g, ' ');
@@ -13,27 +11,43 @@ export function normalizeGarmentCategory(value: string | null | undefined): stri
 }
 
 /**
- * Tab order: All, then Men / Women / Kids / Others, then any custom names A–Z.
+ * Tab order: All, then the saved category order.
+ * Names missing from that order fall back to Men / Women / Kids / Others, then A–Z.
  * Customer rates pass includeEmptyDefaults false so empty groups stay hidden.
  */
 export function listGarmentCategoryTabs(
   usedCategories: Iterable<string | null | undefined>,
   includeEmptyDefaults: boolean,
+  savedOrder?: Iterable<string | null | undefined> | null,
 ): string[] {
   const present = new Set<string>();
   for (const raw of usedCategories) {
     present.add(normalizeGarmentCategory(raw));
   }
 
-  const defaults = includeEmptyDefaults
-    ? [...DEFAULT_GARMENT_CATEGORIES]
-    : DEFAULT_GARMENT_CATEGORIES.filter((category) => present.has(category));
+  const visible = new Set<string>(present);
+  if (includeEmptyDefaults) {
+    for (const category of DEFAULT_GARMENT_CATEGORIES) visible.add(category);
+  }
 
-  const extras = Array.from(present)
-    .filter((category) => !DEFAULT_GARMENT_CATEGORY_SET.has(category))
+  const ranked: string[] = [];
+  const seen = new Set<string>();
+  const push = (category: string) => {
+    if (!visible.has(category) || seen.has(category)) return;
+    ranked.push(category);
+    seen.add(category);
+  };
+
+  if (savedOrder) {
+    for (const raw of savedOrder) push(normalizeGarmentCategory(raw));
+  }
+  for (const category of DEFAULT_GARMENT_CATEGORIES) push(category);
+
+  const extras = Array.from(visible)
+    .filter((category) => !seen.has(category))
     .sort((a, b) => a.localeCompare(b));
 
-  return ['All', ...defaults, ...extras];
+  return ['All', ...ranked, ...extras];
 }
 
 export type PricingScope = 'all' | 'city' | 'community' | 'user';

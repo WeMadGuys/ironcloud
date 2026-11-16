@@ -9,7 +9,8 @@ import { trpc } from '@/lib/trpc';
 import type { OrderStatus } from '@ironcloud/db';
 import { formatCurrency, formatOrderStatus, formatRelativeTime, getOrderStatusBadge } from '@/utils/format';
 
-import { fetchOrderById, fetchOrderEvents } from '../services/orders.service';
+import { fetchOrderById, fetchOrderEvents, fetchOrderRefundContext, type OrderRefundRecord } from '../services/orders.service';
+import { OrderRefundCard } from './OrderRefundCard';
 
 import pageStyles from '@/styles/pages.module.css';
 import detailStyles from './OrderDetailPage.module.css';
@@ -37,6 +38,9 @@ export const OrderDetailPage = () => {
   const orderId = params.id as string;
   const [order, setOrder] = useState<Awaited<ReturnType<typeof fetchOrderById>>['data']>(null);
   const [events, setEvents] = useState<Awaited<ReturnType<typeof fetchOrderEvents>>>([]);
+  const [refunds, setRefunds] = useState<OrderRefundRecord[]>([]);
+  const [debitedAmount, setDebitedAmount] = useState(0);
+  const [refundLoadError, setRefundLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [note, setNote] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<OrderStatus | ''>('');
@@ -48,12 +52,16 @@ export const OrderDetailPage = () => {
 
   const load = async () => {
     setLoading(true);
-    const [orderRes, eventsRes] = await Promise.all([
+    const [orderRes, eventsRes, refundRes] = await Promise.all([
       fetchOrderById(orderId),
       fetchOrderEvents(orderId),
+      fetchOrderRefundContext(orderId),
     ]);
     setOrder(orderRes.data);
     setEvents(eventsRes);
+    setRefunds(refundRes.refunds);
+    setDebitedAmount(refundRes.debitedAmount);
+    setRefundLoadError(refundRes.error);
     if (orderRes.data?.status) {
       setSelectedStatus(orderRes.data.status);
     }
@@ -113,6 +121,19 @@ export const OrderDetailPage = () => {
             {order.special_instructions && <p><strong>Instructions:</strong> {order.special_instructions}</p>}
             {order.admin_notes && <p><strong>Admin Notes:</strong> {order.admin_notes}</p>}
           </Card>
+
+          <OrderRefundCard
+            orderId={orderId}
+            orderNumber={String(order.order_number ?? '')}
+            customerName={customer?.full_name?.trim() || 'the customer'}
+            paymentStatus={typeof order.payment_status === 'string' ? order.payment_status : null}
+            totalAmount={Number(order.total_amount ?? 0)}
+            debitedAmount={debitedAmount}
+            items={order.order_items}
+            refunds={refunds}
+            loadError={refundLoadError}
+            onRefunded={load}
+          />
 
           <Card title="Timeline">
             <ul className={pageStyles.timeline}>

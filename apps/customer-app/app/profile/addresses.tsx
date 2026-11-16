@@ -63,11 +63,16 @@ export default function AddressesScreen() {
   const [flats, setFlats] = useState<CommunityFlat[]>([]);
   const [selectedBlock, setSelectedBlock] = useState<CommunityBlock | null>(null);
   const [selectedFlat, setSelectedFlat] = useState<CommunityFlat | null>(null);
+  const [flatSearch, setFlatSearch] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
 
   const blocksEnabled = Boolean(selectedCommunity?.blocksEnabled);
+  const flatQuery = flatSearch.trim().toLowerCase();
+  const visibleFlats = flatQuery
+    ? flats.filter((flat) => flat.flatNumber.toLowerCase().includes(flatQuery))
+    : flats;
 
   const loadAddress = useCallback(async () => {
     try {
@@ -260,6 +265,7 @@ export default function AddressesScreen() {
     setSelectedFlat(null);
     setTower('');
     setFlatNumber('');
+    setFlatSearch('');
     setBlocks([]);
     setFlats([]);
   };
@@ -269,13 +275,21 @@ export default function AddressesScreen() {
     setTower(block.name);
     setSelectedFlat(null);
     setFlatNumber('');
+    setFlatSearch('');
     setShowBlockPicker(false);
   };
 
   const handleSelectFlat = (flat: CommunityFlat) => {
     setSelectedFlat(flat);
     setFlatNumber(flat.flatNumber);
+    setFlatSearch('');
     setShowFlatPicker(false);
+  };
+
+  const openFlatPicker = () => {
+    if (!selectedBlock) return;
+    setFlatSearch('');
+    setShowFlatPicker(true);
   };
 
   const handleSaveAddress = async () => {
@@ -570,17 +584,37 @@ export default function AddressesScreen() {
                 <Text style={styles.modalTitle}>Select flat</Text>
                 <View style={styles.headerSpacer} />
               </View>
+              <View style={styles.searchContainer}>
+                <MaterialCommunityIcons
+                  name="magnify"
+                  size={22}
+                  color={colors.icon.secondary}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search flat number..."
+                  placeholderTextColor={inputs.placeholder.color}
+                  value={flatSearch}
+                  onChangeText={setFlatSearch}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  autoFocus
+                />
+              </View>
               {catalogLoading ? (
                 <View style={styles.centered}>
                   <ActivityIndicator size="small" color={colors.brand.primary} />
                 </View>
               ) : (
                 <FlatList
-                  data={flats}
+                  data={visibleFlats}
                   keyExtractor={(item) => item.id}
+                  keyboardShouldPersistTaps="handled"
                   contentContainerStyle={styles.communityList}
                   ListEmptyComponent={
-                    <Text style={styles.emptySearch}>No flats in this block</Text>
+                    <Text style={styles.emptySearch}>
+                      {flatQuery ? 'No flats found' : 'No flats in this block'}
+                    </Text>
                   }
                   renderItem={({ item }) => (
                     <Pressable
@@ -689,7 +723,7 @@ export default function AddressesScreen() {
                           styles.selectFieldInRow,
                           !selectedBlock && styles.selectFieldDisabled,
                         ]}
-                        onPress={() => selectedBlock && setShowFlatPicker(true)}
+                        onPress={openFlatPicker}
                         disabled={!selectedBlock || catalogLoading}
                       >
                         <Text

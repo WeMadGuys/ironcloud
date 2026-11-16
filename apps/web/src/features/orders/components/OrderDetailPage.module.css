@@ -38,3 +38,117 @@
   color: var(--ic-text-primary);
 }
 
+.refundCard {
+  margin-top: var(--ic-spacing-lg);
+  margin-bottom: var(--ic-spacing-lg);
+}
+
+.modeToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ic-spacing-sm);
+  margin-bottom: var(--ic-spacing-lg);
+}
+
+.modeButton {
+  flex: 1 1 8rem;
+}
+
+.refundLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ic-spacing-sm);
+  padding: var(--ic-spacing-sm) 0;
+  border-bottom: 1px solid var(--ic-border-divider);
+}
+
+.refundLineMeta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-xs);
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.refundLineName {
+  font-weight: 600;
+  color: var(--ic-text-primary);
+}
+
+.refundLineDetail {
+  color: var(--ic-text-muted);
+  font-size: var(--ic-font-size-sm);
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--ic-spacing-sm);
+}
+
+.stepperQty {
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: 600;
+  color: var(--ic-text-primary);
+}
+
+.refundSummary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-xs);
+  margin: var(--ic-spacing-md) 0;
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-secondary);
+}
+
+.refundSummary strong {
+  color: var(--ic-text-primary);
+}
+
+.refundMessage {
+  margin: 0 0 var(--ic-spacing-md);
+  color: var(--ic-text-primary);
+}
+
+.refundNote {
+  margin: 0 0 var(--ic-spacing-md);
+  color: var(--ic-text-secondary);
+  font-size: var(--ic-font-size-sm);
+}
+
+.refundError {
+  margin: 0 0 var(--ic-spacing-sm);
+  color: var(--ic-status-error);
+  font-size: var(--ic-font-size-sm);
+}
+
+.refundHistoryLabel {
+  margin: var(--ic-spacing-lg) 0 0;
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+  color: var(--ic-text-primary);
+}
+
+.refundHistory {
+  list-style: none;
+  margin: var(--ic-spacing-sm) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ic-spacing-sm);
+}
+
+.refundHistoryItem {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--ic-spacing-sm);
+  padding-top: var(--ic-spacing-sm);
+  border-top: 1px solid var(--ic-border-divider);
+  color: var(--ic-text-secondary);
+  font-size: var(--ic-font-size-sm);
+}
+

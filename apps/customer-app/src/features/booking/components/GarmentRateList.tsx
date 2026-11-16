@@ -19,6 +19,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  fetchGarmentCategoryOrder,
   getGarmentCatalog,
   type GarmentCatalogItem,
 } from '../services/catalog.service';
@@ -76,6 +77,7 @@ function RateRow({
  */
 export function GarmentRateList({ communityId, userId, city }: Props) {
   const [catalog, setCatalog] = useState<GarmentCatalogItem[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(Boolean(communityId));
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
@@ -86,16 +88,23 @@ export function GarmentRateList({ communityId, userId, city }: Props) {
     async function load() {
       if (!communityId) {
         setCatalog([]);
+        setCategoryOrder([]);
         setLoading(false);
         return;
       }
 
       setLoading(true);
       try {
-        const next = await getGarmentCatalog({ communityId, userId, city });
+        const [next, order] = await Promise.all([
+          getGarmentCatalog({ communityId, userId, city }),
+          fetchGarmentCategoryOrder(),
+        ]);
         // No matching price means the service is not offered here. ₹0 is not a rate.
         const priced = next.filter((item) => item.unitPrice > 0);
-        if (!cancelled) setCatalog(priced);
+        if (!cancelled) {
+          setCatalog(priced);
+          setCategoryOrder(order);
+        }
       } catch (error) {
         console.error('[GarmentRateList] catalog error:', error);
         if (!cancelled) setCatalog([]);
@@ -114,8 +123,9 @@ export function GarmentRateList({ communityId, userId, city }: Props) {
     () => listGarmentCategoryTabs(
       catalog.map((item) => item.garmentCategory),
       false,
+      categoryOrder,
     ),
-    [catalog],
+    [catalog, categoryOrder],
   );
 
   useEffect(() => {

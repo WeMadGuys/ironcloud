@@ -86,6 +86,20 @@ export const fetchActiveServices = async () => {
   }));
 };
 
+export const fetchGarmentCategories = async (): Promise<string[]> => {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('garment_categories')
+    .select('name, sort_order')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+  if (error) {
+    console.warn('[fetchGarmentCategories]', error.message);
+    return [];
+  }
+  return (data ?? []).map((row: { name: string }) => row.name);
+};
+
 export const fetchAppVersionPolicies = async () => {
   const supabase = getSupabase();
   const { data, error } = await supabase

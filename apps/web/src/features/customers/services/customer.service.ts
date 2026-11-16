@@ -19,6 +19,7 @@ export type CustomerListRow = {
   city: string | null;
   tower: string | null;
   flat_number: string | null;
+  wallet_balance: number;
 };
 
 type AddressEmbed = {
@@ -121,6 +122,25 @@ export const fetchCustomers = async (
 
   const addresses = (addressRows ?? []) as unknown as AddressEmbed[];
 
+  const { data: walletRows, error: walletError } = await supabase
+    .from('wallets')
+    .select('customer_id, balance')
+    .in(
+      'customer_id',
+      profiles.map((p) => p.id),
+    );
+
+  if (walletError) {
+    console.error('[fetchCustomers] wallets', walletError.message);
+  }
+
+  const balanceByCustomer = new Map(
+    (walletRows ?? []).map((wallet) => [
+      wallet.customer_id as string,
+      Number(wallet.balance ?? 0),
+    ]),
+  );
+
   const rows: CustomerListRow[] = profiles.map((p) => {
     const addr = pickAddressForCustomer(p.id, addresses, communityId);
     return {
@@ -134,6 +154,7 @@ export const fetchCustomers = async (
       city: addr?.communities?.city ?? null,
       tower: addr?.tower ?? null,
       flat_number: addr?.flat_number ?? null,
+      wallet_balance: balanceByCustomer.get(p.id) ?? 0,
     };
   });
 

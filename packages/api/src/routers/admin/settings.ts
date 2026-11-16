@@ -178,6 +178,40 @@ async function updateServiceDetails(
   if (error) throw new Error(error.message);
 }
 
+async function ensureGarmentCategory(
+  supabase: TypedSupabaseClient,
+  name: string,
+) {
+  const existing = await supabase
+    .from('garment_categories')
+    .select('name')
+    .eq('name', name)
+    .maybeSingle();
+
+  if (existing.error) {
+    if (/garment_categories/i.test(existing.error.message)) return;
+    throw new Error(existing.error.message);
+  }
+  if (existing.data) return;
+
+  const last = await supabase
+    .from('garment_categories')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (last.error) throw new Error(last.error.message);
+  const next = (last.data?.sort_order ?? -1) + 1;
+  const inserted = await supabase
+    .from('garment_categories')
+    .insert({ name, sort_order: next });
+
+  if (inserted.error && !/duplicate|unique/i.test(inserted.error.message)) {
+    throw new Error(inserted.error.message);
+  }
+}
+
 async function resolveServiceId(
   supabase: TypedSupabaseClient,
   input: Pick<
@@ -186,6 +220,7 @@ async function resolveServiceId(
   >,
 ): Promise<string> {
   const garmentCategory = requireGarmentCategory(input.garmentCategory);
+  await ensureGarmentCategory(supabase, garmentCategory);
   const newName = input.newServiceName?.trim();
 
   if (newName) {
@@ -385,6 +420,57 @@ export const settingsRouter = router({
         action: 'pricing.reorder',
         entityType: 'services',
         after: { orderedIds: input.orderedIds },
+      });
+
+      return { success: true };
+    }),
+
+  reorderGarmentCategories: adminProcedure
+    .input(z.object({
+      orderedNames: z.array(z.string().trim().min(1).max(40)).min(1).max(100),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const names = input.orderedNames.map((name) => requireGarmentCategory(name));
+      if (new Set(names).size !== names.length) {
+        throw new Error('Duplicate categories in order');
+      }
+
+      const { data, error } = await ctx.supabase
+        .from('garment_categories')
+        .select('name, sort_order')
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
+
+      if (error) throw new Error(error.message);
+
+      const current: string[] = [];
+      const seen = new Set<string>();
+      for (const row of data ?? []) {
+        const name = normalizeGarmentCategory(row.name);
+        if (seen.has(name)) continue;
+        seen.add(name);
+        current.push(name);
+      }
+
+      const ordered = new Set(names);
+      const next = [...names, ...current.filter((name) => !ordered.has(name))];
+      for (let index = 0; index < next.length; index += 1) {
+        const name = next[index];
+        if (!name) continue;
+        const existing = (data ?? []).find((row) => row.name === name);
+        if (existing?.sort_order === index) continue;
+        const { error: writeError } = await ctx.supabase
+          .from('garment_categories')
+          .upsert({ name, sort_order: index }, { onConflict: 'name' });
+        if (writeError) throw new Error(writeError.message);
+      }
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: 'pricing.reorder_categories',
+        entityType: 'garment_categories',
+        after: { orderedNames: names },
       });
 
       return { success: true };

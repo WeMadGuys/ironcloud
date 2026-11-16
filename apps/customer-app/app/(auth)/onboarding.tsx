@@ -33,15 +33,18 @@ import {
   type CommunityBlock,
   type CommunityFlat,
 } from '../../src/features/communities/services/communities.service';
-import {
-  completeOnboarding,
-  validatePromoCode,
-} from '../../src/features/profile/services/profile.service';
+import { completeOnboarding } from '../../src/features/profile/services/profile.service';
 import {
   applyReferralCode,
   validateReferralCode,
 } from '../../src/features/referrals/services/referral.service';
 import { LegalConsentNotice } from '../../src/features/legal/components/LegalConsentNotice';
+
+function isValidEmail(email: string): boolean {
+  return /^[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/.test(
+    email,
+  );
+}
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -57,6 +60,7 @@ export default function OnboardingScreen() {
 
   const [tower, setTower] = useState('');
   const [flatNumber, setFlatNumber] = useState('');
+  const [flatSearch, setFlatSearch] = useState('');
   const [blocks, setBlocks] = useState<CommunityBlock[]>([]);
   const [flats, setFlats] = useState<CommunityFlat[]>([]);
   const [selectedBlock, setSelectedBlock] = useState<CommunityBlock | null>(null);
@@ -64,20 +68,20 @@ export default function OnboardingScreen() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [promoCode, setPromoCode] = useState('');
   const [referralCode, setReferralCode] = useState('');
 
-  const [promoValidated, setPromoValidated] = useState(false);
-  const [promoMessage, setPromoMessage] = useState('');
   const [referralValidated, setReferralValidated] = useState(false);
   const [referralMessage, setReferralMessage] = useState('');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [isApplyingReferral, setIsApplyingReferral] = useState(false);
 
   const blocksEnabled = Boolean(selectedCommunity?.blocksEnabled);
+  const flatQuery = flatSearch.trim().toLowerCase();
+  const visibleFlats = flatQuery
+    ? flats.filter((flat) => flat.flatNumber.toLowerCase().includes(flatQuery))
+    : flats;
 
   const openCommunityModal = useCallback(async () => {
     setShowCommunityModal(true);
@@ -149,6 +153,7 @@ export default function OnboardingScreen() {
     setTower(block.name);
     setSelectedFlat(null);
     setFlatNumber('');
+    setFlatSearch('');
     setShowBlockModal(false);
     clearError('flatNumber');
   };
@@ -156,8 +161,20 @@ export default function OnboardingScreen() {
   const handleSelectFlat = (flat: CommunityFlat) => {
     setSelectedFlat(flat);
     setFlatNumber(flat.flatNumber);
+    setFlatSearch('');
     setShowFlatModal(false);
     clearError('flatNumber');
+  };
+
+  const openFlatModal = () => {
+    if (!selectedBlock) return;
+    setFlatSearch('');
+    setShowFlatModal(true);
+  };
+
+  const closeFlatModal = () => {
+    setFlatSearch('');
+    setShowFlatModal(false);
   };
 
   useEffect(() => {
@@ -207,29 +224,6 @@ export default function OnboardingScreen() {
       cancelled = true;
     };
   }, [blocksEnabled, selectedBlock?.id]);
-
-  const handleApplyPromo = async () => {
-    if (!promoCode.trim()) return;
-
-    setIsApplyingPromo(true);
-    setPromoMessage('');
-
-    try {
-      const result = await validatePromoCode(promoCode);
-      if (result.valid) {
-        setPromoValidated(true);
-        setPromoMessage(`Promo applied! ${result.coupon?.discountType === 'percentage' ? `${result.coupon.discountValue}% off` : `₹${result.coupon?.discountValue} off`}`);
-      } else {
-        setPromoValidated(false);
-        setPromoMessage(result.message || 'Invalid promo code');
-      }
-    } catch (error) {
-      setPromoValidated(false);
-      setPromoMessage('Failed to validate promo code');
-    } finally {
-      setIsApplyingPromo(false);
-    }
-  };
 
   const handleApplyReferral = async () => {
     if (!referralCode.trim()) return;
@@ -283,6 +277,10 @@ export default function OnboardingScreen() {
     if (!fullName.trim()) {
       newErrors.fullName = 'Please enter your name';
     }
+    const trimmedEmail = email.trim();
+    if (trimmedEmail && !isValidEmail(trimmedEmail)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
 
     setErrors(newErrors);
 
@@ -296,7 +294,7 @@ export default function OnboardingScreen() {
       await completeOnboarding({
         profile: {
           fullName: fullName.trim(),
-          email: email.trim() || undefined,
+          email: trimmedEmail || undefined,
         },
         address: {
           communityId: selectedCommunity!.id,
@@ -307,7 +305,6 @@ export default function OnboardingScreen() {
             ? selectedFlat!.flatNumber
             : flatNumber.trim(),
         },
-        promoCode: promoValidated ? promoCode.trim() : undefined,
       });
 
       if (referralValidated && referralCode.trim()) {
@@ -453,7 +450,7 @@ export default function OnboardingScreen() {
                         !selectedFlat &&
                         styles.inputContainerError,
                     ]}
-                    onPress={() => selectedBlock && setShowFlatModal(true)}
+                    onPress={openFlatModal}
                     disabled={!selectedBlock || catalogLoading}
                   >
                     <Text
@@ -565,7 +562,12 @@ export default function OnboardingScreen() {
             <Text style={styles.inputLabel}>
               Email Address <Text style={styles.optionalText}>(optional)</Text>
             </Text>
-            <View style={styles.inputContainer}>
+            <View
+              style={[
+                styles.inputContainer,
+                errors.email && styles.inputContainerError,
+              ]}
+            >
               <MaterialCommunityIcons
                 name="email-outline"
                 size={20}
@@ -577,61 +579,17 @@ export default function OnboardingScreen() {
                 placeholder="Enter your email address"
                 placeholderTextColor={inputs.placeholder.color}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  clearError('email');
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoCorrect={false}
               />
             </View>
-          </View>
-
-          {/* Promo Code */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.inputLabel}>
-              Promo Code <Text style={styles.optionalText}>(optional)</Text>
-            </Text>
-            <View style={styles.inputContainer}>
-              <MaterialCommunityIcons
-                name="tag-outline"
-                size={20}
-                color={colors.icon.secondary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[styles.input, styles.promoInput]}
-                placeholder="Enter promo code"
-                placeholderTextColor={inputs.placeholder.color}
-                value={promoCode}
-                onChangeText={(text) => {
-                  setPromoCode(text);
-                  setPromoValidated(false);
-                  setPromoMessage('');
-                }}
-                autoCapitalize="characters"
-                editable={!promoValidated}
-              />
-              {isApplyingPromo ? (
-                <ActivityIndicator size="small" color={colors.brand.primary} />
-              ) : promoValidated ? (
-                <MaterialCommunityIcons
-                  name="check-circle"
-                  size={20}
-                  color={colors.status.success.foreground}
-                />
-              ) : (
-                <Pressable onPress={handleApplyPromo} style={styles.applyButton}>
-                  <Text style={styles.applyButtonText}>APPLY</Text>
-                </Pressable>
-              )}
-            </View>
-            {promoMessage ? (
-              <Text
-                style={[
-                  styles.promoMessage,
-                  promoValidated ? styles.promoSuccess : styles.promoError,
-                ]}
-              >
-                {promoMessage}
-              </Text>
+            {errors.email ? (
+              <Text style={styles.errorText}>{errors.email}</Text>
             ) : null}
           </View>
 
@@ -872,13 +830,13 @@ export default function OnboardingScreen() {
         visible={showFlatModal}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={() => setShowFlatModal(false)}
+        onRequestClose={closeFlatModal}
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Select Flat</Text>
             <Pressable
-              onPress={() => setShowFlatModal(false)}
+              onPress={closeFlatModal}
               style={styles.modalCloseButton}
             >
               <MaterialCommunityIcons
@@ -888,18 +846,44 @@ export default function OnboardingScreen() {
               />
             </Pressable>
           </View>
+          <View style={styles.modalSearchContainer}>
+            <MaterialCommunityIcons
+              name="magnify"
+              size={22}
+              color={colors.icon.secondary}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={styles.modalSearchInput}
+              placeholder="Search flat number..."
+              placeholderTextColor={inputs.placeholder.color}
+              value={flatSearch}
+              onChangeText={setFlatSearch}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoFocus
+            />
+          </View>
           {catalogLoading ? (
             <View style={styles.emptyList}>
               <ActivityIndicator size="small" color={colors.brand.primary} />
             </View>
           ) : (
             <FlatList
-              data={flats}
+              data={visibleFlats}
               keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
               contentContainerStyle={styles.communityList}
               ListEmptyComponent={
                 <View style={styles.emptyList}>
-                  <Text style={styles.emptyText}>No flats in this block</Text>
+                  <Text style={styles.emptyText}>
+                    {flatQuery ? 'No flats found' : 'No flats in this block'}
+                  </Text>
+                  {flatQuery ? (
+                    <Text style={styles.emptySubtext}>
+                      Try a different flat number
+                    </Text>
+                  ) : null}
                 </View>
               }
               renderItem={({ item }) => (

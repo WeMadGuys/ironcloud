@@ -2,6 +2,7 @@ import { AUTH_PROVIDER, MOCK_RIDER_ID } from '../../../config/auth';
 import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import {
+  normalizeGarmentCategory,
   pickBestUnitPrices,
   assertServiceQuantities,
   type PricingRuleCandidate,
@@ -16,6 +17,7 @@ export type GarmentCatalogItem = {
   name: string;
   unit: string;
   unitPrice: number;
+  garmentCategory: string;
 };
 
 export type PickupLineItem = {
@@ -283,6 +285,22 @@ export async function getOrderPricingContext(orderId: string): Promise<{
   };
 }
 
+/** Saved category tab order. Empty when the table is not migrated yet. */
+export async function fetchGarmentCategoryOrder(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('garment_categories')
+    .select('name, sort_order')
+    .order('sort_order', { ascending: true })
+    .order('name', { ascending: true });
+
+  if (error) {
+    console.warn('[Pickup] garment_categories unavailable:', error.message);
+    return [];
+  }
+
+  return (data ?? []).map((row) => row.name);
+}
+
 export async function getGarmentCatalog(opts: {
   communityId: string;
   userId?: string | null;
@@ -290,19 +308,31 @@ export async function getGarmentCatalog(opts: {
 }): Promise<GarmentCatalogItem[]> {
   const { communityId, userId, city } = opts;
 
-  let { data: services, error } = await (supabase
-    .from('services') as ReturnType<typeof supabase.from>)
-    .select('id, name, unit, sort_order')
+  const servicesQuery = () =>
+    (supabase.from('services') as ReturnType<typeof supabase.from>);
+
+  let { data: services, error } = await servicesQuery()
+    .select('id, name, unit, garment_category, sort_order')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
 
   if (error && /sort_order/i.test(error.message ?? '')) {
     console.warn('[Pickup] sort_order unavailable:', error.message);
-    const fallback = await (supabase.from('services') as ReturnType<typeof supabase.from>)
+    const withCategory = await servicesQuery()
+      .select('id, name, unit, garment_category')
+      .eq('is_active', true)
+      .order('name', { ascending: true });
+    services = withCategory.data;
+    error = withCategory.error;
+  }
+
+  if (error && /garment_category/i.test(error.message ?? '')) {
+    console.warn('[Pickup] garment_category unavailable:', error.message);
+    const fallback = await servicesQuery()
       .select('id, name, unit')
       .eq('is_active', true)
-      .order('name');
+      .order('name', { ascending: true });
     services = fallback.data;
     error = fallback.error;
   }
@@ -330,7 +360,13 @@ export async function getGarmentCatalog(opts: {
     { userId, communityId, city },
   );
 
-  return (services as { id: string; name: string; unit?: string | null; sort_order?: number | null }[])
+  return (services as {
+    id: string;
+    name: string;
+    unit?: string | null;
+    garment_category?: string | null;
+    sort_order?: number | null;
+  }[])
     .slice()
     .sort((a, b) => {
       const byOrder = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
@@ -342,6 +378,7 @@ export async function getGarmentCatalog(opts: {
       name: service.name,
       unit: service.unit?.trim() || 'piece',
       unitPrice: priceMap.get(service.id) ?? 0,
+      garmentCategory: normalizeGarmentCategory(service.garment_category),
     }));
 }
 
@@ -534,23 +571,57 @@ async function writeOrderItems(
   if (itemsError) throw new Error(itemsError.message);
 }
 
-async function replaceOrderItems(
+async function adjustWalletForPickupEdit(
   orderId: string,
-  communityId: string,
-  items: PickupLineItem[],
-): Promise<{
-  subtotal: number;
-  lineItems: {
-    order_id: string;
-    service_id: string;
-    quantity: number;
-    unit_price: number;
-  }[];
-  nameByService: Record<string, string>;
-}> {
-  const built = await buildPickupLineItems(orderId, communityId, items);
-  await writeOrderItems(orderId, built.lineItems);
-  return built;
+  newAmount: number,
+): Promise<void> {
+  if (AUTH_PROVIDER === 'mock') return;
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Session expired. Please sign in again and retry.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${getApiBaseUrl()}/api/booking/adjust-pickup-payment`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ orderId, newAmount }),
+      },
+    );
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : 'Could not update the wallet charge.',
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    success?: boolean;
+    insufficient?: boolean;
+    amount?: number;
+    balance?: number;
+    error?: string;
+  } | null;
+
+  if (body?.insufficient) {
+    throw new InsufficientWalletError(
+      Number(body.amount ?? newAmount),
+      Number(body.balance ?? 0),
+    );
+  }
+
+  if (!response.ok || body?.success === false) {
+    throw new Error(body?.error || 'Could not update the wallet charge.');
+  }
 }
 
 export async function confirmPickup(
@@ -678,8 +749,8 @@ export async function confirmPickup(
 }
 
 /**
- * Correct garment counts after pickup without re-running collect / wallet debit.
- * Totals update on the order; payment adjustment (if needed) is handled separately by ops.
+ * Correct garment counts after pickup and move the existing wallet debit
+ * to the new total before the items are saved.
  */
 export async function updatePickupItems(
   orderId: string,
@@ -689,11 +760,11 @@ export async function updatePickupItems(
   const riderId = await getRiderId();
   if (!riderId) throw new Error('Rider not authenticated');
 
-  const { subtotal, lineItems, nameByService } = await replaceOrderItems(
-    orderId,
-    communityId,
-    items,
-  );
+  const built = await buildPickupLineItems(orderId, communityId, items);
+  const subtotal = Math.round(built.subtotal * 100) / 100;
+  const { lineItems, nameByService } = built;
+  await adjustWalletForPickupEdit(orderId, subtotal);
+  await writeOrderItems(orderId, lineItems);
 
   const { error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
@@ -721,6 +792,81 @@ export async function updatePickupItems(
       final_amount: subtotal,
     },
   });
+
+  clearJobsCache();
+}
+
+/**
+ * Cancel a collected order and credit the pickup debit back to the wallet.
+ * Adds one "Order cancelled" refund row. Does not rewrite the original debit.
+ */
+export async function cancelCollectedOrder(orderId: string): Promise<void> {
+  const riderId = await getRiderId();
+  if (!riderId) throw new Error('Rider not authenticated');
+
+  if (AUTH_PROVIDER === 'mock') {
+    const { error } = await (supabase.from('orders') as ReturnType<typeof supabase.from>)
+      .update({ status: 'cancelled' })
+      .eq('id', orderId);
+    if (error) throw new Error(error.message);
+
+    await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
+      order_id: orderId,
+      status: 'cancelled',
+      note: 'Order cancelled',
+      actor_id: MOCK_RIDER_ID,
+      metadata: { source: 'rider_cancel_collected_order' },
+    });
+
+    await (supabase.from('rider_jobs') as ReturnType<typeof supabase.from>)
+      .update({
+        status: 'failed',
+        failure_reason: 'Order cancelled',
+        completed_at: new Date().toISOString(),
+      })
+      .eq('order_id', orderId)
+      .eq('job_type', 'delivery')
+      .in('status', ['assigned', 'in_progress']);
+
+    clearJobsCache();
+    return;
+  }
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken) {
+    throw new Error('Session expired. Please sign in again and retry.');
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${getApiBaseUrl()}/api/booking/cancel-collected-order`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ orderId }),
+      },
+    );
+  } catch (error) {
+    throw new Error(
+      error instanceof Error ? error.message : 'Could not cancel this order.',
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    success?: boolean;
+    error?: string;
+  } | null;
+
+  if (!response.ok || body?.success === false) {
+    throw new Error(body?.error || 'Could not cancel this order.');
+  }
 
   clearJobsCache();
 }
