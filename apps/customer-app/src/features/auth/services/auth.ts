@@ -40,6 +40,22 @@ const OTP_EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
 const formatPhone = (phone: string) =>
   phone.startsWith('+') ? phone : `+91${phone}`;
 
+const OTP_FAILURE_REPORT_TIMEOUT_MS = 2000;
+
+/** Fire-and-forget. Login must not wait on this request. */
+const reportOtpSendFailure = (phone: string, message: string): void => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), OTP_FAILURE_REPORT_TIMEOUT_MS);
+  fetch(`${getApiBaseUrl()}/api/otp-send-failures`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone, message }),
+    signal: controller.signal,
+  })
+    .catch(() => undefined)
+    .finally(() => clearTimeout(timeoutId));
+};
+
 const exchangeMsg91Session = async (
   accessToken: string,
   phone: string,
@@ -176,6 +192,7 @@ export const sendOtp = async (
     if (AUTH_PROVIDER === 'msg91') {
       const result = await msg91SendOtp(phone);
       if ('error' in result) {
+        reportOtpSendFailure(phone, result.error);
         return { data: null, error: { message: result.error } };
       }
 
@@ -190,6 +207,9 @@ export const sendOtp = async (
       error: { message: `Unsupported auth provider: ${AUTH_PROVIDER}` },
     };
   } catch {
+    if (AUTH_PROVIDER === 'msg91') {
+      reportOtpSendFailure(phone, 'Failed to send OTP. Please try again.');
+    }
     return {
       data: null,
       error: { message: 'Failed to send OTP. Please try again.' },

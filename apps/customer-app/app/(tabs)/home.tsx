@@ -607,6 +607,10 @@ export default function HomeScreen() {
     if (index === selectedDay || contentLoading) return;
     setSlotClock(Date.now());
     setSelectedDay(index);
+    // Slot and estimate belong to the day they were chosen on.
+    queuedHourRef.current = null;
+    setSelectedStartHour(null);
+    setEstimateCounts({});
   };
 
   const openNextSlot = () => {

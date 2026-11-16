@@ -1,0 +1,9 @@
+.card {
+  margin-bottom: var(--ic-spacing-xl);
+}
+
+.empty {
+  margin: 0;
+  color: var(--ic-text-secondary);
+  font-size: var(--ic-font-size-sm);
+}

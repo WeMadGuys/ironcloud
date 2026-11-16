@@ -4,6 +4,7 @@ import { endOfDay, startOfDay, toISODate } from '@/utils/format';
 const PERFORMANCE_LOOKBACK_DAYS = 30;
 const APP_DOWNLOAD_LOOKBACK_DAYS = 30;
 const APP_DOWNLOAD_PAGE_SIZE = 1000;
+const OTP_SEND_FAILURE_LIMIT = 200;
 
 export const fetchAnalyticsOverview = async (date: Date) => {
   const supabase = getSupabase();
@@ -184,11 +185,41 @@ export const fetchAppDownloadStats = async (date: Date) => {
   return { trend: Object.values(byDay), totals };
 };
 
+export type OtpSendFailureRow = {
+  id: string;
+  phone: string;
+  message: string;
+  created_at: string;
+};
+
+/** Customer-app Send OTP failures for the selected calendar day. */
+export const fetchOtpSendFailures = async (date: Date) => {
+  const supabase = getSupabase();
+  const { data, count, error } = await supabase
+    .from('otp_send_failures')
+    .select('id, phone, message, created_at', { count: 'exact' })
+    .gte('created_at', startOfDay(date).toISOString())
+    .lte('created_at', endOfDay(date).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(OTP_SEND_FAILURE_LIMIT);
+
+  if (error) {
+    console.error('[otp-send-failures]', error.message);
+    return { total: 0, rows: [] as OtpSendFailureRow[] };
+  }
+
+  return {
+    total: count ?? 0,
+    rows: (data ?? []) as OtpSendFailureRow[],
+  };
+};
+
 export const fetchAnalyticsBundle = async (date: Date) => {
-  const [overview, communities, appDownloads] = await Promise.all([
+  const [overview, communities, appDownloads, otpSendFailures] = await Promise.all([
     fetchAnalyticsOverview(date),
     fetchCommunityPerformance(),
     fetchAppDownloadStats(date),
+    fetchOtpSendFailures(date),
   ]);
-  return { overview, communities, appDownloads };
+  return { overview, communities, appDownloads, otpSendFailures };
 };
