@@ -16,6 +16,7 @@ import {
   type SupportMessage,
   type SupportTicketDetail,
 } from '../services/support.service';
+import { markSupportTicketNotificationsRead } from '../services/supportNotifications';
 
 import pageStyles from '@/styles/pages.module.css';
 import styles from './SupportDetailPage.module.css';
@@ -44,6 +45,10 @@ export const SupportDetailPage = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    void markSupportTicketNotificationsRead(ticketId);
+  }, [ticketId]);
 
   const handleReply = async () => {
     const message = draft.trim();
