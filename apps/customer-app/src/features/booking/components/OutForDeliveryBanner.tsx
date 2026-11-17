@@ -31,6 +31,7 @@ export function OutForDeliveryBanner({ booking }: Props) {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+  const deliveryLine = `${booking.deliveryDateLabel} · ${booking.deliveryTimeLabel}`;
 
   return (
     <View style={styles.wrap}>
@@ -42,7 +43,7 @@ export function OutForDeliveryBanner({ booking }: Props) {
             onPress={() => setExpanded((prev) => !prev)}
             accessibilityRole="button"
             accessibilityState={{ expanded }}
-            accessibilityLabel={`Out for Delivery. Estimated ${booking.deliveryTimeLabel}`}
+            accessibilityLabel={`Out for Delivery. ${deliveryLine}`}
           >
             <View style={styles.iconWrap}>
               <MaterialCommunityIcons
@@ -59,7 +60,7 @@ export function OutForDeliveryBanner({ booking }: Props) {
                 ·
               </Text>
               <Text style={styles.estimate} numberOfLines={2}>
-                Estimated: {booking.deliveryTimeLabel}
+                {deliveryLine}
               </Text>
             </View>
             <MaterialCommunityIcons

@@ -9,6 +9,7 @@ import {
   CreateEntityModal,
   Loader,
   Modal,
+  SearchInput,
 } from '@/components';
 import { useToast } from '@/components/Toast/ToastProvider';
 import { CustomersGrid } from '@/features/customers/components/CustomersGrid';
@@ -157,6 +158,7 @@ export const PricingRulesPanel = () => {
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
   const [categoryTab, setCategoryTab] = useState('All');
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+  const [search, setSearch] = useState('');
 
   const createPricing = trpc.settings.createPricing.useMutation();
   const updatePricing = trpc.settings.updatePricing.useMutation();
@@ -443,6 +445,7 @@ export const PricingRulesPanel = () => {
   if (loading) return <Loader />;
 
   const submitting = createPricing.isPending || updatePricing.isPending;
+  const searchQuery = search.trim().toLowerCase();
   const visiblePricing = (
     categoryTab === 'All'
       ? pricing
@@ -450,7 +453,24 @@ export const PricingRulesPanel = () => {
           (row) =>
             normalizeGarmentCategory(serviceJoin(row)?.garment_category) === categoryTab,
         )
-  ).slice().sort(comparePricingRows);
+  )
+    .filter((row) => {
+      if (!searchQuery) return true;
+      const service = serviceJoin(row);
+      const haystack = [
+        service?.name,
+        normalizeGarmentCategory(service?.garment_category),
+        scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all')),
+        targetLabel(row),
+        row.base_price != null ? String(row.base_price) : '',
+        row.express_multiplier != null ? String(row.express_multiplier) : '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(searchQuery);
+    })
+    .slice()
+    .sort(comparePricingRows);
   const showServiceDetails = Boolean(form.serviceId);
   const editingExistingService =
     showServiceDetails && form.serviceId !== NEW_SERVICE_VALUE;
@@ -458,7 +478,13 @@ export const PricingRulesPanel = () => {
   return (
     <>
       <div className={pageStyles.filters}>
-        <div />
+        <SearchInput
+          placeholder="Search services, categories, cities..."
+          aria-label="Search pricing rules"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onClear={() => setSearch('')}
+        />
         <div className={pageStyles.filtersAction}>
           <Button onClick={openCreate}>Add rule</Button>
         </div>
@@ -484,7 +510,11 @@ export const PricingRulesPanel = () => {
         {pricing.length === 0 ? (
           <p className={formStyles.hint}>No pricing rules yet. Add a platform default or audience-specific override.</p>
         ) : visiblePricing.length === 0 ? (
-          <p className={formStyles.hint}>No pricing rules in {categoryTab}.</p>
+          <p className={formStyles.hint}>
+            {searchQuery
+              ? `No pricing rules match "${search.trim()}".`
+              : `No pricing rules in ${categoryTab}.`}
+          </p>
         ) : (
           <PricingRulesTable
             rows={visiblePricing as PricingRuleRow[]}
@@ -493,6 +523,7 @@ export const PricingRulesPanel = () => {
             onEdit={(row) => openEdit(row as PricingRow)}
             onDelete={setDeleteId}
             onReorder={handleReorder}
+            canReorder={!searchQuery}
           />
         )}
       </Card>

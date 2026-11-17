@@ -70,10 +70,11 @@ export function ActiveOrderCard({
   const router = useRouter();
   const isAwaiting = booking.phase === 'awaiting_pickup';
   const pickupFailed = isAwaiting && !!booking.pickupFailureReason;
+  const attemptFailed = pickupFailed || booking.status === 'failed';
   const isDelivered = booking.phase === 'delivered';
   const showGarments = booking.isPickupComplete;
   const hasGarments = booking.items.length > 0;
-  const canCancel = isAwaiting && !pickupFailed && !!onCancel;
+  const canCancel = isAwaiting && !attemptFailed && !!onCancel;
   const needsPayment =
     booking.isPickupComplete && booking.paymentStatus === 'insufficient_funds';
   const showEstimateCompare =
@@ -84,7 +85,7 @@ export function ActiveOrderCard({
 
   const [showDetails, setShowDetails] = useState(false);
 
-  const statusColor = pickupFailed
+  const statusColor = attemptFailed
     ? colors.status.warning.foreground
     : colors.status.success.foreground;
 
@@ -112,7 +113,7 @@ export function ActiveOrderCard({
           style={[
             styles.statusIconWrap,
             {
-              backgroundColor: pickupFailed
+              backgroundColor: attemptFailed
                 ? colors.status.warning.background
                 : colors.status.success.background,
             },
@@ -120,7 +121,7 @@ export function ActiveOrderCard({
         >
           <MaterialCommunityIcons
             name={
-              pickupFailed
+              attemptFailed
                 ? 'alert-circle-outline'
                 : isAwaiting
                   ? 'clock-outline'
@@ -134,8 +135,10 @@ export function ActiveOrderCard({
           <Text style={[styles.statusTitle, { color: statusColor }]}>
             {booking.statusLabel}
           </Text>
-          {pickupFailed ? (
-            <Text style={styles.failureReason}>{booking.pickupFailureReason}</Text>
+          {attemptFailed ? (
+            <Text style={styles.failureReason}>
+              {booking.pickupFailureReason || booking.statusDescription}
+            </Text>
           ) : null}
         </View>
       </View>

@@ -8,6 +8,7 @@ type AdminClient = SupabaseClient<any>;
 /** Collected, still before the order is delivered. */
 const CANCELLABLE_STATUSES = [
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',

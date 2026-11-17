@@ -31,6 +31,7 @@ export type OrderStatus =
   | 'pickup_assigned'
   | 'pickup_in_progress'
   | 'picked_up'
+  | 'picked_up_no_delivery'
   | 'warehouse_received'
   | 'sorting'
   | 'ironing'
@@ -43,6 +44,7 @@ export type OrderStatus =
   | 'completed'
   | 'rated'
   | 'cancelled'
+  | 'failed'
   | 'refund_initiated'
   | 'refund_completed';
 
@@ -1954,6 +1956,10 @@ export interface Database {
       };
       release_service_slot_seat: {
         Args: { p_slot_id: string };
+        Returns: undefined;
+      };
+      clear_order_delivery_slot: {
+        Args: { p_order_id: string };
         Returns: undefined;
       };
       claim_customer_pickup_day: {

@@ -44,16 +44,8 @@
 }
 
 .qrImage {
-  width: 280px;
-  height: 280px;
-  max-width: 100%;
-}
-
-.qrCode {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  width: min(360px, 100%);
+  height: auto;
 }
 
 .download {

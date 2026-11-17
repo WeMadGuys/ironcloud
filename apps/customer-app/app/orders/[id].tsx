@@ -20,6 +20,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  formatDeliverySlot,
   formatOrderDate,
   formatSlotRange,
   getCustomerOrderById,
@@ -66,13 +67,14 @@ export default function OrderDetailsScreen() {
   const pickup = order
     ? formatSlotRange(order.pickupStart, order.pickupEnd)
     : null;
-  const delivery = order
-    ? formatSlotRange(order.deliveryStart, order.deliveryEnd)
-    : null;
+  const delivery = order ? formatDeliverySlot(order) : null;
   const garmentsTotal = order
     ? order.totalAmount ||
       order.items.reduce((sum, item) => sum + item.lineTotal, 0)
     : 0;
+  const attemptFailed = Boolean(
+    order?.pickupFailureReason || order?.deliveryFailureReason || order?.status === 'failed',
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -110,7 +112,7 @@ export default function OrderDetailsScreen() {
           <View style={styles.card}>
             <Text style={styles.orderId}>Order #{order.orderNumber}</Text>
             <Text
-              style={[styles.status, order.pickupFailureReason && styles.statusFailed]}
+              style={[styles.status, attemptFailed && styles.statusFailed]}
             >
               {orderStatusLabel(order)}
             </Text>

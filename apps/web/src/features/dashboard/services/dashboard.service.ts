@@ -26,6 +26,7 @@ const CUSTOMER_ID_CHUNK = 150;
 const PENDING_PICKUP_STATUSES = ['booked', 'pickup_assigned', 'pickup_in_progress'];
 const IN_PROGRESS_STATUSES = [
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',
@@ -35,6 +36,14 @@ const IN_PROGRESS_STATUSES = [
 ];
 const OUT_FOR_DELIVERY_STATUSES = ['delivery_assigned', 'out_for_delivery'];
 const DELIVERED_STATUSES = ['delivered', 'completed', 'rated'];
+
+/** Not sales: never charged, voided, or fully refunded. */
+const EXCLUDED_REVENUE_STATUSES = new Set([
+  'draft',
+  'cancelled',
+  'failed',
+  'refund_completed',
+]);
 
 /** Rankings use a recent window — all-time full-table scans are wrong past PostgREST row caps. */
 const RANKING_LOOKBACK_DAYS = 30;
@@ -58,6 +67,8 @@ async function fetchActiveOrdersInRange(
   range: DateRange,
   select: string,
   communityId?: string,
+  /** `pickup` = revenue day (charged at pickup). `any` = pickup or delivery that day. */
+  match: 'any' | 'pickup' = 'any',
 ): Promise<Record<string, unknown>[]> {
   const supabase = getSupabase();
   const rangeStart = range.from;
@@ -65,6 +76,7 @@ async function fetchActiveOrdersInRange(
   if (!rangeStart && !rangeEnd) return [];
 
   let slotsQuery = supabase.from('service_slots').select('id, window_start');
+  if (match === 'pickup') slotsQuery = slotsQuery.eq('slot_type', 'pickup');
   if (rangeStart) slotsQuery = slotsQuery.gte('window_start', rangeStart.toISOString());
   if (rangeEnd) slotsQuery = slotsQuery.lte('window_start', rangeEnd.toISOString());
 
@@ -81,7 +93,8 @@ async function fetchActiveOrdersInRange(
   // PostgREST .or() with .in() lists; chunk if a huge custom range ever blows URL limits.
   const orFilter = `pickup_slot_id.in.(${slotIds.join(',')}),delivery_slot_id.in.(${slotIds.join(',')})`;
 
-  let query = supabase.from('orders').select(select).or(orFilter);
+  let query = supabase.from('orders').select(select);
+  query = match === 'pickup' ? query.in('pickup_slot_id', slotIds) : query.or(orFilter);
   if (communityId) query = query.eq('community_id', communityId);
 
   const { data, error } = await query;
@@ -178,11 +191,17 @@ export const fetchDashboardKPIs = async (
 
   const prevRange = previousDateRange(effectiveRange);
 
-  const [orderRows, totalYesterday, walletBalance, partners, riders] = await Promise.all([
+  const [orderRows, revenueRows, totalYesterday, walletBalance, partners, riders] = await Promise.all([
     fetchActiveOrdersInRange(
       effectiveRange,
       'id, status, total_amount, customer_id, pickup_slot_id, delivery_slot_id',
       communityId,
+    ),
+    fetchActiveOrdersInRange(
+      effectiveRange,
+      'id, status, total_amount',
+      communityId,
+      'pickup',
     ),
     fetchActiveOrderCount(prevRange, communityId),
     sumWalletBalance(communityId),
@@ -196,7 +215,9 @@ export const fetchDashboardKPIs = async (
   const countByStatus = (statuses: string[]) =>
     orders.filter((o) => statuses.includes(o.status)).length;
 
-  const revenueToday = orders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+  const revenueToday = (revenueRows as unknown as { status: string; total_amount: number }[])
+    .filter((o) => !EXCLUDED_REVENUE_STATUSES.has(o.status))
+    .reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
 
   const totalToday = orders.length;
 
@@ -584,12 +605,15 @@ export const fetchDashboardKpiDetails = async (
       effectiveRange,
       ORDER_DETAIL_SELECT,
       communityId,
+      kpi === 'revenue' ? 'pickup' : 'any',
     )) as unknown as DashboardOrderDetail[];
 
     const statuses = ORDER_KPI_STATUSES[kpi];
-    const filtered = statuses
-      ? rows.filter((o) => statuses.includes(o.status))
-      : rows;
+    const filtered = rows.filter((o) => {
+      if (statuses && !statuses.includes(o.status)) return false;
+      if (kpi === 'revenue' && EXCLUDED_REVENUE_STATUSES.has(o.status)) return false;
+      return true;
+    });
 
     filtered.sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),

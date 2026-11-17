@@ -3,13 +3,16 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
@@ -66,129 +69,125 @@ export function BoxQrScanner({
     setManualCode('');
   };
 
+  const toggleManualMode = () => {
+    setManualMode((current) => {
+      const next = !current;
+      if (next) {
+        setLocked(false);
+      }
+      return next;
+    });
+  };
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.root}>
-        <View style={styles.header}>
-          <Pressable style={styles.headerBtn} onPress={handleClose} hitSlop={8}>
-            <MaterialCommunityIcons name="close" size={24} color={colors.icon.primary} />
-          </Pressable>
-          <Text style={styles.title}>{title}</Text>
-          <Pressable
-            style={styles.headerBtn}
-            onPress={() => setManualMode((v) => !v)}
-            hitSlop={8}
-          >
-            <MaterialCommunityIcons
-              name={manualMode ? 'qrcode-scan' : 'keyboard-outline'}
-              size={22}
-              color={colors.icon.primary}
-            />
-          </Pressable>
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.body}>
+          {manualMode ? (
+            <View style={styles.manualWrap}>
+              <Text style={styles.hint}>Enter box code (e.g. AH-001)</Text>
+              <TextInput
+                style={styles.input}
+                value={manualCode}
+                onChangeText={setManualCode}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                autoFocus
+                placeholder="BOX CODE"
+                placeholderTextColor={colors.text.muted}
+                editable={!busy && !locked}
+                returnKeyType="done"
+                onSubmitEditing={() => emitCode(manualCode)}
+              />
+              <Pressable
+                style={[styles.primaryBtn, (!manualCode.trim() || busy || locked) && styles.btnDisabled]}
+                disabled={!manualCode.trim() || busy || locked}
+                onPress={() => emitCode(manualCode)}
+              >
+                {busy ? (
+                  <ActivityIndicator color={colors.brand.onPrimary} />
+                ) : (
+                  <Text style={styles.primaryBtnText}>Look up box</Text>
+                )}
+              </Pressable>
+              {locked ? (
+                <Pressable style={styles.textBtn} onPress={handleRescan}>
+                  <Text style={styles.textBtnLabel}>Enter another</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : !permission ? (
+            <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
+          ) : !permission.granted ? (
+            <View style={styles.manualWrap}>
+              <Text style={styles.hint}>Camera permission is required to scan box QR codes.</Text>
+              <Pressable style={styles.primaryBtn} onPress={() => void requestPermission()}>
+                <Text style={styles.primaryBtnText}>Grant camera access</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.cameraWrap}>
+              <CameraView
+                style={styles.camera}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={
+                  locked || busy
+                    ? undefined
+                    : (event: { data: string }) => emitCode(event.data)
+                }
+              />
+              <View style={styles.overlay} pointerEvents="none">
+                <View style={styles.frame} />
+                <Text style={styles.overlayHint}>
+                  {locked ? 'Code captured' : 'Point at the box QR sticker'}
+                </Text>
+              </View>
+              {busy ? (
+                <View style={styles.busyOverlay} pointerEvents="none">
+                  <ActivityIndicator color={colors.brand.onPrimary} size="large" />
+                </View>
+              ) : null}
+            </View>
+          )}
         </View>
 
-        {manualMode ? (
-          <View style={styles.manualWrap}>
-            <Text style={styles.hint}>Enter box code (e.g. AH-001)</Text>
-            <TextInput
-              style={styles.input}
-              value={manualCode}
-              onChangeText={setManualCode}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              placeholder="BOX CODE"
-              placeholderTextColor={colors.text.muted}
-              editable={!busy && !locked}
-            />
-            <Pressable
-              style={[styles.primaryBtn, (!manualCode.trim() || busy || locked) && styles.btnDisabled]}
-              disabled={!manualCode.trim() || busy || locked}
-              onPress={() => emitCode(manualCode)}
-            >
-              {busy ? (
-                <ActivityIndicator color={colors.brand.onPrimary} />
-              ) : (
-                <Text style={styles.primaryBtnText}>Look up box</Text>
-              )}
+        <SafeAreaView edges={['bottom']} style={styles.footer}>
+          <Text style={styles.footerTitle}>{title}</Text>
+          {locked && !manualMode && !busy ? (
+            <Pressable style={styles.secondaryBtn} onPress={handleRescan}>
+              <Text style={styles.secondaryBtnText}>Scan again</Text>
             </Pressable>
-            {locked ? (
-              <Pressable style={styles.secondaryBtn} onPress={handleRescan}>
-                <Text style={styles.secondaryBtnText}>Enter another</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        ) : !permission ? (
-          <ActivityIndicator style={styles.loader} color={colors.brand.primary} />
-        ) : !permission.granted ? (
-          <View style={styles.manualWrap}>
-            <Text style={styles.hint}>Camera permission is required to scan box QR codes.</Text>
-            <Pressable style={styles.primaryBtn} onPress={() => void requestPermission()}>
-              <Text style={styles.primaryBtnText}>Grant camera access</Text>
+          ) : null}
+          <View style={styles.footerRow}>
+            <Pressable style={styles.closeBtn} onPress={handleClose}>
+              <MaterialCommunityIcons name="close" size={20} color={colors.text.heading} />
+              <Text style={styles.closeBtnText}>Close</Text>
             </Pressable>
-            <Pressable style={styles.secondaryBtn} onPress={() => setManualMode(true)}>
-              <Text style={styles.secondaryBtnText}>Enter code manually</Text>
+            <Pressable style={styles.keypadBtn} onPress={toggleManualMode}>
+              <MaterialCommunityIcons
+                name={manualMode ? 'qrcode-scan' : 'keyboard-outline'}
+                size={20}
+                color={colors.brand.onPrimary}
+              />
+              <Text style={styles.keypadBtnText}>{manualMode ? 'Scan QR' : 'Keypad'}</Text>
             </Pressable>
           </View>
-        ) : (
-          <View style={styles.cameraWrap}>
-            <CameraView
-              style={StyleSheet.absoluteFillObject}
-              facing="back"
-              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-              onBarcodeScanned={
-                locked || busy
-                  ? undefined
-                  : (event: { data: string }) => emitCode(event.data)
-              }
-            />
-            <View style={styles.overlay} pointerEvents="none">
-              <View style={styles.frame} />
-              <Text style={styles.overlayHint}>
-                {locked ? 'Code captured' : 'Point at the box QR sticker'}
-              </Text>
-            </View>
-            {busy ? (
-              <View style={styles.busyOverlay}>
-                <ActivityIndicator color={colors.brand.onPrimary} size="large" />
-              </View>
-            ) : null}
-            {locked && !busy ? (
-              <Pressable style={styles.rescanFab} onPress={handleRescan}>
-                <Text style={styles.rescanFabText}>Scan again</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        )}
-      </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface.background },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.divider,
-  },
-  headerBtn: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-    fontFamily: fonts.poppins.semibold,
-    fontSize: 16,
-    color: colors.text.heading,
-  },
+  body: { flex: 1 },
   loader: { marginTop: spacing['2xl'] },
-  cameraWrap: { flex: 1, backgroundColor: '#000' },
+  cameraWrap: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
+  camera: { flex: 1 },
   overlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -215,20 +214,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  rescanFab: {
-    position: 'absolute',
-    bottom: spacing['2xl'],
-    alignSelf: 'center',
-    backgroundColor: colors.surface.elevated,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.full,
-  },
-  rescanFabText: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 14,
-    color: colors.text.heading,
   },
   manualWrap: {
     flex: 1,
@@ -266,14 +251,78 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.brand.onPrimary,
   },
-  secondaryBtn: {
+  textBtn: {
     paddingVertical: spacing.md,
     alignItems: 'center',
   },
-  secondaryBtnText: {
+  textBtnLabel: {
     fontFamily: fonts.inter.semibold,
     fontSize: 14,
     color: colors.brand.primary,
   },
   btnDisabled: { opacity: 0.6 },
+  footer: {
+    backgroundColor: colors.surface.background,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.divider,
+  },
+  footerTitle: {
+    textAlign: 'center',
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  closeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+    backgroundColor: colors.surface.elevated,
+  },
+  closeBtnText: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
+  keypadBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.brand.primary,
+  },
+  keypadBtnText: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.brand.onPrimary,
+  },
+  secondaryBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.default,
+  },
+  secondaryBtnText: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
 });

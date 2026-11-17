@@ -16,10 +16,10 @@ create type user_role as enum (
 );
 
 create type order_status as enum (
-  'draft','booked','pickup_assigned','pickup_in_progress','picked_up',
+  'draft','booked','pickup_assigned','pickup_in_progress','picked_up','picked_up_no_delivery',
   'warehouse_received','sorting','ironing','quality_check','packed',
   'ready_for_delivery','delivery_assigned','out_for_delivery','delivered',
-  'completed','rated','cancelled','refund_initiated','refund_completed'
+  'completed','rated','cancelled','failed','refund_initiated','refund_completed'
 );
 
 create type job_type as enum ('pickup','delivery');

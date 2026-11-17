@@ -46,6 +46,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'pickup_assigned',
   'pickup_in_progress',
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',
@@ -57,6 +58,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'delivered',
   'completed',
   'cancelled',
+  'failed',
 ];
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string }[] = [
@@ -389,6 +391,10 @@ function openJob(
 
 function currentRider(order: OrderRow): string {
   const jobs = getJobs(order);
+  if (order.status === 'failed') {
+    const failedJob = jobs.find((job) => job.status === 'failed');
+    if (failedJob) return riderName(failedJob);
+  }
   const deliveryStages = [
     'ready_for_delivery',
     'delivery_assigned',
@@ -420,6 +426,7 @@ export const OrdersListPage = () => {
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState<OrderStatus | ''>('');
+  const [deliveryDate, setDeliveryDate] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [applyMenuOpen, setApplyMenuOpen] = useState(false);
@@ -427,6 +434,7 @@ export const OrdersListPage = () => {
   const pageSize = 25;
 
   const bulkUpdateMutation = trpc.orders.bulkUpdateStatus.useMutation();
+  const setDeliveryDateMutation = trpc.orders.setDeliveryDate.useMutation();
   const advanceDeliveryMutation = trpc.orders.advanceDeliveryDay.useMutation();
 
   const debouncedDraftJson = useDebouncedValue(JSON.stringify(draft), 300);
@@ -619,6 +627,33 @@ export const OrdersListPage = () => {
     setApplied(next);
     setPage(1);
     setSelectedIds(new Set());
+  };
+
+  const handleSetDeliveryDate = () => {
+    if (!deliveryDate || selectedIds.size === 0) return;
+    const orderIds = Array.from(selectedIds);
+    setDeliveryDateMutation.mutate(
+      { orderIds, date: deliveryDate },
+      {
+        onSuccess: (res) => {
+          const skipped =
+            res.skipped > 0
+              ? ` Skipped ${res.skipped} finished order${res.skipped === 1 ? '' : 's'}.`
+              : '';
+          window.alert(
+            res.updated > 0
+              ? `Updated the delivery date for ${res.updated} order${res.updated === 1 ? '' : 's'}.${skipped}`
+              : `No delivery dates were changed.${skipped}`,
+          );
+          setSelectedIds(new Set());
+          setDeliveryDate('');
+          setReloadKey((k) => k + 1);
+        },
+        onError: (err) => {
+          window.alert(err.message || 'Could not update the delivery date.');
+        },
+      },
+    );
   };
 
   const handleBulkUpdate = () => {
@@ -1181,15 +1216,31 @@ export const OrdersListPage = () => {
           <Button
             size="sm"
             onClick={handleBulkUpdate}
-            disabled={!bulkStatus || bulkUpdateMutation.isPending}
+            disabled={!bulkStatus || bulkUpdateMutation.isPending || setDeliveryDateMutation.isPending}
           >
             {bulkUpdateMutation.isPending ? 'Updating…' : 'Apply to selected'}
+          </Button>
+          <input
+            type="date"
+            className={pageStyles.select}
+            value={deliveryDate}
+            onChange={(e) => setDeliveryDate(e.target.value)}
+            aria-label="New delivery date"
+            disabled={setDeliveryDateMutation.isPending}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={handleSetDeliveryDate}
+            disabled={!deliveryDate || setDeliveryDateMutation.isPending || bulkUpdateMutation.isPending}
+          >
+            {setDeliveryDateMutation.isPending ? 'Saving date…' : 'Set delivery date'}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setSelectedIds(new Set())}
-            disabled={bulkUpdateMutation.isPending}
+            disabled={bulkUpdateMutation.isPending || setDeliveryDateMutation.isPending}
           >
             Clear selection
           </Button>

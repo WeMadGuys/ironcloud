@@ -6,6 +6,7 @@ const STATUS_MAP: Partial<Record<OrderStatus, BadgeVariant>> = {
   pickup_assigned: 'pendingPickup',
   pickup_in_progress: 'pendingPickup',
   picked_up: 'pickedUp',
+  picked_up_no_delivery: 'pickedUp',
   ironing: 'ironing',
   sorting: 'ironing',
   quality_check: 'ironing',
@@ -15,6 +16,7 @@ const STATUS_MAP: Partial<Record<OrderStatus, BadgeVariant>> = {
   completed: 'delivered',
   rated: 'delivered',
   cancelled: 'cancelled',
+  failed: 'error',
   refund_initiated: 'error',
   refund_completed: 'cancelled',
 };
@@ -22,11 +24,13 @@ const STATUS_MAP: Partial<Record<OrderStatus, BadgeVariant>> = {
 export const getOrderStatusBadge = (status: OrderStatus): BadgeVariant =>
   STATUS_MAP[status] ?? 'default';
 
-export const formatOrderStatus = (status: string): string =>
-  status
+export const formatOrderStatus = (status: string): string => {
+  if (status === 'picked_up_no_delivery') return 'Picked up without delivery date';
+  return status
     .split('_')
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
+};
 
 export const formatCurrency = (amount: number): string =>
   new Intl.NumberFormat('en-IN', {

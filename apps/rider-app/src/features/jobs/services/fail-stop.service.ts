@@ -51,7 +51,8 @@ async function notifyCustomer(orderId: string, jobType: 'pickup' | 'delivery'): 
 
 /**
  * Records a door attempt that could not be completed.
- * The order stays open. Pickup boxes are released so they can be used again.
+ * The order stays open and its status becomes failed so admin can see it.
+ * Pickup boxes are released so they can be used again.
  */
 export async function failRiderStop(
   orderId: string,
@@ -70,11 +71,6 @@ export async function failRiderStop(
     }
   }
 
-  const { data: order } = await (supabase.from('orders') as ReturnType<typeof supabase.from>)
-    .select('status')
-    .eq('id', orderId)
-    .maybeSingle();
-
   const { data: updated, error } = await (supabase
     .from('rider_jobs') as ReturnType<typeof supabase.from>)
     .update({
@@ -92,13 +88,15 @@ export async function failRiderStop(
     throw new Error('This stop is no longer assigned to you.');
   }
 
-  const orderStatus =
-    (order as { status: string } | null)?.status ||
-    (jobType === 'pickup' ? 'pickup_assigned' : 'out_for_delivery');
+  const { error: orderError } = await (supabase.from('orders') as ReturnType<typeof supabase.from>)
+    .update({ status: 'failed' })
+    .eq('id', orderId);
+
+  if (orderError) throw new Error(orderError.message);
 
   await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
     order_id: orderId,
-    status: orderStatus,
+    status: 'failed',
     note: `${jobType === 'pickup' ? 'Pickup' : 'Delivery'} attempt failed: ${trimmed}`,
     actor_id: AUTH_PROVIDER === 'mock' ? MOCK_RIDER_ID : riderId,
     metadata: { kind: 'stop_failed', jobType, reason: trimmed },
@@ -138,6 +136,12 @@ export async function resumeFailedPickup(orderId: string): Promise<void> {
   if (!updated || (updated as { id: string }[]).length === 0) {
     throw new Error('This pickup can no longer be collected.');
   }
+
+  const { error: orderError } = await (supabase.from('orders') as ReturnType<typeof supabase.from>)
+    .update({ status: 'pickup_assigned' })
+    .eq('id', orderId);
+
+  if (orderError) throw new Error(orderError.message);
 
   await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
     order_id: orderId,

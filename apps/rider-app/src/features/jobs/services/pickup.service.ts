@@ -624,10 +624,48 @@ async function adjustWalletForPickupEdit(
   }
 }
 
+async function clearDeliverySlot(orderId: string): Promise<void> {
+  const { error: rpcError } = await supabase.rpc('clear_order_delivery_slot', {
+    p_order_id: orderId,
+  });
+  if (!rpcError) return;
+
+  const { error: clearError } = await (supabase.from('orders') as ReturnType<
+    typeof supabase.from
+  >)
+    .update({ delivery_slot_id: null })
+    .eq('id', orderId);
+  if (clearError) {
+    throw new Error(clearError.message || 'Could not clear the delivery date.');
+  }
+
+  if (AUTH_PROVIDER === 'mock') return;
+
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+    if (!accessToken) return;
+
+    await fetch(`${getApiBaseUrl()}/api/rider/clear-delivery-slot`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ orderId }),
+    });
+  } catch {
+    // Date is already cleared. Seat count can be released later.
+  }
+}
+
 export async function confirmPickup(
   orderId: string,
   communityId: string,
   items: PickupLineItem[],
+  options?: { deliverTomorrow?: boolean },
 ): Promise<void> {
   const riderId = await getRiderId();
   if (!riderId) throw new Error('Rider not authenticated');
@@ -661,10 +699,16 @@ export async function confirmPickup(
 
   await writeOrderItems(orderId, lineItems);
 
+  const deliverTomorrow = options?.deliverTomorrow !== false;
+  if (!deliverTomorrow) {
+    await clearDeliverySlot(orderId);
+  }
+  const pickupStatus = deliverTomorrow ? 'picked_up' : 'picked_up_no_delivery';
+
   const { error: orderError } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)
     .update({
-      status: 'picked_up',
+      status: pickupStatus,
       subtotal,
       total_amount: subtotal,
     })
@@ -685,10 +729,14 @@ export async function confirmPickup(
 
   await (supabase.from('order_events') as ReturnType<typeof supabase.from>).insert({
     order_id: orderId,
-    status: 'picked_up',
-    note,
+    status: pickupStatus,
+    note: deliverTomorrow
+      ? note
+      : `${note}\n\nDelivery date is not estimated.`,
     actor_id: AUTH_PROVIDER === 'mock' ? MOCK_RIDER_ID : riderId,
-    metadata,
+    metadata: deliverTomorrow
+      ? metadata
+      : { ...metadata, delivery_date: 'not_estimated' },
   });
 
   await (supabase
@@ -696,6 +744,12 @@ export async function confirmPickup(
     .update({ status: 'completed', completed_at: new Date().toISOString() })
     .eq('order_id', orderId)
     .eq('job_type', 'pickup');
+
+  if (!deliverTomorrow) {
+    await debitWalletAfterPickup(orderId);
+    clearJobsCache();
+    return;
+  }
 
   const { data: orderSlots } = await (supabase
     .from('orders') as ReturnType<typeof supabase.from>)

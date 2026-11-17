@@ -20,6 +20,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'pickup_assigned',
   'pickup_in_progress',
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',
@@ -31,6 +32,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'delivered',
   'completed',
   'cancelled',
+  'failed',
 ];
 
 export const OrderDetailPage = () => {

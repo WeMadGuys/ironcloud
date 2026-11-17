@@ -928,7 +928,7 @@ export default function HomeScreen() {
     </View>
   );
 
-  // OFD takes priority; after delivery the same slot becomes the feedback prompt.
+  // Today's out-for-delivery order. After that, the feedback prompt.
   const statusBanner = ofdBooking ? (
     <OutForDeliveryBanner booking={ofdBooking} />
   ) : feedbackBooking ? (

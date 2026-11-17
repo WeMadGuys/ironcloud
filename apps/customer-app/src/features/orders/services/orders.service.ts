@@ -11,6 +11,7 @@ export type OrderStatus =
   | 'pickup_assigned'
   | 'pickup_in_progress'
   | 'picked_up'
+  | 'picked_up_no_delivery'
   | 'warehouse_received'
   | 'sorting'
   | 'ironing'
@@ -23,6 +24,7 @@ export type OrderStatus =
   | 'completed'
   | 'rated'
   | 'cancelled'
+  | 'failed'
   | 'refund_initiated'
   | 'refund_completed';
 
@@ -52,6 +54,8 @@ export type Order = {
   pickedUpAt: string | null;
   /** Latest pickup attempt failure, while the order is still waiting for pickup. */
   pickupFailureReason: string | null;
+  /** Latest delivery attempt failure, while the order status is failed. */
+  deliveryFailureReason: string | null;
 };
 
 const ACTIVE_STATUSES: OrderStatus[] = [
@@ -59,6 +63,7 @@ const ACTIVE_STATUSES: OrderStatus[] = [
   'pickup_assigned',
   'pickup_in_progress',
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',
@@ -75,6 +80,7 @@ const PREVIOUS_STATUSES: OrderStatus[] = [
   'completed',
   'rated',
   'cancelled',
+  'failed',
   'refund_initiated',
   'refund_completed',
 ];
@@ -133,11 +139,18 @@ function mapOrder(row: {
   const pickedUpEvent = (row.order_events || []).find(
     (event) => event.status === 'picked_up',
   );
-  const awaitingPickup = ['booked', 'pickup_assigned', 'pickup_in_progress'].includes(
-    row.status,
-  );
+  const stopFailure = latestStopFailure(row.order_events);
+  const deliveryFailureReason =
+    row.status === 'failed' && stopFailure?.jobType === 'delivery'
+      ? stopFailure.reason || null
+      : null;
+  const awaitingPickup =
+    ['booked', 'pickup_assigned', 'pickup_in_progress'].includes(row.status) ||
+    (row.status === 'failed' && !deliveryFailureReason);
   const pickupFailureReason = awaitingPickup
-    ? latestPickupFailureReason(row.order_events)
+    ? row.status === 'failed'
+      ? stopFailure?.reason || null
+      : latestPickupFailureReason(row.order_events)
     : null;
 
   return {
@@ -157,6 +170,27 @@ function mapOrder(row: {
     deliveryEnd: row.delivery_slot?.window_end ?? null,
     pickedUpAt: pickedUpEvent?.created_at ?? null,
     pickupFailureReason,
+    deliveryFailureReason,
+  };
+}
+
+function latestStopFailure(
+  events: Parameters<typeof mapOrder>[0]['order_events'],
+): { jobType: 'pickup' | 'delivery'; reason: string } | null {
+  const attempts = (events ?? [])
+    .filter((event) => {
+      const meta = event.metadata;
+      return meta?.kind === 'stop_failed' || meta?.kind === 'stop_resumed';
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  const latest = attempts[0]?.metadata;
+  if (latest?.kind !== 'stop_failed') return null;
+  return {
+    jobType: latest.jobType === 'delivery' ? 'delivery' : 'pickup',
+    reason: latest.reason?.trim() || '',
   };
 }
 
@@ -305,15 +339,21 @@ export async function getCustomerOrderById(orderId: string): Promise<Order | nul
   return mapOrder(data as Parameters<typeof mapOrder>[0]);
 }
 
-export function orderStatusLabel(order: Pick<Order, 'status' | 'pickupFailureReason'>): string {
+export function orderStatusLabel(
+  order: Pick<Order, 'status' | 'pickupFailureReason' | 'deliveryFailureReason'>,
+): string {
   if (order.pickupFailureReason) return 'Pickup failed';
+  if (order.deliveryFailureReason) return 'Delivery failed';
+  if (order.status === 'failed') return 'Failed';
   return getStatusLabel(order.status);
 }
 
 export function orderStatusDescription(
-  order: Pick<Order, 'status' | 'pickupFailureReason'>,
+  order: Pick<Order, 'status' | 'pickupFailureReason' | 'deliveryFailureReason'>,
 ): string {
   if (order.pickupFailureReason) return order.pickupFailureReason;
+  if (order.deliveryFailureReason) return order.deliveryFailureReason;
+  if (order.status === 'failed') return 'This attempt could not be completed.';
   return getStatusDescription(order.status);
 }
 
@@ -323,6 +363,7 @@ export function getStatusLabel(status: OrderStatus): string {
     pickup_assigned: 'Pickup Assigned',
     pickup_in_progress: 'Pickup In Progress',
     picked_up: 'Picked Up',
+    picked_up_no_delivery: 'Picked Up',
     warehouse_received: 'At Warehouse',
     sorting: 'Sorting',
     ironing: 'Ironing',
@@ -335,6 +376,7 @@ export function getStatusLabel(status: OrderStatus): string {
     completed: 'Completed',
     rated: 'Completed',
     cancelled: 'Cancelled',
+    failed: 'Failed',
   };
   return labels[status] || status;
 }
@@ -345,6 +387,8 @@ export function getStatusDescription(status: OrderStatus): string {
     pickup_assigned: 'A rider is assigned for pickup.',
     pickup_in_progress: 'Rider is on the way to pick up your clothes.',
     picked_up: 'Your clothes are on the way to our laundry.',
+    picked_up_no_delivery:
+      'Your clothes have been picked up. Delivery date is yet to be estimated.',
     warehouse_received: 'Your clothes have arrived at our facility.',
     sorting: 'Your clothes are being sorted.',
     ironing: 'Your clothes are being ironed.',
@@ -364,7 +408,8 @@ export function getStatusDescription(status: OrderStatus): string {
 export type ProgressStep = 'picked_up' | 'ironing' | 'out_for_delivery';
 
 export function getProgressStepIndex(status: OrderStatus): number {
-  if (['picked_up', 'warehouse_received', 'sorting'].includes(status)) return 0;
+  if (status === 'failed') return -1;
+  if (['picked_up', 'picked_up_no_delivery', 'warehouse_received', 'sorting'].includes(status)) return 0;
   if (['ironing', 'quality_check', 'packed', 'ready_for_delivery'].includes(status)) {
     return 1;
   }
@@ -431,4 +476,33 @@ export function formatSlotRange(
   })}`;
 
   return { dateLabel, timeLabel };
+}
+
+const AWAITING_PICKUP_STATUSES: OrderStatus[] = [
+  'booked',
+  'pickup_assigned',
+  'pickup_in_progress',
+];
+
+/** Delivery slot is only a hold until the rider confirms pickup. */
+export function isDeliveryDateConfirmed(
+  order: Pick<Order, 'status' | 'deliveryStart' | 'deliveryFailureReason'>,
+): boolean {
+  if (!order.deliveryStart) return false;
+  if (order.status === 'picked_up_no_delivery') return false;
+  if (AWAITING_PICKUP_STATUSES.includes(order.status)) return false;
+  if (order.status === 'failed' && !order.deliveryFailureReason) return false;
+  return true;
+}
+
+export function formatDeliverySlot(
+  order: Pick<
+    Order,
+    'status' | 'deliveryStart' | 'deliveryEnd' | 'deliveryFailureReason'
+  >,
+): { dateLabel: string; timeLabel: string } {
+  if (!isDeliveryDateConfirmed(order)) {
+    return { dateLabel: 'Yet to be estimated', timeLabel: '—' };
+  }
+  return formatSlotRange(order.deliveryStart, order.deliveryEnd);
 }

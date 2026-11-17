@@ -31,6 +31,84 @@ const emptyForm = () => ({
   communityId: '',
 });
 
+function wrapCanvasLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** Label image: apartment name, QR (box code only), then box code. */
+function buildBoxQrLabel(qrUrl: string, apartment: string, boxCode: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const width = 360;
+      const padX = 24;
+      const padY = 20;
+      const qrSize = 280;
+      const gap = 12;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Canvas unavailable'));
+        return;
+      }
+
+      const fontFamily = getComputedStyle(document.body).fontFamily || 'sans-serif';
+      ctx.font = `600 20px ${fontFamily}`;
+      const nameLines = apartment
+        ? wrapCanvasLines(ctx, apartment, width - padX * 2)
+        : [];
+      const nameLineHeight = 26;
+      const codeLineHeight = 34;
+      const nameBlock = nameLines.length * nameLineHeight;
+      const height =
+        padY +
+        nameBlock +
+        (nameLines.length ? gap : 0) +
+        qrSize +
+        gap +
+        codeLineHeight +
+        padY;
+
+      canvas.width = width;
+      canvas.height = height;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.fillStyle = '#101828';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.font = `600 20px ${fontFamily}`;
+      nameLines.forEach((line, index) => {
+        ctx.fillText(line, width / 2, padY + index * nameLineHeight);
+      });
+
+      const qrY = padY + nameBlock + (nameLines.length ? gap : 0);
+      ctx.drawImage(img, (width - qrSize) / 2, qrY, qrSize, qrSize);
+      ctx.font = `700 26px ${fontFamily}`;
+      ctx.fillText(boxCode, width / 2, qrY + qrSize + gap);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('QR image failed'));
+    img.src = qrUrl;
+  });
+}
+
 export const BoxesListPage = () => {
   const { toast } = useToast();
   const [page, setPage] = useState(1);
@@ -95,15 +173,19 @@ export const BoxesListPage = () => {
       return;
     }
     let cancelled = false;
+    const apartment = qrBox.communityName?.trim() ?? '';
     QRCode.toDataURL(qrBox.boxCode, {
       width: 280,
-      margin: 2,
+      margin: 1,
       errorCorrectionLevel: 'M',
-    }).then((url) => {
-      if (!cancelled) setQrDataUrl(url);
-    }).catch(() => {
-      if (!cancelled) setQrDataUrl(null);
-    });
+    })
+      .then((url) => buildBoxQrLabel(url, apartment, qrBox.boxCode))
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -395,15 +477,18 @@ export const BoxesListPage = () => {
       >
         <div className={styles.qrBody}>
           <p className={styles.qrHint}>
-            QR encodes only the box code. Print and attach to the physical box.
+            Print and attach to the physical box. The QR itself is still only the box code.
           </p>
           {qrDataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={qrDataUrl} alt={`QR for ${qrBox?.boxCode}`} className={styles.qrImage} />
+            <img
+              src={qrDataUrl}
+              alt={`QR for ${qrBox?.communityName ?? 'box'} ${qrBox?.boxCode ?? ''}`}
+              className={styles.qrImage}
+            />
           ) : (
             <Loader />
           )}
-          <p className={styles.qrCode}>{qrBox?.boxCode}</p>
         </div>
       </Modal>
     </div>

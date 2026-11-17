@@ -21,6 +21,7 @@ import {
 } from '@ironcloud/ui';
 
 import {
+  formatDeliverySlot,
   formatOrderDate,
   formatOrderDateTime,
   formatSlotRange,
@@ -81,6 +82,10 @@ export default function OrdersScreen() {
 
   const renderActiveOrderCard = (order: Order) => {
     const progressIndex = getProgressStepIndex(order.status);
+    const delivery = formatDeliverySlot(order);
+    const attemptFailed = Boolean(
+      order.pickupFailureReason || order.deliveryFailureReason || order.status === 'failed',
+    );
     return (
       <View key={order.id} style={styles.currentCard}>
         <View style={styles.currentHeader}>
@@ -97,14 +102,14 @@ export default function OrdersScreen() {
           <View
             style={[
               styles.statusIconWrap,
-              order.pickupFailureReason && styles.statusIconWrapFailed,
+              attemptFailed && styles.statusIconWrapFailed,
             ]}
           >
             <MaterialCommunityIcons
-              name={order.pickupFailureReason ? 'alert-circle-outline' : 'shopping'}
+              name={attemptFailed ? 'alert-circle-outline' : 'shopping'}
               size={28}
               color={
-                order.pickupFailureReason
+                attemptFailed
                   ? colors.status.warning.foreground
                   : colors.status.success.foreground
               }
@@ -114,7 +119,7 @@ export default function OrdersScreen() {
             <Text
               style={[
                 styles.statusTitle,
-                order.pickupFailureReason && styles.statusTitleFailed,
+                attemptFailed && styles.statusTitleFailed,
               ]}
             >
               {orderStatusLabel(order)}
@@ -214,10 +219,10 @@ export default function OrdersScreen() {
             </View>
             <Text style={styles.slotTitle}>Delivery Time</Text>
             <Text style={styles.slotDate}>
-              {formatSlotRange(order.deliveryStart, order.deliveryEnd).dateLabel}
+              {delivery.dateLabel}
             </Text>
             <Text style={styles.slotTime}>
-              {formatSlotRange(order.deliveryStart, order.deliveryEnd).timeLabel}
+              {delivery.timeLabel}
             </Text>
           </View>
         </View>

@@ -56,6 +56,7 @@ type Props = {
   onEdit: (row: PricingRuleRow) => void;
   onDelete: (id: string) => void;
   onReorder: (orderedIds: string[]) => void;
+  canReorder?: boolean;
 };
 
 function groupRows(rows: PricingRuleRow[]): { serviceId: string; rows: PricingRuleRow[] }[] {
@@ -79,6 +80,7 @@ function SortableGroup({
   targetLabel,
   onEdit,
   onDelete,
+  canReorder,
 }: {
   serviceId: string;
   rows: PricingRuleRow[];
@@ -87,9 +89,11 @@ function SortableGroup({
   targetLabel: Props['targetLabel'];
   onEdit: Props['onEdit'];
   onDelete: Props['onDelete'];
+  canReorder: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: serviceId,
+    disabled: !canReorder,
   });
   const name = rows[0]?.services?.name ?? 'service';
 
@@ -98,7 +102,7 @@ function SortableGroup({
       {rows.map((row, index) => (
         <tr key={row.id} className={(rowOffset + index) % 2 === 1 ? dragStyles.alt : undefined}>
           <td className={dragStyles.handleCell}>
-            {index === 0 ? (
+            {index === 0 && canReorder ? (
               <button
                 type="button"
                 className={dragStyles.handle}
@@ -139,6 +143,7 @@ export function PricingRulesTable({
   onEdit,
   onDelete,
   onReorder,
+  canReorder = true,
 }: Props) {
   const groups = groupRows(rows);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -200,6 +205,7 @@ export function PricingRulesTable({
                   targetLabel={targetLabel}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  canReorder={canReorder}
                 />
               );
             })}

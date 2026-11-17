@@ -89,6 +89,7 @@ export default function PickupScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [photoRefreshKey, setPhotoRefreshKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [deliverTomorrow, setDeliverTomorrow] = useState(true);
 
   const [attachedBoxes, setAttachedBoxes] = useState<OrderBoxRow[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -280,7 +281,7 @@ export default function PickupScreen() {
       if (isEditMode) {
         await updatePickupItems(orderId, communityId, lines);
       } else {
-        await confirmPickup(orderId, communityId, lines);
+        await confirmPickup(orderId, communityId, lines, { deliverTomorrow });
       }
       router.back();
     } catch (error) {
@@ -460,7 +461,10 @@ export default function PickupScreen() {
       ) : step === 'review' ? (
         <>
           <ScrollView
-            contentContainerStyle={[styles.list, isEditMode && styles.listWithCancel]}
+            contentContainerStyle={[
+              styles.list,
+              isEditMode ? styles.listWithCancel : styles.listWithTomorrow,
+            ]}
           >
             <Text style={styles.sectionTitle}>Selected garments</Text>
             {selectedLines.map((line) => {
@@ -491,6 +495,23 @@ export default function PickupScreen() {
               Total items: {total}
               {total > 0 ? `  ·  ₹${runningTotal}` : ''}
             </Text>
+            {!isEditMode ? (
+              <Pressable
+                style={styles.tomorrowRow}
+                onPress={() => setDeliverTomorrow((checked) => !checked)}
+                disabled={submitting}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: deliverTomorrow }}
+                accessibilityLabel="Tomorrow delivery"
+              >
+                <MaterialCommunityIcons
+                  name={deliverTomorrow ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                  size={22}
+                  color={colors.brand.primary}
+                />
+                <Text style={styles.tomorrowLabel}>Tomorrow delivery</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={[styles.confirmBtn, (total === 0 || submitting) && styles.confirmDisabled]}
               onPress={handleConfirm}
@@ -767,6 +788,7 @@ const styles = StyleSheet.create({
   },
   loader: { marginTop: spacing['2xl'] },
   list: { padding: spacing.lg, paddingBottom: 160 },
+  listWithTomorrow: { paddingBottom: 220 },
   listWithCancel: { paddingBottom: 230 },
   metaCard: {
     backgroundColor: colors.surface.elevated,
@@ -976,6 +998,19 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     marginBottom: spacing.sm,
     textAlign: 'center',
+  },
+  tomorrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    minHeight: 44,
+    marginBottom: spacing.sm,
+  },
+  tomorrowLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 15,
+    color: colors.text.heading,
   },
   scanBtn: {
     backgroundColor: colors.brand.primary,

@@ -24,6 +24,10 @@
   color: var(--ic-text-placeholder);
 }
 
+.inputWithClear {
+  padding-right: 32px;
+}
+
 .icon {
   position: absolute;
   left: var(--ic-spacing-md);
@@ -31,4 +35,27 @@
   transform: translateY(-50%);
   color: var(--ic-text-muted);
   pointer-events: none;
+}
+
+.clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ic-text-muted);
+  cursor: pointer;
+}
+
+.clear:hover {
+  color: var(--ic-text-primary);
+  background: var(--ic-surface-section);
 }

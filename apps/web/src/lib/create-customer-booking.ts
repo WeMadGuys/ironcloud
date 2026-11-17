@@ -11,6 +11,7 @@ const AWAITING_STATUSES = ['booked', 'pickup_assigned', 'pickup_in_progress'] as
 const ACTIVE_HOME_STATUSES = [
   ...AWAITING_STATUSES,
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',
@@ -20,6 +21,7 @@ const ACTIVE_HOME_STATUSES = [
   'delivery_assigned',
   'out_for_delivery',
   'delivered',
+  'failed',
 ] as const;
 
 export type CreateCustomerBookingInput = {

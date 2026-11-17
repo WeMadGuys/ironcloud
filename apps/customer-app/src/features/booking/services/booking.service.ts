@@ -52,6 +52,7 @@ const AWAITING_STATUSES = ['booked', 'pickup_assigned', 'pickup_in_progress'] as
 const ACTIVE_HOME_STATUSES = [
   ...AWAITING_STATUSES,
   'picked_up',
+  'picked_up_no_delivery',
   'warehouse_received',
   'sorting',
   'ironing',
@@ -61,6 +62,7 @@ const ACTIVE_HOME_STATUSES = [
   'delivery_assigned',
   'out_for_delivery',
   'delivered',
+  'failed',
 ] as const;
 
 export type HomeOrderPhase = 'awaiting_pickup' | 'picked_up' | 'delivered';
@@ -308,6 +310,26 @@ export function getHomeOrderPhase(status: string): HomeOrderPhase {
   return 'picked_up';
 }
 
+function latestStopFailure(
+  events: OrderRow['order_events'],
+): { jobType: 'pickup' | 'delivery'; reason: string } | null {
+  const attempts = (events ?? [])
+    .filter((event) => {
+      const meta = event.metadata;
+      return meta?.kind === 'stop_failed' || meta?.kind === 'stop_resumed';
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  const latest = attempts[0]?.metadata;
+  if (latest?.kind !== 'stop_failed') return null;
+  return {
+    jobType: latest.jobType === 'delivery' ? 'delivery' : 'pickup',
+    reason: latest.reason?.trim() || '',
+  };
+}
+
 function latestPickupFailureReason(
   events: OrderRow['order_events'],
 ): string | null {
@@ -333,6 +355,12 @@ function statusLabel(
   phase: HomeOrderPhase,
   pickupFailureReason: string | null,
 ): string {
+  if (status === 'picked_up_no_delivery') return 'Picked Up';
+  if (status === 'failed') {
+    if (pickupFailureReason) return 'Pickup failed';
+    if (phase !== 'awaiting_pickup') return 'Delivery failed';
+    return 'Failed';
+  }
   if (phase === 'awaiting_pickup' && pickupFailureReason) return 'Pickup failed';
   if (phase === 'awaiting_pickup') {
     return status === 'pickup_in_progress' ? 'Pickup In Progress' : 'Awaiting Pickup';
@@ -350,6 +378,14 @@ function statusDescription(
   pickupTimeLabel: string,
   pickupFailureReason: string | null,
 ): string {
+  if (status === 'picked_up_no_delivery') {
+    return 'Your clothes have been picked up. Delivery date is yet to be estimated.';
+  }
+  if (status === 'failed') {
+    if (pickupFailureReason) return pickupFailureReason;
+    if (phase !== 'awaiting_pickup') return 'This delivery attempt could not be completed.';
+    return 'This attempt could not be completed.';
+  }
   if (phase === 'awaiting_pickup' && pickupFailureReason) return pickupFailureReason;
   if (phase === 'awaiting_pickup') {
     return status === 'pickup_in_progress'
@@ -366,6 +402,7 @@ function statusDescription(
 }
 
 function partnerLabel(status: string, phase: HomeOrderPhase): string {
+  if (status === 'failed' && phase !== 'awaiting_pickup') return 'Delivery Partner';
   if (phase === 'awaiting_pickup') return 'Pickup Partner';
   if (['ready_for_delivery', 'delivery_assigned', 'out_for_delivery', 'delivered'].includes(status)) {
     return 'Delivery Partner';
@@ -653,13 +690,19 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     (event) => event.status === 'delivered',
   );
 
-  const phase = getHomeOrderPhase(row.status);
-  const useDeliveryPartner = [
-    'ready_for_delivery',
-    'delivery_assigned',
-    'out_for_delivery',
-    'delivered',
-  ].includes(row.status);
+  const stopFailure = latestStopFailure(row.order_events);
+  const failedDelivery = row.status === 'failed' && stopFailure?.jobType === 'delivery';
+  const phase = failedDelivery ? 'picked_up' : row.status === 'failed'
+    ? 'awaiting_pickup'
+    : getHomeOrderPhase(row.status);
+  const useDeliveryPartner =
+    failedDelivery ||
+    [
+      'ready_for_delivery',
+      'delivery_assigned',
+      'out_for_delivery',
+      'delivered',
+    ].includes(row.status);
   const jobType = useDeliveryPartner ? 'delivery' : 'pickup';
 
   let riderName = assignmentEvent?.metadata?.rider_name ?? null;
@@ -749,9 +792,15 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     };
   });
 
-  const pickupComplete = isPickupCompleteStatus(row.status);
+  const pickupComplete = row.status === 'failed' && !failedDelivery
+    ? false
+    : isPickupCompleteStatus(row.status);
   const pickupFailureReason =
-    phase === 'awaiting_pickup' ? latestPickupFailureReason(row.order_events) : null;
+    row.status === 'failed' && !failedDelivery
+      ? stopFailure?.reason || null
+      : phase === 'awaiting_pickup'
+        ? latestPickupFailureReason(row.order_events)
+        : null;
   const pickedUpAt = pickedUpEvent ? new Date(pickedUpEvent.created_at) : null;
   const deliveredAt = deliveredEvent ? new Date(deliveredEvent.created_at) : null;
 
@@ -765,6 +814,11 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     deliveredAt,
   );
 
+  const deliveryConfirmed =
+    phase !== 'awaiting_pickup' &&
+    row.status !== 'picked_up_no_delivery' &&
+    !!deliveryStart;
+
   const totalItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return {
@@ -777,13 +831,15 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
       row.status,
       phase,
       schedule.pickupTimeLabel,
-      pickupFailureReason,
+      failedDelivery ? stopFailure?.reason || null : pickupFailureReason,
     ),
     specialInstructions: row.special_instructions,
     pickupDateLabel: schedule.pickupDateLabel,
     pickupTimeLabel: schedule.pickupTimeLabel,
-    deliveryDateLabel: schedule.deliveryDateLabel,
-    deliveryTimeLabel: schedule.deliveryTimeLabel,
+    deliveryDateLabel: deliveryConfirmed
+      ? schedule.deliveryDateLabel
+      : 'Yet to be estimated',
+    deliveryTimeLabel: deliveryConfirmed ? schedule.deliveryTimeLabel : '—',
     addressName: communityName,
     addressDetail: [tower, flat].filter(Boolean).join(' • ') || 'Address on file',
     partnerLabel: partnerLabel(row.status, phase),
