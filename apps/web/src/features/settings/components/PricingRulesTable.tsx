@@ -19,13 +19,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import Icon from '@mdi/react';
-import { mdiDragVertical } from '@mdi/js';
+import { mdiClockOutline, mdiDragVertical } from '@mdi/js';
 import { useState } from 'react';
 
 import { Button } from '@/components';
 import tableStyles from '@/components/Table/Table.module.css';
 import { formatCurrency } from '@/utils/format';
-import { normalizeGarmentCategory } from '@ironcloud/db';
+import { formatReadyIn, normalizeGarmentCategory } from '@ironcloud/db';
 
 import dragStyles from './PricingRulesTable.module.css';
 
@@ -44,6 +44,7 @@ export type PricingRuleRow = {
   user_id?: string | null;
   base_price?: number | null;
   discount_price?: number | null;
+  estimated_days?: number | null;
   express_multiplier?: number | null;
   services: ServiceJoin;
   communities?: { name: string } | null;
@@ -66,10 +67,23 @@ function discountCell(row: PricingRuleRow) {
   if (!Number.isFinite(discount) || discount <= 0 || !Number.isFinite(base) || discount >= base) {
     return '—';
   }
+  const percent = Math.round(((base - discount) / base) * 100);
   return (
     <span className={dragStyles.priceQuote}>
+      <span className={dragStyles.now}>{formatCurrency(discount)}</span>
       <span className={dragStyles.struck}>{formatCurrency(base)}</span>
-      <span>{formatCurrency(discount)}</span>
+      {percent > 0 ? <span className={dragStyles.off}>{percent}% off</span> : null}
+    </span>
+  );
+}
+
+function readyCell(row: PricingRuleRow) {
+  const days = Number(row.estimated_days);
+  if (!Number.isInteger(days) || days < 1) return '—';
+  return (
+    <span className={dragStyles.ready}>
+      <Icon path={mdiClockOutline} size={0.55} />
+      {formatReadyIn(days)}
     </span>
   );
 }
@@ -135,6 +149,7 @@ function SortableGroup({
           <td>{targetLabel(row)}</td>
           <td>{formatCurrency(Number(row.base_price))}</td>
           <td>{discountCell(row)}</td>
+          <td>{readyCell(row)}</td>
           <td>{String(row.express_multiplier ?? 1.5)}</td>
           <td>
             <div className={dragStyles.actions}>
@@ -204,6 +219,7 @@ export function PricingRulesTable({
               <th>Target</th>
               <th>Base Price</th>
               <th>Discount</th>
+              <th>Ready in</th>
               <th>Express ×</th>
               <th>Actions</th>
             </tr>

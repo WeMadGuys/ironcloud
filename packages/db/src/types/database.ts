@@ -611,6 +611,7 @@ export interface Database {
           scope: string;
           base_price: number;
           discount_price: number | null;
+          estimated_days: number | null;
           express_multiplier: number;
           effective_from: string;
           effective_to: string | null;
@@ -624,6 +625,7 @@ export interface Database {
           scope?: string;
           base_price: number;
           discount_price?: number | null;
+          estimated_days?: number | null;
           express_multiplier?: number;
           effective_from?: string;
           effective_to?: string | null;
@@ -637,6 +639,7 @@ export interface Database {
           scope?: string;
           base_price?: number;
           discount_price?: number | null;
+          estimated_days?: number | null;
           express_multiplier?: number;
           effective_from?: string;
           effective_to?: string | null;

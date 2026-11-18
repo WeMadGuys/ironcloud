@@ -70,6 +70,7 @@ const pricingServiceObject = z.object({
   garmentCategory: z.string().min(1),
   basePrice: z.number().positive(),
   discountPrice: z.number().nullable().optional(),
+  estimatedDays: z.number().int().min(1).max(60).nullable().optional(),
   expressMultiplier: z.number().positive().optional(),
 });
 
@@ -114,6 +115,11 @@ function refinePricingService(val: PricingServiceInput, ctx: z.RefinementCtx) {
 function storedDiscountPrice(discountPrice: number | null | undefined): number | null {
   if (discountPrice == null || discountPrice === 0) return null;
   return discountPrice;
+}
+
+function storedEstimatedDays(estimatedDays: number | null | undefined): number | null {
+  if (estimatedDays == null) return null;
+  return estimatedDays;
 }
 
 function requireServiceName(value: string): string {
@@ -337,6 +343,7 @@ export const settingsRouter = router({
           service_id: serviceId,
           base_price: input.basePrice,
           discount_price: storedDiscountPrice(input.discountPrice),
+          estimated_days: storedEstimatedDays(input.estimatedDays),
           express_multiplier: input.expressMultiplier ?? 1.5,
           ...audienceColumns(input),
         })
@@ -358,6 +365,7 @@ export const settingsRouter = router({
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
           discountPrice: storedDiscountPrice(input.discountPrice),
+          estimatedDays: storedEstimatedDays(input.estimatedDays),
         },
       });
 
@@ -375,6 +383,7 @@ export const settingsRouter = router({
           service_id: serviceId,
           base_price: input.basePrice,
           discount_price: storedDiscountPrice(input.discountPrice),
+          estimated_days: storedEstimatedDays(input.estimatedDays),
           ...(input.expressMultiplier !== undefined
             ? { express_multiplier: input.expressMultiplier }
             : {}),
@@ -397,6 +406,7 @@ export const settingsRouter = router({
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
           discountPrice: storedDiscountPrice(input.discountPrice),
+          estimatedDays: storedEstimatedDays(input.estimatedDays),
         },
       });
 

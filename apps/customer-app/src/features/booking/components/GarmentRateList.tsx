@@ -23,6 +23,8 @@ import {
   getGarmentCatalog,
   type GarmentCatalogItem,
 } from '../services/catalog.service';
+import { PriceQuote } from './PriceQuote';
+import { ReadyIn } from './ReadyIn';
 
 type Props = {
   communityId: string | null;
@@ -55,23 +57,19 @@ function RateRow({
             color={colors.brand.primary}
           />
         </View>
-        <Text style={styles.rateName} numberOfLines={1}>
-          {item.name}
-        </Text>
-      </View>
-      <View style={[styles.rateRight, item.listPrice != null && styles.rateRightStacked]}>
-        {item.listPrice != null ? (
-          <Text style={styles.rateListPrice}>₹{item.listPrice}</Text>
-        ) : null}
-        <View style={styles.ratePayable}>
-          <Text style={styles.ratePrice}>
-            <Text style={styles.rateCurrency}>₹</Text>
-            {item.unitPrice}
+        <View style={styles.rateCopy}>
+          <Text style={styles.rateName} numberOfLines={1}>
+            {item.name}
           </Text>
-          <Text style={styles.rateUnit}>
-            {isWeightService(item) ? '/ kg' : '/ pc'}
-          </Text>
+          <ReadyIn days={item.estimatedDays} />
         </View>
+      </View>
+      <View style={styles.rateRight}>
+        <PriceQuote
+          price={item.unitPrice}
+          listPrice={item.listPrice}
+          unit={isWeightService(item) ? '/ kg' : '/ pc'}
+        />
       </View>
     </View>
   );
@@ -403,45 +401,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
   },
-  rateName: {
+  rateCopy: {
     flex: 1,
+    minWidth: 0,
+  },
+  rateName: {
     fontFamily: fonts.inter.medium,
     fontSize: 15,
     color: colors.text.heading,
   },
   rateRight: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-  },
-  rateRightStacked: {
-    flexDirection: 'column',
     alignItems: 'flex-end',
-    gap: 0,
-  },
-  ratePayable: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-  },
-  rateListPrice: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.muted,
-    textDecorationLine: 'line-through',
-  },
-  ratePrice: {
-    fontFamily: fonts.poppins.semibold,
-    fontSize: 18,
-    color: colors.text.heading,
-  },
-  rateCurrency: {
-    fontFamily: fonts.inter.bold,
-  },
-  rateUnit: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.muted,
+    marginLeft: spacing.sm,
   },
   loadingState: {
     alignItems: 'center',

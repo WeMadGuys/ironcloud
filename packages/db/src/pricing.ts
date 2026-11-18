@@ -63,6 +63,7 @@ export type PricingRuleCandidate = {
   service_id: string;
   base_price: number;
   discount_price?: number | null;
+  estimated_days?: number | null;
   scope: PricingScope;
   city: string | null;
   community_id: string | null;
@@ -75,9 +76,25 @@ export type ResolvedUnitPrice = {
   unitPrice: number;
   /** Base price when a discount applies, otherwise null. */
   listPrice: number | null;
+  /** Turnaround from the winning rule. Null when the rule does not set one. */
+  estimatedDays: number | null;
 };
 
-function quoteFromRule(rule: Pick<PricingRuleCandidate, 'base_price' | 'discount_price'>): ResolvedUnitPrice {
+/** Whole days from 1 to 60. Anything else is treated as unset. */
+export function normalizeEstimatedDays(value: number | string | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const days = Number(value);
+  if (!Number.isFinite(days) || !Number.isInteger(days) || days < 1 || days > 60) return null;
+  return days;
+}
+
+export function formatReadyIn(days: number): string {
+  return days === 1 ? '1 day' : `${days} days`;
+}
+
+function quoteFromRule(
+  rule: Pick<PricingRuleCandidate, 'base_price' | 'discount_price' | 'estimated_days'>,
+): ResolvedUnitPrice {
   const base = Number(rule.base_price);
   const raw = rule.discount_price;
   const discount = raw == null ? null : Number(raw);
@@ -86,6 +103,7 @@ function quoteFromRule(rule: Pick<PricingRuleCandidate, 'base_price' | 'discount
   return {
     unitPrice: hasDiscount ? discount : base,
     listPrice: hasDiscount ? base : null,
+    estimatedDays: normalizeEstimatedDays(rule.estimated_days),
   };
 }
 

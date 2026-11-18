@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   clampServiceQuantity,
+  formatReadyIn,
   isWeightService,
   listGarmentCategoryTabs,
   maxQuantityForService,
@@ -482,6 +483,18 @@ export default function PickupScreen() {
                       <Text style={styles.rowPrice}>
                         ₹{line.item.unitPrice} {unitSuffix} · × {line.quantity}
                       </Text>
+                      {line.item.estimatedDays != null && line.item.estimatedDays > 0 ? (
+                        <View style={styles.readyRow}>
+                          <MaterialCommunityIcons
+                            name="clock-outline"
+                            size={12}
+                            color={colors.text.muted}
+                          />
+                          <Text style={styles.rowReady}>
+                            {formatReadyIn(line.item.estimatedDays)}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
                   </View>
                   <Text style={styles.rowLineTotal}>₹{line.lineTotal}</Text>
@@ -700,6 +713,16 @@ export default function PickupScreen() {
                         <Text style={styles.rowPrice}>
                           ₹{item.unitPrice} {unitSuffix}
                         </Text>
+                        {item.estimatedDays != null && item.estimatedDays > 0 ? (
+                          <View style={styles.readyRow}>
+                            <MaterialCommunityIcons
+                              name="clock-outline"
+                              size={12}
+                              color={colors.text.muted}
+                            />
+                            <Text style={styles.rowReady}>{formatReadyIn(item.estimatedDays)}</Text>
+                          </View>
+                        ) : null}
                       </View>
                     </View>
                     <View style={styles.counter}>
@@ -963,6 +986,8 @@ const styles = StyleSheet.create({
   rowText: { flex: 1 },
   rowName: { fontFamily: fonts.inter.semibold, fontSize: 14, color: colors.text.heading },
   rowPrice: { fontFamily: fonts.inter.regular, fontSize: 12, color: colors.text.muted },
+  readyRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  rowReady: { fontFamily: fonts.inter.medium, fontSize: 12, color: colors.text.secondary },
   counter: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   counterBtn: {
     width: 36,

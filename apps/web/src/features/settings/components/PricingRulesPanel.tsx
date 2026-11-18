@@ -87,6 +87,7 @@ type PricingForm = {
   userLabel: string;
   basePrice: string;
   discountPrice: string;
+  estimatedDays: string;
   expressMultiplier: string;
 };
 
@@ -103,6 +104,7 @@ const emptyForm = (): PricingForm => ({
   userLabel: '',
   basePrice: '',
   discountPrice: '',
+  estimatedDays: '',
   expressMultiplier: '1.5',
 });
 
@@ -283,6 +285,10 @@ export const PricingRulesPanel = () => {
         row.discount_price != null && Number(row.discount_price) > 0
           ? String(row.discount_price)
           : '',
+      estimatedDays:
+        row.estimated_days != null && Number(row.estimated_days) > 0
+          ? String(row.estimated_days)
+          : '',
       expressMultiplier: String(row.express_multiplier ?? 1.5),
     });
     setModalOpen(true);
@@ -330,6 +336,15 @@ export const PricingRulesPanel = () => {
         return;
       }
     }
+    const rawDays = form.estimatedDays.trim();
+    let estimatedDays: number | null = null;
+    if (rawDays !== '') {
+      estimatedDays = Number(rawDays);
+      if (!Number.isInteger(estimatedDays) || estimatedDays < 1 || estimatedDays > 60) {
+        toast('Enter ready-in days from 1 to 60, or leave it empty', 'error');
+        return;
+      }
+    }
     if (form.scope === 'city' && !form.city.trim()) {
       toast('Select a city', 'error');
       return;
@@ -359,6 +374,7 @@ export const PricingRulesPanel = () => {
       userId: form.scope === 'user' ? form.userId : null,
       basePrice,
       discountPrice,
+      estimatedDays,
       expressMultiplier:
         Number.isFinite(expressMultiplier) && expressMultiplier > 0
           ? expressMultiplier
@@ -484,6 +500,7 @@ export const PricingRulesPanel = () => {
         targetLabel(row),
         row.base_price != null ? String(row.base_price) : '',
         row.discount_price != null ? String(row.discount_price) : '',
+        row.estimated_days != null ? String(row.estimated_days) : '',
         row.express_multiplier != null ? String(row.express_multiplier) : '',
       ]
         .join(' ')
@@ -819,21 +836,43 @@ export const PricingRulesPanel = () => {
             </div>
           </div>
 
-          <div className={formStyles.field}>
-            <label className={formStyles.label} htmlFor="pricing-express">
-              Express multiplier
-            </label>
-            <input
-              id="pricing-express"
-              className={formStyles.input}
-              type="number"
-              min={0}
-              step="any"
-              value={form.expressMultiplier}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, expressMultiplier: e.target.value }))
-              }
-            />
+          <div className={formStyles.row2}>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-days">
+                Ready in (days)
+              </label>
+              <input
+                id="pricing-days"
+                className={formStyles.input}
+                type="number"
+                min={1}
+                max={60}
+                step={1}
+                placeholder="Optional"
+                value={form.estimatedDays}
+                onChange={(e) => setForm((f) => ({ ...f, estimatedDays: e.target.value }))}
+              />
+              <p className={formStyles.hint}>
+                Shown under the garment name. Leave empty to hide.
+              </p>
+            </div>
+
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-express">
+                Express multiplier
+              </label>
+              <input
+                id="pricing-express"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                value={form.expressMultiplier}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, expressMultiplier: e.target.value }))
+                }
+              />
+            </div>
           </div>
         </div>
       </CreateEntityModal>

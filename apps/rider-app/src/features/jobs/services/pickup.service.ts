@@ -17,6 +17,7 @@ export type GarmentCatalogItem = {
   name: string;
   unit: string;
   unitPrice: number;
+  estimatedDays: number | null;
   garmentCategory: string;
 };
 
@@ -346,8 +347,17 @@ export async function getGarmentCatalog(opts: {
     (supabase.from('pricing_rules') as ReturnType<typeof supabase.from>);
 
   let { data: rules, error: rulesError } = await rulesQuery().select(
-    'service_id, base_price, discount_price, scope, city, community_id, user_id, effective_from',
+    'service_id, base_price, discount_price, estimated_days, scope, city, community_id, user_id, effective_from',
   );
+
+  if (rulesError && /estimated_days/i.test(rulesError.message ?? '')) {
+    console.warn('[Pickup] estimated_days unavailable:', rulesError.message);
+    const fallback = await rulesQuery().select(
+      'service_id, base_price, discount_price, scope, city, community_id, user_id, effective_from',
+    );
+    rules = fallback.data;
+    rulesError = fallback.error;
+  }
 
   if (rulesError && /discount_price/i.test(rulesError.message ?? '')) {
     console.warn('[Pickup] discount_price unavailable:', rulesError.message);
@@ -388,6 +398,7 @@ export async function getGarmentCatalog(opts: {
       name: service.name,
       unit: service.unit?.trim() || 'piece',
       unitPrice: priceMap.get(service.id)?.unitPrice ?? 0,
+      estimatedDays: priceMap.get(service.id)?.estimatedDays ?? null,
       garmentCategory: normalizeGarmentCategory(service.garment_category),
     }));
 }

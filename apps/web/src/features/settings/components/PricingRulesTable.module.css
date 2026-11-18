@@ -77,12 +77,39 @@
 
 .priceQuote {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
 }
 
+.now {
+  font-weight: 700;
+  color: var(--ic-status-success-text);
+}
+
 .struck {
-  color: var(--ic-text-muted);
+  color: var(--ic-text-secondary);
   font-size: var(--ic-font-size-sm);
   text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+}
+
+.ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ic-text-secondary);
+  font-size: var(--ic-font-size-sm);
+  font-weight: 600;
+}
+
+.off {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ic-status-success-bg);
+  color: var(--ic-status-success-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
 }

@@ -18,6 +18,8 @@ export type GarmentCatalogItem = {
   unitPrice: number;
   /** Base price when a discount applies. Null means unitPrice is the only rate. */
   listPrice: number | null;
+  /** Turnaround from the winning price rule. Null hides the estimate. */
+  estimatedDays: number | null;
   garmentCategory: string;
   icon: IconName;
 };
@@ -151,8 +153,17 @@ export async function getGarmentCatalog(opts: {
     (supabase.from('pricing_rules') as ReturnType<typeof supabase.from>);
 
   let { data: rules, error: rulesError } = await rulesQuery().select(
-    'service_id, base_price, discount_price, scope, city, community_id, user_id, effective_from',
+    'service_id, base_price, discount_price, estimated_days, scope, city, community_id, user_id, effective_from',
   );
+
+  if (rulesError && /estimated_days/i.test(rulesError.message ?? '')) {
+    console.warn('[Catalog] estimated_days unavailable:', rulesError.message);
+    const fallback = await rulesQuery().select(
+      'service_id, base_price, discount_price, scope, city, community_id, user_id, effective_from',
+    );
+    rules = fallback.data;
+    rulesError = fallback.error;
+  }
 
   if (rulesError && /discount_price/i.test(rulesError.message ?? '')) {
     console.warn('[Catalog] discount_price unavailable:', rulesError.message);
@@ -198,6 +209,7 @@ export async function getGarmentCatalog(opts: {
         unit: service.unit?.trim() || 'piece',
         unitPrice: quote?.unitPrice ?? 0,
         listPrice: quote?.listPrice ?? null,
+        estimatedDays: quote?.estimatedDays ?? null,
         garmentCategory: normalizeGarmentCategory(service.garment_category),
         icon: garmentIcon(service.name),
       };

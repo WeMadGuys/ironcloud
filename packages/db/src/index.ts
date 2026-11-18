@@ -29,7 +29,9 @@ export type {
 export {
   DEFAULT_GARMENT_CATEGORIES,
   PRICING_SCOPE_RANK,
+  formatReadyIn,
   listGarmentCategoryTabs,
+  normalizeEstimatedDays,
   normalizeGarmentCategory,
   pickBestUnitPrices,
   pricingRuleMatchesAudience,
