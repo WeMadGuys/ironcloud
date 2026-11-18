@@ -36,8 +36,9 @@ import {
 } from '../../src/features/orders/services/orders.service';
 
 const PROGRESS_STEPS = [
+  { key: 'awaiting_pickup', label: 'Awaiting Pickup' },
   { key: 'picked_up', label: 'Picked Up' },
-  { key: 'ironing', label: 'Ironing' },
+  { key: 'in_warehouse', label: 'In Warehouse' },
   { key: 'out_for_delivery', label: 'Out for Delivery' },
 ] as const;
 
@@ -181,7 +182,7 @@ export default function OrdersScreen() {
                 >
                   {step.label}
                 </Text>
-                {index === 0 && order.pickedUpAt ? (
+                {index === 1 && order.pickedUpAt ? (
                   <Text style={styles.progressMeta}>
                     {formatOrderDateTime(order.pickedUpAt)}
                   </Text>

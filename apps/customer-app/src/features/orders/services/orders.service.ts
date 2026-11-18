@@ -405,17 +405,25 @@ export function getStatusDescription(status: OrderStatus): string {
 }
 
 /** Progress steps shown on current order card */
-export type ProgressStep = 'picked_up' | 'ironing' | 'out_for_delivery';
+export type ProgressStep = 'awaiting_pickup' | 'picked_up' | 'in_warehouse' | 'out_for_delivery';
 
 export function getProgressStepIndex(status: OrderStatus): number {
   if (status === 'failed') return -1;
-  if (['picked_up', 'picked_up_no_delivery', 'warehouse_received', 'sorting'].includes(status)) return 0;
-  if (['ironing', 'quality_check', 'packed', 'ready_for_delivery'].includes(status)) {
-    return 1;
+  if (['booked', 'pickup_assigned', 'pickup_in_progress'].includes(status)) return 0;
+  if (['picked_up', 'picked_up_no_delivery'].includes(status)) return 1;
+  if (
+    ['warehouse_received', 'sorting', 'ironing', 'quality_check', 'packed', 'ready_for_delivery'].includes(
+      status,
+    )
+  ) {
+    return 2;
   }
-  if (['delivery_assigned', 'out_for_delivery'].includes(status)) return 2;
-  if (['booked', 'pickup_assigned', 'pickup_in_progress'].includes(status)) return -1;
-  return 0;
+  if (
+    ['delivery_assigned', 'out_for_delivery', 'delivered', 'completed', 'rated'].includes(status)
+  ) {
+    return 3;
+  }
+  return -1;
 }
 
 export function formatOrderDate(dateString: string): string {

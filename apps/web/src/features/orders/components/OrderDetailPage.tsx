@@ -31,6 +31,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'out_for_delivery',
   'delivered',
   'completed',
+  'rated',
   'cancelled',
   'failed',
 ];

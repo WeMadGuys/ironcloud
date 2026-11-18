@@ -392,6 +392,7 @@ export default function HomeScreen() {
   );
 
   const hasLoadedOnceRef = useRef(false);
+  const homeLoadRef = useRef(0);
 
   const tryShowPromoBanner = useCallback(
     async (
@@ -444,6 +445,7 @@ export default function HomeScreen() {
   }, []);
 
   const loadHomeData = useCallback(async (dayOffset: number, mode: 'initial' | 'content' = 'content') => {
+    const requestId = ++homeLoadRef.current;
     // Soft refresh: keep existing content visible after the first successful load.
     if (mode === 'initial') {
       setInitialLoading(true);
@@ -459,6 +461,8 @@ export default function HomeScreen() {
           fetchUserProfile(),
           supabase.auth.getSession(),
         ]);
+
+      if (requestId !== homeLoadRef.current) return;
 
       setDayBooking(snapshot.dayBooking);
       setBookedDays(snapshot.bookedDays);
@@ -513,8 +517,10 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Error loading home data:', error);
     } finally {
-      setInitialLoading(false);
-      setContentLoading(false);
+      if (requestId === homeLoadRef.current) {
+        setInitialLoading(false);
+        setContentLoading(false);
+      }
     }
   }, [router, tryShowPromoBanner]);
 
@@ -605,6 +611,13 @@ export default function HomeScreen() {
 
   const handleSelectDay = (index: number) => {
     if (index === selectedDay || contentLoading) return;
+    // Booking for this day arrives on the next snapshot. Hide the slot grid
+    // until then so a full chip does not flash before Awaiting Pickup.
+    // Bump the load id so an in-flight refresh cannot clear this loader early.
+    if (bookedDays.includes(index)) {
+      homeLoadRef.current += 1;
+      setContentLoading(true);
+    }
     setSlotClock(Date.now());
     setSelectedDay(index);
     // Slot and estimate belong to the day they were chosen on.
