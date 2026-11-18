@@ -43,6 +43,7 @@ export type PricingRuleRow = {
   city?: string | null;
   user_id?: string | null;
   base_price?: number | null;
+  discount_price?: number | null;
   express_multiplier?: number | null;
   services: ServiceJoin;
   communities?: { name: string } | null;
@@ -58,6 +59,20 @@ type Props = {
   onReorder: (orderedIds: string[]) => void;
   canReorder?: boolean;
 };
+
+function discountCell(row: PricingRuleRow) {
+  const discount = Number(row.discount_price);
+  const base = Number(row.base_price);
+  if (!Number.isFinite(discount) || discount <= 0 || !Number.isFinite(base) || discount >= base) {
+    return '—';
+  }
+  return (
+    <span className={dragStyles.priceQuote}>
+      <span className={dragStyles.struck}>{formatCurrency(base)}</span>
+      <span>{formatCurrency(discount)}</span>
+    </span>
+  );
+}
 
 function groupRows(rows: PricingRuleRow[]): { serviceId: string; rows: PricingRuleRow[] }[] {
   const groups: { serviceId: string; rows: PricingRuleRow[] }[] = [];
@@ -119,6 +134,7 @@ function SortableGroup({
           <td>{scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all'))}</td>
           <td>{targetLabel(row)}</td>
           <td>{formatCurrency(Number(row.base_price))}</td>
+          <td>{discountCell(row)}</td>
           <td>{String(row.express_multiplier ?? 1.5)}</td>
           <td>
             <div className={dragStyles.actions}>
@@ -187,6 +203,7 @@ export function PricingRulesTable({
               <th>Scope</th>
               <th>Target</th>
               <th>Base Price</th>
+              <th>Discount</th>
               <th>Express ×</th>
               <th>Actions</th>
             </tr>

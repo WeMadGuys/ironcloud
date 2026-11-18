@@ -24,6 +24,7 @@ import {
   formatOrderDate,
   formatSlotRange,
   getCustomerOrderById,
+  isAwaitingPickup,
   orderStatusDescription,
   orderStatusLabel,
   type Order,
@@ -68,6 +69,7 @@ export default function OrderDetailsScreen() {
     ? formatSlotRange(order.pickupStart, order.pickupEnd)
     : null;
   const delivery = order ? formatDeliverySlot(order) : null;
+  const showDelivery = order ? !isAwaitingPickup(order) : false;
   const garmentsTotal = order
     ? order.totalAmount ||
       order.items.reduce((sum, item) => sum + item.lineTotal, 0)
@@ -132,12 +134,16 @@ export default function OrderDetailsScreen() {
                 <Text style={styles.scheduleDate}>{pickup?.dateLabel}</Text>
                 <Text style={styles.scheduleTime}>{pickup?.timeLabel}</Text>
               </View>
-              <View style={styles.scheduleDivider} />
-              <View style={styles.scheduleCol}>
-                <Text style={styles.scheduleKind}>Delivery</Text>
-                <Text style={styles.scheduleDate}>{delivery?.dateLabel}</Text>
-                <Text style={styles.scheduleTime}>{delivery?.timeLabel}</Text>
-              </View>
+              {showDelivery && (
+                <>
+                  <View style={styles.scheduleDivider} />
+                  <View style={styles.scheduleCol}>
+                    <Text style={styles.scheduleKind}>Delivery</Text>
+                    <Text style={styles.scheduleDate}>{delivery?.dateLabel}</Text>
+                    <Text style={styles.scheduleTime}>{delivery?.timeLabel}</Text>
+                  </View>
+                </>
+              )}
             </View>
           </View>
 

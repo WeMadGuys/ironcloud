@@ -69,6 +69,7 @@ const pricingServiceObject = z.object({
   serviceName: z.string().optional().nullable(),
   garmentCategory: z.string().min(1),
   basePrice: z.number().positive(),
+  discountPrice: z.number().nullable().optional(),
   expressMultiplier: z.number().positive().optional(),
 });
 
@@ -91,6 +92,28 @@ function refinePricingService(val: PricingServiceInput, ctx: z.RefinementCtx) {
       path: ['garmentCategory'],
     });
   }
+  const discount = val.discountPrice;
+  if (discount == null || discount === 0) return;
+  if (!Number.isFinite(discount) || discount < 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Enter a valid discount price',
+      path: ['discountPrice'],
+    });
+    return;
+  }
+  if (discount >= val.basePrice) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Discount price must be lower than the base price',
+      path: ['discountPrice'],
+    });
+  }
+}
+
+function storedDiscountPrice(discountPrice: number | null | undefined): number | null {
+  if (discountPrice == null || discountPrice === 0) return null;
+  return discountPrice;
 }
 
 function requireServiceName(value: string): string {
@@ -313,6 +336,7 @@ export const settingsRouter = router({
         .insert({
           service_id: serviceId,
           base_price: input.basePrice,
+          discount_price: storedDiscountPrice(input.discountPrice),
           express_multiplier: input.expressMultiplier ?? 1.5,
           ...audienceColumns(input),
         })
@@ -333,6 +357,7 @@ export const settingsRouter = router({
           serviceName: input.serviceName?.trim() || null,
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
+          discountPrice: storedDiscountPrice(input.discountPrice),
         },
       });
 
@@ -349,6 +374,7 @@ export const settingsRouter = router({
         .update({
           service_id: serviceId,
           base_price: input.basePrice,
+          discount_price: storedDiscountPrice(input.discountPrice),
           ...(input.expressMultiplier !== undefined
             ? { express_multiplier: input.expressMultiplier }
             : {}),
@@ -370,6 +396,7 @@ export const settingsRouter = router({
           serviceName: input.serviceName?.trim() || null,
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
           scope: input.scope,
+          discountPrice: storedDiscountPrice(input.discountPrice),
         },
       });
 

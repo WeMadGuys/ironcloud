@@ -74,3 +74,15 @@
   outline: 2px solid var(--ic-border-focus);
   outline-offset: 2px;
 }
+
+.priceQuote {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.struck {
+  color: var(--ic-text-muted);
+  font-size: var(--ic-font-size-sm);
+  text-decoration: line-through;
+}

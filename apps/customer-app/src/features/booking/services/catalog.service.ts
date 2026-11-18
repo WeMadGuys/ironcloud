@@ -16,6 +16,8 @@ export type GarmentCatalogItem = {
   name: string;
   unit: string;
   unitPrice: number;
+  /** Base price when a discount applies. Null means unitPrice is the only rate. */
+  listPrice: number | null;
   garmentCategory: string;
   icon: IconName;
 };
@@ -145,11 +147,21 @@ export async function getGarmentCatalog(opts: {
     return [];
   }
 
-  const { data: rules, error: rulesError } = await (supabase
-    .from('pricing_rules') as ReturnType<typeof supabase.from>)
-    .select(
+  const rulesQuery = () =>
+    (supabase.from('pricing_rules') as ReturnType<typeof supabase.from>);
+
+  let { data: rules, error: rulesError } = await rulesQuery().select(
+    'service_id, base_price, discount_price, scope, city, community_id, user_id, effective_from',
+  );
+
+  if (rulesError && /discount_price/i.test(rulesError.message ?? '')) {
+    console.warn('[Catalog] discount_price unavailable:', rulesError.message);
+    const fallback = await rulesQuery().select(
       'service_id, base_price, scope, city, community_id, user_id, effective_from',
     );
+    rules = fallback.data;
+    rulesError = fallback.error;
+  }
 
   if (rulesError) {
     console.error('[Catalog] pricing_rules error:', rulesError);
@@ -178,12 +190,16 @@ export async function getGarmentCatalog(opts: {
       if (byOrder !== 0) return byOrder;
       return a.name.localeCompare(b.name);
     })
-    .map((service) => ({
-      serviceId: service.id,
-      name: service.name,
-      unit: service.unit?.trim() || 'piece',
-      unitPrice: priceMap.get(service.id) ?? 0,
-      garmentCategory: normalizeGarmentCategory(service.garment_category),
-      icon: garmentIcon(service.name),
-    }));
+    .map((service) => {
+      const quote = priceMap.get(service.id);
+      return {
+        serviceId: service.id,
+        name: service.name,
+        unit: service.unit?.trim() || 'piece',
+        unitPrice: quote?.unitPrice ?? 0,
+        listPrice: quote?.listPrice ?? null,
+        garmentCategory: normalizeGarmentCategory(service.garment_category),
+        icon: garmentIcon(service.name),
+      };
+    });
 }

@@ -86,6 +86,7 @@ type PricingForm = {
   userId: string;
   userLabel: string;
   basePrice: string;
+  discountPrice: string;
   expressMultiplier: string;
 };
 
@@ -101,6 +102,7 @@ const emptyForm = (): PricingForm => ({
   userId: '',
   userLabel: '',
   basePrice: '',
+  discountPrice: '',
   expressMultiplier: '1.5',
 });
 
@@ -277,6 +279,10 @@ export const PricingRulesPanel = () => {
           : profile.full_name
         : '',
       basePrice: String(row.base_price ?? ''),
+      discountPrice:
+        row.discount_price != null && Number(row.discount_price) > 0
+          ? String(row.discount_price)
+          : '',
       expressMultiplier: String(row.express_multiplier ?? 1.5),
     });
     setModalOpen(true);
@@ -311,6 +317,19 @@ export const PricingRulesPanel = () => {
       toast('Enter a valid base price', 'error');
       return;
     }
+    const rawDiscount = form.discountPrice.trim();
+    let discountPrice: number | null = null;
+    if (rawDiscount !== '' && Number(rawDiscount) !== 0) {
+      discountPrice = Number(rawDiscount);
+      if (!Number.isFinite(discountPrice) || discountPrice <= 0) {
+        toast('Enter a valid discount price', 'error');
+        return;
+      }
+      if (discountPrice >= basePrice) {
+        toast('Discount price must be lower than the base price', 'error');
+        return;
+      }
+    }
     if (form.scope === 'city' && !form.city.trim()) {
       toast('Select a city', 'error');
       return;
@@ -339,6 +358,7 @@ export const PricingRulesPanel = () => {
       communityId: form.scope === 'community' ? form.communityId : null,
       userId: form.scope === 'user' ? form.userId : null,
       basePrice,
+      discountPrice,
       expressMultiplier:
         Number.isFinite(expressMultiplier) && expressMultiplier > 0
           ? expressMultiplier
@@ -463,6 +483,7 @@ export const PricingRulesPanel = () => {
         scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all')),
         targetLabel(row),
         row.base_price != null ? String(row.base_price) : '',
+        row.discount_price != null ? String(row.discount_price) : '',
         row.express_multiplier != null ? String(row.express_multiplier) : '',
       ]
         .join(' ')
@@ -762,19 +783,40 @@ export const PricingRulesPanel = () => {
             </div>
           )}
 
-          <div className={formStyles.field}>
-            <label className={formStyles.label} htmlFor="pricing-base">
-              Base price (₹) *
-            </label>
-            <input
-              id="pricing-base"
-              className={formStyles.input}
-              type="number"
-              min={0}
-              step="any"
-              value={form.basePrice}
-              onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
-            />
+          <div className={formStyles.row2}>
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-base">
+                Base price (₹) *
+              </label>
+              <input
+                id="pricing-base"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                value={form.basePrice}
+                onChange={(e) => setForm((f) => ({ ...f, basePrice: e.target.value }))}
+              />
+            </div>
+
+            <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-discount">
+                Discount price (₹)
+              </label>
+              <input
+                id="pricing-discount"
+                className={formStyles.input}
+                type="number"
+                min={0}
+                step="any"
+                placeholder="Optional"
+                value={form.discountPrice}
+                onChange={(e) => setForm((f) => ({ ...f, discountPrice: e.target.value }))}
+              />
+              <p className={formStyles.hint}>
+                Leave empty for no discount. When set, the price sheet strikes the base price and charges this price.
+              </p>
+            </div>
           </div>
 
           <div className={formStyles.field}>

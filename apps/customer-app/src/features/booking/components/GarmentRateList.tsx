@@ -59,14 +59,19 @@ function RateRow({
           {item.name}
         </Text>
       </View>
-      <View style={styles.rateRight}>
-        <Text style={styles.ratePrice}>
-          <Text style={styles.rateCurrency}>₹</Text>
-          {item.unitPrice}
-        </Text>
-        <Text style={styles.rateUnit}>
-          {isWeightService(item) ? '/ kg' : '/ pc'}
-        </Text>
+      <View style={[styles.rateRight, item.listPrice != null && styles.rateRightStacked]}>
+        {item.listPrice != null ? (
+          <Text style={styles.rateListPrice}>₹{item.listPrice}</Text>
+        ) : null}
+        <View style={styles.ratePayable}>
+          <Text style={styles.ratePrice}>
+            <Text style={styles.rateCurrency}>₹</Text>
+            {item.unitPrice}
+          </Text>
+          <Text style={styles.rateUnit}>
+            {isWeightService(item) ? '/ kg' : '/ pc'}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -408,6 +413,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 2,
+  },
+  rateRightStacked: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 0,
+  },
+  ratePayable: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  rateListPrice: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 12,
+    color: colors.text.muted,
+    textDecorationLine: 'line-through',
   },
   ratePrice: {
     fontFamily: fonts.poppins.semibold,

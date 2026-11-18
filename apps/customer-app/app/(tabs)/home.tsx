@@ -1194,7 +1194,7 @@ export default function HomeScreen() {
               />
             </View>
             <View style={styles.summaryText}>
-              <Text style={styles.summaryTitle}>Delivery Time</Text>
+              <Text style={styles.summaryTitle}>Expected delivery time</Text>
               <Text style={styles.summarySubtitle} numberOfLines={2}>
                 {deliveryPreviewLabel}
               </Text>

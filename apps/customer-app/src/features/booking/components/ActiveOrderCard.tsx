@@ -200,20 +200,24 @@ export function ActiveOrderCard({
           </View>
         </View>
 
-        <View style={styles.scheduleDivider} />
+        {!isAwaiting && (
+          <>
+            <View style={styles.scheduleDivider} />
 
-        <View style={styles.scheduleCol}>
-          <View style={styles.scheduleLabelRow}>
-            <View style={[styles.scheduleDot, styles.scheduleDotDelivery]} />
-            <Text style={styles.scheduleLabel}>Delivery</Text>
-          </View>
-          <Text style={styles.scheduleDate}>{booking.deliveryDateLabel}</Text>
-          <View style={[styles.timePill, styles.timePillDelivery]}>
-            <Text style={[styles.timePillText, styles.timePillTextDelivery]}>
-              {booking.deliveryTimeLabel}
-            </Text>
-          </View>
-        </View>
+            <View style={styles.scheduleCol}>
+              <View style={styles.scheduleLabelRow}>
+                <View style={[styles.scheduleDot, styles.scheduleDotDelivery]} />
+                <Text style={styles.scheduleLabel}>Delivery</Text>
+              </View>
+              <Text style={styles.scheduleDate}>{booking.deliveryDateLabel}</Text>
+              <View style={[styles.timePill, styles.timePillDelivery]}>
+                <Text style={[styles.timePillText, styles.timePillTextDelivery]}>
+                  {booking.deliveryTimeLabel}
+                </Text>
+              </View>
+            </View>
+          </>
+        )}
       </View>
 
       {/* Partner */}

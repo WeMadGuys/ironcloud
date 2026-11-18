@@ -379,7 +379,7 @@ function statusDescription(
   pickupFailureReason: string | null,
 ): string {
   if (status === 'picked_up_no_delivery') {
-    return 'Your clothes have been picked up. Delivery date is yet to be estimated.';
+    return 'Your clothes have been picked up. Delivery date is yet to be decided.';
   }
   if (status === 'failed') {
     if (pickupFailureReason) return pickupFailureReason;
@@ -814,10 +814,9 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     deliveredAt,
   );
 
-  const deliveryConfirmed =
+  const deliveryUndecided =
     phase !== 'awaiting_pickup' &&
-    row.status !== 'picked_up_no_delivery' &&
-    !!deliveryStart;
+    (row.status === 'picked_up_no_delivery' || !deliveryStart);
 
   const totalItemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -836,10 +835,10 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     specialInstructions: row.special_instructions,
     pickupDateLabel: schedule.pickupDateLabel,
     pickupTimeLabel: schedule.pickupTimeLabel,
-    deliveryDateLabel: deliveryConfirmed
-      ? schedule.deliveryDateLabel
-      : 'Yet to be estimated',
-    deliveryTimeLabel: deliveryConfirmed ? schedule.deliveryTimeLabel : '—',
+    deliveryDateLabel: deliveryUndecided
+      ? 'Yet to be decided'
+      : schedule.deliveryDateLabel,
+    deliveryTimeLabel: deliveryUndecided ? '—' : schedule.deliveryTimeLabel,
     addressName: communityName,
     addressDetail: [tower, flat].filter(Boolean).join(' • ') || 'Address on file',
     partnerLabel: partnerLabel(row.status, phase),

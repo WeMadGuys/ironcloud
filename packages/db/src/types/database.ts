@@ -610,6 +610,7 @@ export interface Database {
           user_id: string | null;
           scope: string;
           base_price: number;
+          discount_price: number | null;
           express_multiplier: number;
           effective_from: string;
           effective_to: string | null;
@@ -622,6 +623,7 @@ export interface Database {
           user_id?: string | null;
           scope?: string;
           base_price: number;
+          discount_price?: number | null;
           express_multiplier?: number;
           effective_from?: string;
           effective_to?: string | null;
@@ -634,6 +636,7 @@ export interface Database {
           user_id?: string | null;
           scope?: string;
           base_price?: number;
+          discount_price?: number | null;
           express_multiplier?: number;
           effective_from?: string;
           effective_to?: string | null;

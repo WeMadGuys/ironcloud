@@ -36,6 +36,7 @@ export {
   type PricingAudienceContext,
   type PricingRuleCandidate,
   type PricingScope,
+  type ResolvedUnitPrice,
 } from './pricing';
 
 export {

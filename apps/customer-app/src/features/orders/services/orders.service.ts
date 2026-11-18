@@ -388,7 +388,7 @@ export function getStatusDescription(status: OrderStatus): string {
     pickup_in_progress: 'Rider is on the way to pick up your clothes.',
     picked_up: 'Your clothes are on the way to our laundry.',
     picked_up_no_delivery:
-      'Your clothes have been picked up. Delivery date is yet to be estimated.',
+      'Your clothes have been picked up. Delivery date is yet to be decided.',
     warehouse_received: 'Your clothes have arrived at our facility.',
     sorting: 'Your clothes are being sorted.',
     ironing: 'Your clothes are being ironed.',
@@ -484,14 +484,20 @@ const AWAITING_PICKUP_STATUSES: OrderStatus[] = [
   'pickup_in_progress',
 ];
 
-/** Delivery slot is only a hold until the rider confirms pickup. */
+export function isAwaitingPickup(
+  order: Pick<Order, 'status' | 'deliveryFailureReason'>,
+): boolean {
+  if (AWAITING_PICKUP_STATUSES.includes(order.status)) return true;
+  return order.status === 'failed' && !order.deliveryFailureReason;
+}
+
+/** True once pickup is done and a delivery slot is still on the order. */
 export function isDeliveryDateConfirmed(
   order: Pick<Order, 'status' | 'deliveryStart' | 'deliveryFailureReason'>,
 ): boolean {
   if (!order.deliveryStart) return false;
   if (order.status === 'picked_up_no_delivery') return false;
-  if (AWAITING_PICKUP_STATUSES.includes(order.status)) return false;
-  if (order.status === 'failed' && !order.deliveryFailureReason) return false;
+  if (isAwaitingPickup(order)) return false;
   return true;
 }
 
@@ -501,8 +507,11 @@ export function formatDeliverySlot(
     'status' | 'deliveryStart' | 'deliveryEnd' | 'deliveryFailureReason'
   >,
 ): { dateLabel: string; timeLabel: string } {
+  if (isAwaitingPickup(order)) {
+    return formatSlotRange(order.deliveryStart, order.deliveryEnd);
+  }
   if (!isDeliveryDateConfirmed(order)) {
-    return { dateLabel: 'Yet to be estimated', timeLabel: '—' };
+    return { dateLabel: 'Yet to be decided', timeLabel: '—' };
   }
   return formatSlotRange(order.deliveryStart, order.deliveryEnd);
 }

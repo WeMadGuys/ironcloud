@@ -62,12 +62,32 @@ export const PRICING_SCOPE_RANK: Record<PricingScope, number> = {
 export type PricingRuleCandidate = {
   service_id: string;
   base_price: number;
+  discount_price?: number | null;
   scope: PricingScope;
   city: string | null;
   community_id: string | null;
   user_id: string | null;
   effective_from: string;
 };
+
+export type ResolvedUnitPrice = {
+  /** Amount charged. Discount price when it is greater than 0 and below the base price. */
+  unitPrice: number;
+  /** Base price when a discount applies, otherwise null. */
+  listPrice: number | null;
+};
+
+function quoteFromRule(rule: Pick<PricingRuleCandidate, 'base_price' | 'discount_price'>): ResolvedUnitPrice {
+  const base = Number(rule.base_price);
+  const raw = rule.discount_price;
+  const discount = raw == null ? null : Number(raw);
+  const hasDiscount =
+    discount != null && Number.isFinite(discount) && discount > 0 && discount < base;
+  return {
+    unitPrice: hasDiscount ? discount : base,
+    listPrice: hasDiscount ? base : null,
+  };
+}
 
 export type PricingAudienceContext = {
   userId?: string | null;
@@ -108,10 +128,10 @@ export function pricingRuleMatchesAudience(
 export function pickBestUnitPrices(
   rules: PricingRuleCandidate[],
   ctx: PricingAudienceContext,
-): Map<string, number> {
+): Map<string, ResolvedUnitPrice> {
   const best = new Map<
     string,
-    { rank: number; effectiveFrom: string; price: number }
+    { rank: number; effectiveFrom: string; quote: ResolvedUnitPrice }
   >();
 
   for (const rule of rules) {
@@ -129,14 +149,14 @@ export function pickBestUnitPrices(
       best.set(rule.service_id, {
         rank,
         effectiveFrom,
-        price: Number(rule.base_price),
+        quote: quoteFromRule(rule),
       });
     }
   }
 
-  const prices = new Map<string, number>();
+  const prices = new Map<string, ResolvedUnitPrice>();
   for (const [serviceId, row] of best) {
-    prices.set(serviceId, row.price);
+    prices.set(serviceId, row.quote);
   }
   return prices;
 }

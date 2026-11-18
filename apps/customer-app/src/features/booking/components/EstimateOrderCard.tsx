@@ -73,6 +73,9 @@ function CounterRow({
         />
         <View style={styles.counterText}>
           <Text style={styles.rowName}>{item.name}</Text>
+          {item.listPrice != null ? (
+            <Text style={styles.rowListPrice}>₹{item.listPrice}</Text>
+          ) : null}
           <Text style={styles.rowPrice}>
             ₹{item.unitPrice} {unitSuffix}
           </Text>
@@ -421,6 +424,13 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.medium,
     fontSize: 15,
     color: colors.text.heading,
+  },
+  rowListPrice: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 11,
+    color: colors.text.muted,
+    textDecorationLine: 'line-through',
+    marginTop: 2,
   },
   rowPrice: {
     fontFamily: fonts.inter.regular,

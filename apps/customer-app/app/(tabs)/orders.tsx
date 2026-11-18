@@ -29,6 +29,7 @@ import {
   getCustomerOrders,
   getProgressStepIndex,
   getStatusLabel,
+  isAwaitingPickup,
   orderStatusDescription,
   orderStatusLabel,
   type Order,
@@ -83,6 +84,7 @@ export default function OrdersScreen() {
   const renderActiveOrderCard = (order: Order) => {
     const progressIndex = getProgressStepIndex(order.status);
     const delivery = formatDeliverySlot(order);
+    const showDelivery = !isAwaitingPickup(order);
     const attemptFailed = Boolean(
       order.pickupFailureReason || order.deliveryFailureReason || order.status === 'failed',
     );
@@ -208,23 +210,27 @@ export default function OrdersScreen() {
               {formatSlotRange(order.pickupStart, order.pickupEnd).timeLabel}
             </Text>
           </View>
-          <View style={styles.slotDivider} />
-          <View style={styles.slotCol}>
-            <View style={[styles.slotIconWrap, styles.slotIconDelivery]}>
-              <MaterialCommunityIcons
-                name="tshirt-crew-outline"
-                size={18}
-                color={colors.brand.accent}
-              />
-            </View>
-            <Text style={styles.slotTitle}>Delivery Time</Text>
-            <Text style={styles.slotDate}>
-              {delivery.dateLabel}
-            </Text>
-            <Text style={styles.slotTime}>
-              {delivery.timeLabel}
-            </Text>
-          </View>
+          {showDelivery && (
+            <>
+              <View style={styles.slotDivider} />
+              <View style={styles.slotCol}>
+                <View style={[styles.slotIconWrap, styles.slotIconDelivery]}>
+                  <MaterialCommunityIcons
+                    name="tshirt-crew-outline"
+                    size={18}
+                    color={colors.brand.accent}
+                  />
+                </View>
+                <Text style={styles.slotTitle}>Delivery Time</Text>
+                <Text style={styles.slotDate}>
+                  {delivery.dateLabel}
+                </Text>
+                <Text style={styles.slotTime}>
+                  {delivery.timeLabel}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
         {order.items.length > 0 && (
