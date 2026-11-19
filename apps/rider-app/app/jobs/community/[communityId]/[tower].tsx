@@ -63,6 +63,7 @@ export default function FlatListScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [flats, setFlats] = useState<FlatJob[]>([]);
   const [resumingOrderId, setResumingOrderId] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
   const hasLoadedRef = useRef(false);
 
   const load = useCallback(async (force = false) => {
@@ -152,6 +153,13 @@ export default function FlatListScreen() {
         flat: flat.flatNumber,
       },
     });
+  };
+
+  const toggleItemList = (jobId: string) => {
+    setExpandedItems((current) => ({
+      ...current,
+      [jobId]: !current[jobId],
+    }));
   };
 
   const callCustomer = async (phone: string | null) => {
@@ -286,15 +294,32 @@ export default function FlatListScreen() {
 
                 {flat.itemSummary.length > 0 ? (
                   <View style={styles.itemsBlock}>
-                    {flat.itemSummary.slice(0, 4).map((item, index) => (
+                    {(expandedItems[flat.jobId]
+                      ? flat.itemSummary
+                      : flat.itemSummary.slice(0, 4)
+                    ).map((item, index) => (
                       <Text key={`${item.name}-${index}`} style={styles.itemLine}>
                         {item.quantity}× {item.name}
                       </Text>
                     ))}
                     {flat.itemSummary.length > 4 ? (
-                      <Text style={styles.itemMore}>
-                        +{flat.itemSummary.length - 4} more
-                      </Text>
+                      <Pressable
+                        onPress={() => toggleItemList(flat.jobId)}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: Boolean(expandedItems[flat.jobId]) }}
+                        accessibilityLabel={
+                          expandedItems[flat.jobId]
+                            ? 'Show fewer items'
+                            : `Show ${flat.itemSummary.length - 4} more items`
+                        }
+                      >
+                        <Text style={styles.itemMore}>
+                          {expandedItems[flat.jobId]
+                            ? 'Show less'
+                            : `+${flat.itemSummary.length - 4} more`}
+                        </Text>
+                      </Pressable>
                     ) : null}
                   </View>
                 ) : (
@@ -394,10 +419,11 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   itemMore: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.muted,
-    marginTop: 2,
+    fontFamily: fonts.inter.semibold,
+    fontSize: 13,
+    color: colors.brand.primary,
+    marginTop: 4,
+    paddingVertical: 4,
   },
   noItemsHint: {
     marginTop: spacing.sm,

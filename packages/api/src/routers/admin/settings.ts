@@ -143,7 +143,11 @@ function requireGarmentCategory(value: string | null | undefined): string {
 }
 
 function requireServiceLine(value: string | null | undefined): string {
-  return normalizeServiceLine(value);
+  const trimmed = (value ?? '').trim().replace(/\s+/g, ' ');
+  if (!trimmed) throw new Error('Select a service type');
+  if (trimmed.length > 40) throw new Error('Service type name is too long');
+  if (!/[a-z0-9]/i.test(trimmed)) throw new Error('Enter a service type');
+  return normalizeServiceLine(trimmed);
 }
 
 function sameServiceIdentity(

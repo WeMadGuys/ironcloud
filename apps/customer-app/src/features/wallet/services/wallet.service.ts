@@ -48,9 +48,53 @@ export type ApplicableWalletOffers = {
 const walletCache = createTtlCache<WalletInfo>(WALLET_CACHE_TTL_MS);
 const couponsCache = createTtlCache<ApplicableWalletOffers>(COUPONS_CACHE_TTL_MS);
 let walletInflight: Promise<WalletInfo | null> | null = null;
+let walletFetchGeneration = 0;
+let lastWalletId: string | null = null;
+const walletBalanceListeners = new Set<(balance: number) => void>();
+
+const RECONCILE_ATTEMPTS = 8;
+const RECONCILE_DELAY_MS = 1200;
 
 export function getCachedWallet(): WalletInfo | null {
   return walletCache.get();
+}
+
+export function subscribeWalletBalance(listener: (balance: number) => void): () => void {
+  walletBalanceListeners.add(listener);
+  return () => {
+    walletBalanceListeners.delete(listener);
+  };
+}
+
+function notifyWalletBalance(balance: number): void {
+  const prev = walletCache.get();
+  const walletId = prev?.id ?? lastWalletId;
+  if (walletId) {
+    lastWalletId = walletId;
+    walletCache.set({ id: walletId, balance });
+  }
+  walletBalanceListeners.forEach((listener) => listener(balance));
+}
+
+function applyTopUpSuccess(payload: {
+  balance?: number;
+  bonus?: number;
+  creditTotal?: number;
+  amount?: number;
+}): { balance: number; bonus: number; creditTotal: number } {
+  const balance = Number(payload.balance ?? 0);
+  const bonus = Number(payload.bonus ?? 0);
+  const creditTotal = Number(payload.creditTotal ?? payload.amount ?? 0);
+  walletFetchGeneration += 1;
+  couponsCache.clear();
+  notifyWalletBalance(balance);
+  return { balance, bonus, creditTotal };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 export function getCachedApplicableWalletOffers(): ApplicableWalletOffers | null {
@@ -65,6 +109,8 @@ export function clearWalletCache(): void {
   walletCache.clear();
   couponsCache.clear();
   walletInflight = null;
+  lastWalletId = null;
+  walletFetchGeneration += 1;
 }
 
 export function calcClientWalletBonus(
@@ -126,34 +172,41 @@ async function fetchWalletUncached(): Promise<WalletInfo | null> {
     return null;
   }
 
-  return {
+  const wallet = {
     id: (data as { id: string }).id,
     balance: Number((data as { balance: number }).balance),
   };
+  lastWalletId = wallet.id;
+  return wallet;
 }
 
 export async function getWallet(options?: {
   force?: boolean;
 }): Promise<WalletInfo | null> {
-  if (options?.force) {
-    walletCache.clear();
-    walletInflight = null;
-  } else {
+  if (!options?.force) {
     const cached = walletCache.get();
     if (cached) return cached;
     if (walletInflight) return walletInflight;
   }
 
-  walletInflight = (async () => {
+  const generation = ++walletFetchGeneration;
+  const promise = (async () => {
     const wallet = await fetchWalletUncached();
-    if (wallet) walletCache.set(wallet);
+    if (generation !== walletFetchGeneration) {
+      return walletCache.get() ?? wallet;
+    }
+    if (wallet) {
+      walletCache.set(wallet);
+      notifyWalletBalance(wallet.balance);
+    }
     return wallet;
   })();
 
+  walletInflight = promise;
   try {
-    return await walletInflight;
+    return await promise;
   } finally {
-    walletInflight = null;
+    if (walletInflight === promise) walletInflight = null;
   }
 }
 
@@ -249,6 +302,58 @@ export async function listApplicableWalletCoupons(options?: {
   }, options?.force);
 }
 
+type ReconcilePayload = {
+  status?: 'credited' | 'pending';
+  orderStatus?: string;
+  balance?: number;
+  bonus?: number;
+  creditTotal?: number;
+  amount?: number;
+  error?: string;
+};
+
+async function reconcileRazorpayOrderOnce(
+  apiBase: string,
+  token: string,
+  razorpayOrderId: string,
+): Promise<ReconcilePayload> {
+  const response = await fetch(`${apiBase}/api/payments/razorpay/reconcile`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ razorpayOrderId }),
+  });
+
+  const payload = (await response.json().catch(() => ({}))) as ReconcilePayload;
+  if (!response.ok) {
+    throw new Error(payload.error || 'Could not confirm payment.');
+  }
+  return payload;
+}
+
+async function recoverRazorpayTopUp(
+  apiBase: string,
+  token: string,
+  razorpayOrderId: string,
+  fallbackAmount: number,
+): Promise<{ balance: number; bonus: number; creditTotal: number } | null> {
+  for (let i = 0; i < RECONCILE_ATTEMPTS; i++) {
+    if (i > 0) await sleep(RECONCILE_DELAY_MS);
+    try {
+      const result = await reconcileRazorpayOrderOnce(apiBase, token, razorpayOrderId);
+      if (result.status === 'credited') {
+        return applyTopUpSuccess({ ...result, amount: fallbackAmount });
+      }
+    } catch {
+      // Payment may still be capturing after UPI returns — keep checking.
+    }
+  }
+
+  return null;
+}
+
 export async function topUpWallet(params: {
   amount: number;
   couponCode?: string | null;
@@ -285,12 +390,12 @@ export async function topUpWallet(params: {
       throw new Error(payload.error || 'Top-up failed.');
     }
 
-    clearWalletCache();
-    return {
-      balance: Number(payload.balance ?? 0),
-      bonus: Number(payload.bonus ?? 0),
-      creditTotal: Number(payload.creditTotal ?? params.amount),
-    };
+    return applyTopUpSuccess({
+      balance: payload.balance,
+      bonus: payload.bonus,
+      creditTotal: payload.creditTotal,
+      amount: params.amount,
+    });
   }
 
   const orderResponse = await fetch(`${apiBase}/api/payments/razorpay/create-order`, {
@@ -339,6 +444,14 @@ export async function topUpWallet(params: {
       },
     });
   } catch (err) {
+    const recovered = await recoverRazorpayTopUp(
+      apiBase,
+      token,
+      orderPayload.orderId,
+      params.amount,
+    );
+    if (recovered) return recovered;
+
     const code = (err as { code?: number })?.code;
     if (code === 0 || code === 2) {
       throw new Error('Payment cancelled.');
@@ -367,16 +480,24 @@ export async function topUpWallet(params: {
     error?: string;
   };
 
-  if (!verifyResponse.ok) {
-    throw new Error(verifyPayload.error || 'Payment verification failed.');
+  if (verifyResponse.ok) {
+    return applyTopUpSuccess({
+      balance: verifyPayload.balance,
+      bonus: verifyPayload.bonus,
+      creditTotal: verifyPayload.creditTotal,
+      amount: params.amount,
+    });
   }
 
-  clearWalletCache();
-  return {
-    balance: Number(verifyPayload.balance ?? 0),
-    bonus: Number(verifyPayload.bonus ?? 0),
-    creditTotal: Number(verifyPayload.creditTotal ?? params.amount),
-  };
+  const recovered = await recoverRazorpayTopUp(
+    apiBase,
+    token,
+    orderPayload.orderId,
+    params.amount,
+  );
+  if (recovered) return recovered;
+
+  throw new Error(verifyPayload.error || 'Payment verification failed.');
 }
 
 export function formatTransactionDate(dateString: string): string {

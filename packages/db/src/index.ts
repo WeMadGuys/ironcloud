@@ -35,6 +35,7 @@ export {
   formatServiceDisplayName,
   formatServiceOptionLabel,
   listGarmentCategoryTabs,
+  listServiceLineChoices,
   listUsedServiceLines,
   normalizeEstimatedDays,
   normalizeGarmentCategory,

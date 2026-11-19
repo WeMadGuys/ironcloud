@@ -34,6 +34,7 @@ import {
   getWallet,
   getWalletTransactions,
   listApplicableWalletCoupons,
+  subscribeWalletBalance,
   topUpWallet,
   type ApplicableWalletCoupon,
   type PendingReferralOffer,
@@ -124,14 +125,20 @@ export default function WalletScreen() {
   );
 
   useEffect(() => {
+    return subscribeWalletBalance((nextBalance) => {
+      setBalance(nextBalance);
+    });
+  }, []);
+
+  useEffect(() => {
     const onAppState = (next: AppStateStatus) => {
-      if (next === 'active') {
+      if (next === 'active' && !isToppingUp) {
         void loadWalletData(true);
       }
     };
     const sub = AppState.addEventListener('change', onAppState);
     return () => sub.remove();
-  }, [loadWalletData]);
+  }, [isToppingUp, loadWalletData]);
 
   useEffect(() => {
     if (!showAddMoney) return;
@@ -221,6 +228,7 @@ export default function WalletScreen() {
           : `₹${result.creditTotal} credited to your wallet.`,
       );
     } catch (err) {
+      await loadWalletData(true);
       const message = err instanceof Error ? err.message : 'Top-up failed';
       Alert.alert('Could not add money', message);
     } finally {
@@ -234,7 +242,13 @@ export default function WalletScreen() {
       
       {/* Header */}
       <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
+        <Pressable
+          style={styles.backButton}
+          onPress={() => {
+            if (isToppingUp) return;
+            router.back();
+          }}
+        >
           <MaterialCommunityIcons
             name="arrow-left"
             size={24}
@@ -331,16 +345,25 @@ export default function WalletScreen() {
         visible={showAddMoney}
         animationType="slide"
         presentationStyle="pageSheet"
-        onRequestClose={closeAddMoney}
+        onRequestClose={() => {
+          if (!isToppingUp) closeAddMoney();
+        }}
       >
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Add Money</Text>
-            <Pressable onPress={closeAddMoney} style={styles.modalCloseButton}>
+            <Pressable
+              onPress={() => {
+                if (!isToppingUp) closeAddMoney();
+              }}
+              style={styles.modalCloseButton}
+              disabled={isToppingUp}
+              hitSlop={8}
+            >
               <MaterialCommunityIcons
                 name="close"
                 size={24}
-                color={colors.icon.primary}
+                color={isToppingUp ? colors.text.muted : colors.icon.primary}
               />
             </Pressable>
           </View>
@@ -551,6 +574,16 @@ export default function WalletScreen() {
               )}
             </Pressable>
           </View>
+
+          {isToppingUp ? (
+            <View style={styles.confirmingOverlay} pointerEvents="auto">
+              <ActivityIndicator size="large" color={colors.brand.primary} />
+              <Text style={styles.confirmingTitle}>Confirming payment</Text>
+              <Text style={styles.confirmingHint}>
+                Please wait. Do not close this screen while we confirm your payment.
+              </Text>
+            </View>
+          ) : null}
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
@@ -702,6 +735,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: colors.surface.background,
+    position: 'relative',
   },
   modalHeader: {
     flexDirection: 'row',
@@ -911,6 +945,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.status.success.foreground,
     marginTop: 4,
+  },
+  confirmingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.surface.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+    zIndex: 20,
+  },
+  confirmingTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 18,
+    color: colors.text.heading,
+    marginTop: spacing.lg,
+    textAlign: 'center',
+  },
+  confirmingHint: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.text.muted,
+    marginTop: spacing.sm,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   modalFooter: {
     paddingHorizontal: spacing.xl,

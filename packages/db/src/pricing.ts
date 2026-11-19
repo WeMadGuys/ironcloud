@@ -9,22 +9,39 @@ export const SERVICE_LINES = [
   { id: 'repair', label: 'Repair' },
 ] as const;
 
-export type ServiceLineId = (typeof SERVICE_LINES)[number]['id'];
+export type ServiceLineId = string;
 
-/** Iron / Steam iron / Dry clean. Unknown values stay as Iron. */
+function slugServiceLine(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function titleServiceLine(id: string): string {
+  return id
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+/** Known types keep their ids. Custom types become a stable slug. Empty stays Iron. */
 export function normalizeServiceLine(value: string | null | undefined): ServiceLineId {
-  const trimmed = (value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const slug = slugServiceLine(value ?? '');
+  if (!slug) return 'ironing';
   const match = SERVICE_LINES.find(
     (line) =>
-      line.id === trimmed ||
-      line.label.toLowerCase().replace(/[\s-]+/g, '_') === trimmed,
+      line.id === slug ||
+      slugServiceLine(line.label) === slug,
   );
-  return match?.id ?? 'ironing';
+  return match?.id ?? slug;
 }
 
 export function serviceLineLabel(value: string | null | undefined): string {
   const id = normalizeServiceLine(value);
-  return SERVICE_LINES.find((line) => line.id === id)?.label ?? 'Iron';
+  return SERVICE_LINES.find((line) => line.id === id)?.label ?? titleServiceLine(id);
 }
 
 export function formatServiceOptionLabel(
@@ -98,13 +115,34 @@ export type CatalogBrowseFields = {
   serviceLine: string;
 };
 
-/** Service types that have at least one row, in Iron → Steam iron → Dry clean order. */
+/**
+ * Service types in Iron → Steam iron → Dry clean order, then custom names A–Z.
+ * Pass includeEmptyDefaults true in the admin form so unused defaults stay listed.
+ */
+export function listServiceLineChoices(
+  usedCategories: Iterable<string | null | undefined>,
+  includeEmptyDefaults: boolean,
+): ServiceLineId[] {
+  const present = new Set<ServiceLineId>();
+  for (const raw of usedCategories) {
+    if ((raw ?? '').trim()) present.add(normalizeServiceLine(raw));
+  }
+  if (includeEmptyDefaults) {
+    for (const line of SERVICE_LINES) present.add(line.id);
+  }
+
+  const ranked = SERVICE_LINES.map((line) => line.id).filter((id) => present.has(id));
+  const extras = Array.from(present)
+    .filter((id) => !SERVICE_LINES.some((line) => line.id === id))
+    .sort((a, b) => serviceLineLabel(a).localeCompare(serviceLineLabel(b)));
+  return [...ranked, ...extras];
+}
+
+/** Service types that have at least one row. */
 export function listUsedServiceLines(
   categories: Iterable<string | null | undefined>,
 ): ServiceLineId[] {
-  const present = new Set<ServiceLineId>();
-  for (const raw of categories) present.add(normalizeServiceLine(raw));
-  return SERVICE_LINES.map((line) => line.id).filter((id) => present.has(id));
+  return listServiceLineChoices(categories, false);
 }
 
 /** Keep the chosen type and people tab when they still have rows; otherwise snap to the first. */

@@ -19,10 +19,10 @@ import {
 } from '@/features/communities/services/communities.service';
 import { trpc } from '@/lib/trpc';
 import {
-  SERVICE_LINES,
   filterCatalogItems,
   formatServiceOptionLabel,
   listGarmentCategoryTabs,
+  listServiceLineChoices,
   normalizeGarmentCategory,
   normalizeServiceLine,
   resolveCatalogBrowse,
@@ -49,6 +49,7 @@ type ServiceOption = Awaited<ReturnType<typeof fetchActiveServices>>[number] & {
 
 const NEW_SERVICE_VALUE = '__new__';
 const ADD_CATEGORY_VALUE = '__new_category__';
+const ADD_SERVICE_LINE_VALUE = '__new_service_line__';
 
 type ServiceJoin = {
   name: string;
@@ -93,6 +94,7 @@ type PricingForm = {
   newServiceName: string;
   serviceName: string;
   serviceLine: string;
+  newServiceLine: string;
   garmentCategory: string;
   newGarmentCategory: string;
   scope: PricingScope;
@@ -111,6 +113,7 @@ const emptyForm = (): PricingForm => ({
   newServiceName: '',
   serviceName: '',
   serviceLine: 'ironing',
+  newServiceLine: '',
   garmentCategory: 'Men',
   newGarmentCategory: '',
   scope: 'all',
@@ -146,6 +149,13 @@ function resolvedCategory(form: PricingForm): string {
     return form.newGarmentCategory.trim();
   }
   return form.garmentCategory.trim();
+}
+
+function resolvedServiceLine(form: PricingForm): string {
+  if (form.serviceLine === ADD_SERVICE_LINE_VALUE) {
+    return form.newServiceLine.trim();
+  }
+  return form.serviceLine.trim();
 }
 
 function targetLabel(row: PricingRow): string {
@@ -267,6 +277,22 @@ export const PricingRulesPanel = () => {
     [browseItems, categoryOrder, categoryTab, serviceLine],
   );
 
+  const serviceLineChoices = useMemo(() => {
+    const used = [
+      ...services.map((service) => service.category),
+      ...pricing.map((row) => serviceJoin(row)?.category),
+    ];
+    const choices = listServiceLineChoices(used, true);
+    if (
+      form.serviceLine &&
+      form.serviceLine !== ADD_SERVICE_LINE_VALUE &&
+      !choices.includes(form.serviceLine)
+    ) {
+      return listServiceLineChoices([...used, form.serviceLine], true);
+    }
+    return choices;
+  }, [form.serviceLine, pricing, services]);
+
   const categoryChoices = useMemo(() => {
     if (
       form.garmentCategory &&
@@ -315,6 +341,7 @@ export const PricingRulesPanel = () => {
       newServiceName: '',
       serviceName: joined?.name ?? fromList?.name ?? '',
       serviceLine: normalizeServiceLine(joined?.category ?? fromList?.category),
+      newServiceLine: '',
       garmentCategory: normalizeGarmentCategory(
         joined?.garment_category ?? fromList?.garment_category,
       ),
@@ -354,6 +381,16 @@ export const PricingRulesPanel = () => {
     }
     if (!isNewService && !form.serviceName.trim()) {
       toast('Enter a service name', 'error');
+      return;
+    }
+    const serviceLine = resolvedServiceLine(form);
+    if (!serviceLine) {
+      toast(
+        form.serviceLine === ADD_SERVICE_LINE_VALUE
+          ? 'Enter a service type'
+          : 'Select a service type',
+        'error',
+      );
       return;
     }
     const garmentCategory = resolvedCategory(form);
@@ -416,7 +453,7 @@ export const PricingRulesPanel = () => {
             serviceName: form.serviceName.trim(),
           }),
       garmentCategory,
-      serviceLine: normalizeServiceLine(form.serviceLine),
+      serviceLine: normalizeServiceLine(serviceLine),
       scope: form.scope,
       city: form.scope === 'city' ? form.city.trim() : null,
       communityId: form.scope === 'community' ? form.communityId : null,
@@ -664,6 +701,7 @@ export const PricingRulesPanel = () => {
                   serviceLine: selected
                     ? normalizeServiceLine(selected.category)
                     : f.serviceLine,
+                  newServiceLine: '',
                   garmentCategory: selected
                     ? normalizeGarmentCategory(selected.garment_category)
                     : 'Men',
@@ -733,15 +771,35 @@ export const PricingRulesPanel = () => {
                 className={formStyles.select}
                 value={form.serviceLine}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, serviceLine: e.target.value }))
+                  setForm((f) => ({
+                    ...f,
+                    serviceLine: e.target.value,
+                    newServiceLine:
+                      e.target.value === ADD_SERVICE_LINE_VALUE ? f.newServiceLine : '',
+                  }))
                 }
               >
-                {SERVICE_LINES.map((line) => (
-                  <option key={line.id} value={line.id}>
-                    {line.label}
+                {serviceLineChoices.map((id) => (
+                  <option key={id} value={id}>
+                    {serviceLineLabel(id)}
                   </option>
                 ))}
+                <option value={ADD_SERVICE_LINE_VALUE}>Add service type</option>
               </select>
+              {form.serviceLine === ADD_SERVICE_LINE_VALUE && (
+                <input
+                  id="pricing-new-service-line"
+                  className={formStyles.input}
+                  type="text"
+                  value={form.newServiceLine}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, newServiceLine: e.target.value }))
+                  }
+                  placeholder="e.g. Premium steam"
+                  aria-label="New service type"
+                  autoFocus
+                />
+              )}
             </div>
           )}
 

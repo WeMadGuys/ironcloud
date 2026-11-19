@@ -70,7 +70,7 @@ import { OutForDeliveryBanner } from '../../src/features/booking/components/OutF
 import type { GarmentCatalogItem } from '../../src/features/booking/services/catalog.service';
 import { listAddresses } from '../../src/features/profile/services/address.service';
 import { fetchUserProfile, getCachedProfile, isAnonymizedDeletedProfile } from '../../src/features/profile/services/profile.service';
-import { getWallet } from '../../src/features/wallet/services/wallet.service';
+import { getWallet, subscribeWalletBalance } from '../../src/features/wallet/services/wallet.service';
 import { supabase } from '../../src/lib/supabase';
 
 interface DayOption {
@@ -551,6 +551,12 @@ export default function HomeScreen() {
     } catch (error) {
       console.error('Error refreshing wallet balance:', error);
     }
+  }, []);
+
+  useEffect(() => {
+    return subscribeWalletBalance((balance) => {
+      setWalletBalance(balance);
+    });
   }, []);
 
   const handlePullRefresh = useCallback(async () => {
