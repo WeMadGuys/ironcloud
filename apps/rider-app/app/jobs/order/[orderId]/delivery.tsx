@@ -17,9 +17,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
 import { FailStopButton } from '../../../../src/features/jobs/components/FailStopButton';
+import { DeliveryPaymentSheet } from '../../../../src/features/jobs/components/DeliveryPaymentSheet';
 import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDetailsCard';
 import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
 import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
+import { AUTH_PROVIDER } from '../../../../src/config/auth';
 import {
   getOrderBoxes,
   releaseBoxFromOrder,
@@ -29,6 +31,7 @@ import {
   confirmDelivery,
   getDeliveryItems,
   isInsufficientDeliveryWalletError,
+  markOrderDelivered,
   type DeliveryItem,
 } from '../../../../src/features/jobs/services/delivery.service';
 
@@ -41,6 +44,7 @@ export default function DeliveryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanResult, setScanResult] = useState<BoxScanResult | null>(null);
@@ -129,6 +133,18 @@ export default function DeliveryScreen() {
     }
   };
 
+  const finishDelivery = useCallback(async () => {
+    if (!orderId) return;
+    setSubmitting(true);
+    try {
+      await markOrderDelivered(orderId);
+      setPaymentOpen(false);
+      router.back();
+    } finally {
+      setSubmitting(false);
+    }
+  }, [orderId, router]);
+
   const handleConfirm = async () => {
     if (!orderId) return;
     if (!canComplete) {
@@ -138,25 +154,29 @@ export default function DeliveryScreen() {
       );
       return;
     }
-    setSubmitting(true);
-    try {
-      await confirmDelivery(orderId);
-      router.back();
-    } catch (error) {
-      if (isInsufficientDeliveryWalletError(error)) {
+    if (AUTH_PROVIDER === 'mock') {
+      setSubmitting(true);
+      try {
+        await confirmDelivery(orderId);
+        router.back();
+      } catch (error) {
+        if (isInsufficientDeliveryWalletError(error)) {
+          Alert.alert(
+            'Insufficient wallet balance',
+            `Ask the customer to add money, then deliver again.\n\nRequired: ₹${error.amount}\nWallet: ₹${error.balance}`,
+          );
+          return;
+        }
         Alert.alert(
-          'Insufficient wallet balance',
-          `Ask the customer to add money, then deliver again.\n\nRequired: ₹${error.amount}\nWallet: ₹${error.balance}`,
+          'Delivery failed',
+          error instanceof Error ? error.message : 'Could not confirm delivery',
         );
-        return;
+      } finally {
+        setSubmitting(false);
       }
-      Alert.alert(
-        'Delivery failed',
-        error instanceof Error ? error.message : 'Could not confirm delivery',
-      );
-    } finally {
-      setSubmitting(false);
+      return;
     }
+    setPaymentOpen(true);
   };
 
   return (
@@ -285,6 +305,14 @@ export default function DeliveryScreen() {
         onClose={() => setScannerOpen(false)}
         onScan={(code) => void handleScanCode(code)}
       />
+      {orderId ? (
+        <DeliveryPaymentSheet
+          visible={paymentOpen}
+          orderId={orderId}
+          onClose={() => setPaymentOpen(false)}
+          onPaid={finishDelivery}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

@@ -54,7 +54,7 @@ export type WalletTxnType = 'recharge' | 'debit' | 'refund' | 'cashback' | 'expi
 export type NotificationChannel = 'push' | 'sms' | 'whatsapp' | 'email' | 'in_app';
 export type TicketStatus = 'open' | 'in_progress' | 'escalated' | 'resolved' | 'closed';
 export type SlotType = 'pickup' | 'delivery';
-export type PaymentMethod = 'wallet' | 'razorpay_direct';
+export type PaymentMethod = 'wallet' | 'razorpay_direct' | 'split';
 export type BoxStatus = 'AVAILABLE' | 'OCCUPIED';
 export type BoxEventType = 'BOX_ASSIGNED' | 'BOX_RELEASED' | 'WRONG_BOX_SCAN';
 export type CommunityStage =
@@ -844,6 +844,54 @@ export interface Database {
           feedback_dismissed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      delivery_collections: {
+        Row: {
+          id: string;
+          order_id: string;
+          rider_id: string;
+          total_amount: number;
+          wallet_amount: number;
+          qr_amount: number;
+          status: 'pending_qr' | 'paid' | 'cancelled' | 'expired';
+          razorpay_qr_id: string | null;
+          razorpay_payment_id: string | null;
+          wallet_transaction_id: string | null;
+          created_at: string;
+          paid_at: string | null;
+          closed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          order_id: string;
+          rider_id: string;
+          total_amount: number;
+          wallet_amount?: number;
+          qr_amount?: number;
+          status?: 'pending_qr' | 'paid' | 'cancelled' | 'expired';
+          razorpay_qr_id?: string | null;
+          razorpay_payment_id?: string | null;
+          wallet_transaction_id?: string | null;
+          created_at?: string;
+          paid_at?: string | null;
+          closed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          order_id?: string;
+          rider_id?: string;
+          total_amount?: number;
+          wallet_amount?: number;
+          qr_amount?: number;
+          status?: 'pending_qr' | 'paid' | 'cancelled' | 'expired';
+          razorpay_qr_id?: string | null;
+          razorpay_payment_id?: string | null;
+          wallet_transaction_id?: string | null;
+          created_at?: string;
+          paid_at?: string | null;
+          closed_at?: string | null;
         };
         Relationships: [];
       };
@@ -1976,6 +2024,24 @@ export interface Database {
           p_reserved_pickup_slot_id: string;
           p_reserved_delivery_slot_id: string;
           p_order: Json;
+        };
+        Returns: Json;
+      };
+      apply_customer_wallet_delta: {
+        Args: {
+          p_customer_id: string;
+          p_amount: number;
+          p_direction: string;
+          p_order_id: string;
+          p_description: string;
+        };
+        Returns: Json;
+      };
+      close_delivery_collection: {
+        Args: {
+          p_collection_id: string;
+          p_status: string;
+          p_razorpay_payment_id?: string | null;
         };
         Returns: Json;
       };

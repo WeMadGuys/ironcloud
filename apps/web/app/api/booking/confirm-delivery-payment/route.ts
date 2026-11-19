@@ -1,6 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+import { legacyDeliveryDebitGuard, money } from '@/lib/delivery-collection';
 import { ensureServerEnv, getServerSupabaseEnv } from '@/lib/server-env';
 
 type AdminClient = SupabaseClient<any>;
@@ -104,25 +105,19 @@ export async function POST(req: Request) {
       return json({ success: true, paymentStatus: 'paid', alreadyPaid: true });
     }
 
-    const { data: existingDebits, error: existingDebitError } = await admin
-      .from('wallet_transactions')
-      .select('id')
-      .eq('order_id', orderId)
-      .eq('type', 'debit');
-
-    if (existingDebitError) {
-      return json({ error: existingDebitError.message }, 500);
-    }
-
-    if ((existingDebits ?? []).length > 0) {
-      await admin.from('orders').update({ payment_status: 'paid' }).eq('id', orderId);
-      return json({ success: true, paymentStatus: 'paid', alreadyPaid: true });
-    }
-
-    const amount = Math.round(Number(order.total_amount || 0) * 100) / 100;
+    const amount = money(order.total_amount || 0);
     if (amount <= 0) {
       await admin.from('orders').update({ payment_status: 'paid' }).eq('id', orderId);
       return json({ success: true, paymentStatus: 'paid', amount: 0 });
+    }
+
+    const guard = await legacyDeliveryDebitGuard(admin, orderId, amount);
+    if (guard.action === 'already_paid') {
+      await admin.from('orders').update({ payment_status: 'paid' }).eq('id', orderId);
+      return json({ success: true, paymentStatus: 'paid', alreadyPaid: true });
+    }
+    if (guard.action === 'blocked') {
+      return json({ error: guard.error }, 409);
     }
 
     const { data: wallet, error: walletError } = await admin

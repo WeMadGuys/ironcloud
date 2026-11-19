@@ -112,7 +112,8 @@ async function debitWalletForDelivery(orderId: string): Promise<void> {
   }
 }
 
-export async function confirmDelivery(orderId: string): Promise<void> {
+/** Marks the order delivered. Payment must already be settled. */
+export async function markOrderDelivered(orderId: string): Promise<void> {
   const riderId = await getRiderId();
   if (!riderId) throw new Error('Rider not authenticated');
 
@@ -123,7 +124,6 @@ export async function confirmDelivery(orderId: string): Promise<void> {
     );
   }
 
-  await debitWalletForDelivery(orderId);
   await deletePickupPhotos(orderId);
 
   const { error: orderError } = await (supabase
@@ -148,4 +148,9 @@ export async function confirmDelivery(orderId: string): Promise<void> {
     .eq('job_type', 'delivery');
 
   clearJobsCache();
+}
+
+export async function confirmDelivery(orderId: string): Promise<void> {
+  await debitWalletForDelivery(orderId);
+  await markOrderDelivered(orderId);
 }

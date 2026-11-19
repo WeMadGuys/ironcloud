@@ -448,3 +448,39 @@ export const fetchOrderEvents = async (orderId: string) => {
 
   return data ?? [];
 };
+
+export type DeliveryCollectionRecord = {
+  id: string;
+  total_amount: number;
+  wallet_amount: number;
+  qr_amount: number;
+  status: string;
+  razorpay_payment_id: string | null;
+  created_at: string;
+};
+
+export const fetchDeliveryCollections = async (
+  orderId: string,
+): Promise<{ rows: DeliveryCollectionRecord[]; error: string | null }> => {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('delivery_collections')
+    .select('id, total_amount, wallet_amount, qr_amount, status, razorpay_payment_id, created_at')
+    .eq('order_id', orderId)
+    .order('created_at', { ascending: false });
+
+  const rows: DeliveryCollectionRecord[] = ((data ?? []) as Array<Record<string, unknown>>).flatMap((row) => {
+    if (typeof row.id !== 'string' || typeof row.created_at !== 'string') return [];
+    return [{
+      id: row.id,
+      total_amount: asMoney(row.total_amount),
+      wallet_amount: asMoney(row.wallet_amount),
+      qr_amount: asMoney(row.qr_amount),
+      status: typeof row.status === 'string' ? row.status : '',
+      razorpay_payment_id: typeof row.razorpay_payment_id === 'string' ? row.razorpay_payment_id : null,
+      created_at: row.created_at,
+    }];
+  });
+
+  return { rows, error: error?.message ?? null };
+};

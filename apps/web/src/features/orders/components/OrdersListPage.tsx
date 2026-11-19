@@ -65,6 +65,7 @@ const STATUS_OPTIONS: OrderStatus[] = [
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string }[] = [
   { value: 'wallet', label: 'Wallet' },
   { value: 'razorpay_direct', label: 'Razorpay' },
+  { value: 'split', label: 'Split' },
 ];
 
 type OrderColumnKey =
@@ -835,7 +836,9 @@ export const OrdersListPage = () => {
             ? 'Razorpay'
             : o.payment_method === 'wallet'
               ? 'Wallet'
-              : o.payment_method,
+              : o.payment_method === 'split'
+                ? 'Split'
+                : o.payment_method,
       },
       amount: {
         key: 'amount',

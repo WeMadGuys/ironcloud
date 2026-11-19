@@ -9,7 +9,7 @@ import { trpc } from '@/lib/trpc';
 import type { OrderStatus } from '@ironcloud/db';
 import { formatCurrency, formatOrderStatus, formatRelativeTime, getOrderStatusBadge } from '@/utils/format';
 
-import { fetchOrderById, fetchOrderEvents, fetchOrderRefundContext, type OrderRefundRecord } from '../services/orders.service';
+import { fetchOrderById, fetchOrderEvents, fetchOrderRefundContext, fetchDeliveryCollections, type DeliveryCollectionRecord, type OrderRefundRecord } from '../services/orders.service';
 import { OrderRefundCard } from './OrderRefundCard';
 
 import pageStyles from '@/styles/pages.module.css';
@@ -36,12 +36,21 @@ const STATUS_OPTIONS: OrderStatus[] = [
   'failed',
 ];
 
+function paymentLabel(method: string | null | undefined): string {
+  if (method === 'wallet') return 'Wallet';
+  if (method === 'razorpay_direct') return 'Razorpay';
+  if (method === 'split') return 'Split (wallet + scanner)';
+  return method || '—';
+}
+
 export const OrderDetailPage = () => {
   const params = useParams();
   const orderId = params.id as string;
   const [order, setOrder] = useState<Awaited<ReturnType<typeof fetchOrderById>>['data']>(null);
   const [events, setEvents] = useState<Awaited<ReturnType<typeof fetchOrderEvents>>>([]);
   const [refunds, setRefunds] = useState<OrderRefundRecord[]>([]);
+  const [collections, setCollections] = useState<DeliveryCollectionRecord[]>([]);
+  const [collectionError, setCollectionError] = useState<string | null>(null);
   const [debitedAmount, setDebitedAmount] = useState(0);
   const [refundLoadError, setRefundLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,16 +64,19 @@ export const OrderDetailPage = () => {
 
   const load = async () => {
     setLoading(true);
-    const [orderRes, eventsRes, refundRes] = await Promise.all([
+    const [orderRes, eventsRes, refundRes, collectionRes] = await Promise.all([
       fetchOrderById(orderId),
       fetchOrderEvents(orderId),
       fetchOrderRefundContext(orderId),
+      fetchDeliveryCollections(orderId),
     ]);
     setOrder(orderRes.data);
     setEvents(eventsRes);
     setRefunds(refundRes.refunds);
     setDebitedAmount(refundRes.debitedAmount);
     setRefundLoadError(refundRes.error);
+    setCollections(collectionRes.rows);
+    setCollectionError(collectionRes.error);
     if (orderRes.data?.status) {
       setSelectedStatus(orderRes.data.status);
     }
@@ -120,7 +132,18 @@ export const OrderDetailPage = () => {
             <p><strong>Customer:</strong> {customer?.full_name} ({customer?.phone})</p>
             <p><strong>Community:</strong> {community?.name}, {community?.city}</p>
             <p><strong>Address:</strong> {address?.tower} - {address?.flat_number}</p>
-            <p><strong>Payment:</strong> {order.payment_method}</p>
+            <p><strong>Payment:</strong> {paymentLabel(order.payment_method)}</p>
+            {collectionError ? <p>{collectionError}</p> : null}
+            {collections.map((collection) => (
+              <p key={collection.id}>
+                <strong>Collection:</strong> {formatCurrency(Number(collection.wallet_amount))} wallet
+                {' + '}
+                {formatCurrency(Number(collection.qr_amount))} scanner
+                {' · '}
+                {collection.status}
+                {collection.razorpay_payment_id ? ` · ${collection.razorpay_payment_id}` : ''}
+              </p>
+            ))}
             {order.special_instructions && <p><strong>Instructions:</strong> {order.special_instructions}</p>}
             {order.admin_notes && <p><strong>Admin Notes:</strong> {order.admin_notes}</p>}
           </Card>
