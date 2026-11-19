@@ -3,6 +3,7 @@ import { getApiBaseUrl } from '../../../lib/api';
 import { supabase } from '../../../lib/supabase';
 import {
   normalizeGarmentCategory,
+  normalizeServiceLine,
   pickBestUnitPrices,
   assertServiceQuantities,
   type PricingRuleCandidate,
@@ -19,6 +20,7 @@ export type GarmentCatalogItem = {
   unitPrice: number;
   estimatedDays: number | null;
   garmentCategory: string;
+  serviceLine: string;
 };
 
 export type PickupLineItem = {
@@ -128,65 +130,13 @@ function buildPickupDiffNote(params: {
   };
 }
 
-async function debitWalletAfterPickup(orderId: string): Promise<void> {
-  if (AUTH_PROVIDER === 'mock') {
-    const { error } = await (supabase.from('orders') as ReturnType<typeof supabase.from>)
-      .update({ payment_status: 'paid' })
-      .eq('id', orderId);
-    if (error) {
-      console.warn('[Pickup] payment_status update skipped:', error.message);
-    }
-    return;
-  }
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    console.warn('[Pickup] No session for wallet debit');
-    await (supabase.from('orders') as ReturnType<typeof supabase.from>)
-      .update({ payment_status: 'insufficient_funds' })
-      .eq('id', orderId);
-    return;
-  }
-
-  try {
-    const response = await fetch(
-      `${getApiBaseUrl()}/api/booking/confirm-pickup-payment`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ orderId }),
-      },
-    );
-    if (!response.ok) {
-      const body = (await response.json().catch(() => null)) as {
-        error?: string;
-      } | null;
-      console.error('[Pickup] wallet debit failed:', body?.error);
-      await (supabase.from('orders') as ReturnType<typeof supabase.from>)
-        .update({ payment_status: 'insufficient_funds' })
-        .eq('id', orderId);
-    }
-  } catch (error) {
-    console.error('[Pickup] wallet debit network error:', error);
-    await (supabase.from('orders') as ReturnType<typeof supabase.from>)
-      .update({ payment_status: 'insufficient_funds' })
-      .eq('id', orderId);
-  }
-}
-
 export class InsufficientWalletError extends Error {
   readonly balance: number;
   readonly amount: number;
 
   constructor(amount: number, balance: number) {
     super(
-      'Ask the customer to add money to their wallet to confirm pickup.',
+      'Ask the customer to add money to their wallet so the amount can be updated.',
     );
     this.name = 'InsufficientWalletError';
     this.amount = amount;
@@ -204,57 +154,6 @@ export function isInsufficientWalletError(
       error != null &&
       (error as { name?: string }).name === 'InsufficientWalletError')
   );
-}
-
-/**
- * Verify customer wallet can cover the pickup total before confirming.
- * Throws InsufficientWalletError when balance is too low.
- */
-async function assertWalletCoversPickup(
-  orderId: string,
-  amount: number,
-): Promise<void> {
-  if (AUTH_PROVIDER === 'mock') return;
-  if (amount <= 0) return;
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const accessToken = session?.access_token;
-  if (!accessToken) {
-    throw new Error('Session expired. Please sign in again and retry.');
-  }
-
-  const response = await fetch(
-    `${getApiBaseUrl()}/api/booking/check-pickup-wallet`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ orderId, amount }),
-    },
-  );
-
-  const body = (await response.json().catch(() => null)) as {
-    ok?: boolean;
-    sufficient?: boolean;
-    amount?: number;
-    balance?: number;
-    error?: string;
-  } | null;
-
-  if (!response.ok) {
-    throw new Error(body?.error || 'Could not verify wallet balance.');
-  }
-
-  if (!body?.sufficient) {
-    throw new InsufficientWalletError(
-      Number(body?.amount ?? amount),
-      Number(body?.balance ?? 0),
-    );
-  }
 }
 
 export async function getOrderPricingContext(orderId: string): Promise<{
@@ -313,7 +212,7 @@ export async function getGarmentCatalog(opts: {
     (supabase.from('services') as ReturnType<typeof supabase.from>);
 
   let { data: services, error } = await servicesQuery()
-    .select('id, name, unit, garment_category, sort_order')
+    .select('id, name, unit, garment_category, category, sort_order')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
@@ -321,7 +220,7 @@ export async function getGarmentCatalog(opts: {
   if (error && /sort_order/i.test(error.message ?? '')) {
     console.warn('[Pickup] sort_order unavailable:', error.message);
     const withCategory = await servicesQuery()
-      .select('id, name, unit, garment_category')
+      .select('id, name, unit, garment_category, category')
       .eq('is_active', true)
       .order('name', { ascending: true });
     services = withCategory.data;
@@ -385,22 +284,29 @@ export async function getGarmentCatalog(opts: {
     name: string;
     unit?: string | null;
     garment_category?: string | null;
+    category?: string | null;
     sort_order?: number | null;
   }[])
     .slice()
     .sort((a, b) => {
       const byOrder = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
       if (byOrder !== 0) return byOrder;
-      return a.name.localeCompare(b.name);
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      return normalizeServiceLine(a.category).localeCompare(
+        normalizeServiceLine(b.category),
+      );
     })
     .map((service) => ({
       serviceId: service.id,
-      name: service.name,
+      name: service.name.trim(),
       unit: service.unit?.trim() || 'piece',
       unitPrice: priceMap.get(service.id)?.unitPrice ?? 0,
       estimatedDays: priceMap.get(service.id)?.estimatedDays ?? null,
       garmentCategory: normalizeGarmentCategory(service.garment_category),
-    }));
+      serviceLine: normalizeServiceLine(service.category),
+    }))
+    .filter((item) => item.unitPrice > 0);
 }
 
 /**
@@ -544,12 +450,12 @@ async function buildPickupLineItems(
   const nameByService = Object.fromEntries(catalog.map((c) => [c.serviceId, c.name]));
 
   const lineItems = items
-    .filter((item) => item.quantity > 0)
+    .filter((item) => item.quantity > 0 && (priceByService[item.serviceId] ?? 0) > 0)
     .map((item) => ({
       order_id: orderId,
       service_id: item.serviceId,
       quantity: item.quantity,
-      unit_price: priceByService[item.serviceId] ?? 0,
+      unit_price: priceByService[item.serviceId],
     }));
 
   if (lineItems.length === 0) {
@@ -710,13 +616,11 @@ export async function confirmPickup(
     (orderBefore as { estimated_garments: EstimatedGarment[] | null } | null)
       ?.estimated_garments ?? null;
 
-  // Price first, then require sufficient wallet — do not mutate until funds check passes.
   const { subtotal, lineItems, nameByService } = await buildPickupLineItems(
     orderId,
     communityId,
     items,
   );
-  await assertWalletCoversPickup(orderId, subtotal);
 
   await writeOrderItems(orderId, lineItems);
 
@@ -767,7 +671,6 @@ export async function confirmPickup(
     .eq('job_type', 'pickup');
 
   if (!deliverTomorrow) {
-    await debitWalletAfterPickup(orderId);
     clearJobsCache();
     return;
   }
@@ -819,13 +722,13 @@ export async function confirmPickup(
     });
   }
 
-  await debitWalletAfterPickup(orderId);
   clearJobsCache();
 }
 
 /**
- * Correct garment counts after pickup and move the existing wallet debit
- * to the new total before the items are saved.
+ * Correct garment counts after pickup.
+ * Wallet is charged at delivery. An order already debited under the old
+ * pickup charge has that debit moved to the new total.
  */
 export async function updatePickupItems(
   orderId: string,

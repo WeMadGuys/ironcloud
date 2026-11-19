@@ -25,13 +25,19 @@ import { useState } from 'react';
 import { Button } from '@/components';
 import tableStyles from '@/components/Table/Table.module.css';
 import { formatCurrency } from '@/utils/format';
-import { formatReadyIn, normalizeGarmentCategory } from '@ironcloud/db';
+import {
+  formatReadyIn,
+  formatServiceOptionLabel,
+  normalizeGarmentCategory,
+  serviceLineLabel,
+} from '@ironcloud/db';
 
 import dragStyles from './PricingRulesTable.module.css';
 
 type ServiceJoin = {
   name: string;
   garment_category?: string | null;
+  category?: string | null;
   sort_order?: number | null;
 } | null;
 
@@ -124,7 +130,11 @@ function SortableGroup({
     id: serviceId,
     disabled: !canReorder,
   });
-  const name = rows[0]?.services?.name ?? 'service';
+  const name = formatServiceOptionLabel(
+    rows[0]?.services?.name ?? 'service',
+    rows[0]?.services?.garment_category,
+    rows[0]?.services?.category,
+  );
 
   return (
     <tbody ref={setNodeRef} style={{ opacity: isDragging ? 0.45 : 1 }}>
@@ -145,6 +155,7 @@ function SortableGroup({
           </td>
           <td>{row.services?.name ?? '—'}</td>
           <td>{normalizeGarmentCategory(row.services?.garment_category)}</td>
+          <td>{serviceLineLabel(row.services?.category)}</td>
           <td>{scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all'))}</td>
           <td>{targetLabel(row)}</td>
           <td>{formatCurrency(Number(row.base_price))}</td>
@@ -214,7 +225,8 @@ export function PricingRulesTable({
             <tr>
               <th className={dragStyles.handleCell} aria-label="Reorder" />
               <th>Service</th>
-              <th>Category</th>
+              <th>Target people</th>
+              <th>Service type</th>
               <th>Scope</th>
               <th>Target</th>
               <th>Base Price</th>
@@ -248,7 +260,11 @@ export function PricingRulesTable({
       <DragOverlay>
         {activeGroup ? (
           <div className={dragStyles.overlay}>
-            {activeGroup.rows[0]?.services?.name ?? 'Service'}
+            {formatServiceOptionLabel(
+              activeGroup.rows[0]?.services?.name ?? 'Service',
+              activeGroup.rows[0]?.services?.garment_category,
+              activeGroup.rows[0]?.services?.category,
+            )}
           </div>
         ) : null}
       </DragOverlay>

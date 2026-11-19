@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
-import { normalizeGarmentCategory, type TypedSupabaseClient } from '@ironcloud/db';
+import {
+  normalizeGarmentCategory,
+  normalizeServiceLine,
+  type TypedSupabaseClient,
+} from '@ironcloud/db';
 
 import { writeAuditLog } from '../../lib/audit';
 import { adminProcedure, superAdminProcedure, router } from '../../trpc/init';
@@ -68,6 +72,7 @@ const pricingServiceObject = z.object({
   newServiceName: z.string().optional().nullable(),
   serviceName: z.string().optional().nullable(),
   garmentCategory: z.string().min(1),
+  serviceLine: z.string().min(1).optional(),
   basePrice: z.number().positive(),
   discountPrice: z.number().nullable().optional(),
   estimatedDays: z.number().int().min(1).max(60).nullable().optional(),
@@ -131,16 +136,33 @@ function requireServiceName(value: string): string {
 
 function requireGarmentCategory(value: string | null | undefined): string {
   const trimmed = (value ?? '').trim();
-  if (!trimmed) throw new Error('Select a category');
+  if (!trimmed) throw new Error('Select target people');
   const category = normalizeGarmentCategory(trimmed);
-  if (category.length > 40) throw new Error('Category name is too long');
+  if (category.length > 40) throw new Error('Target people name is too long');
   return category;
+}
+
+function requireServiceLine(value: string | null | undefined): string {
+  return normalizeServiceLine(value);
+}
+
+function sameServiceIdentity(
+  row: { name: string; garment_category?: string | null; category?: string | null },
+  name: string,
+  garmentCategory: string,
+  serviceLine: string,
+) {
+  return (
+    row.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+    normalizeGarmentCategory(row.garment_category) === garmentCategory &&
+    normalizeServiceLine(row.category) === serviceLine
+  );
 }
 
 async function listActiveServices(supabase: TypedSupabaseClient) {
   const { data, error } = await supabase
     .from('services')
-    .select('id, name')
+    .select('id, name, garment_category, category')
     .eq('is_active', true)
     .limit(500);
 
@@ -175,18 +197,57 @@ function mergeServiceOrder(currentIds: string[], orderedIds: string[]): string[]
   return next;
 }
 
-async function assertServiceNameAvailable(
+async function assertServiceIdentityAvailable(
   supabase: TypedSupabaseClient,
   name: string,
+  garmentCategory: string,
+  serviceLine: string,
   exceptId?: string,
 ) {
   const active = await listActiveServices(supabase);
   const clash = active.find(
     (row) =>
       row.id !== exceptId &&
-      row.name.trim().toLowerCase() === name.trim().toLowerCase(),
+      sameServiceIdentity(row, name, garmentCategory, serviceLine),
   );
-  if (clash) throw new Error('A service with that name already exists');
+  if (clash) {
+    throw new Error(
+      'That garment already exists for this target people and service type',
+    );
+  }
+}
+
+async function insertGarmentService(
+  supabase: TypedSupabaseClient,
+  name: string,
+  garmentCategory: string,
+  serviceLine: string,
+): Promise<string> {
+  await assertServiceIdentityAvailable(supabase, name, garmentCategory, serviceLine);
+
+  const { data, error } = await supabase
+    .from('services')
+    .insert({
+      name,
+      category: serviceLine,
+      garment_category: garmentCategory,
+      unit: 'piece',
+      sort_order: await nextServiceSortOrder(supabase),
+      is_active: true,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
+      throw new Error(
+        'That garment already exists for this target people and service type',
+      );
+    }
+    throw new Error(error.message);
+  }
+  if (!data?.id) throw new Error('Failed to create service');
+  return data.id;
 }
 
 async function updateServiceDetails(
@@ -194,17 +255,36 @@ async function updateServiceDetails(
   serviceId: string,
   name: string | null,
   garmentCategory: string,
+  serviceLine: string,
 ) {
-  const patch: { garment_category: string; name?: string } = {
-    garment_category: garmentCategory,
-  };
-  if (name) {
-    await assertServiceNameAvailable(supabase, name, serviceId);
-    patch.name = name;
-  }
+  const active = await listActiveServices(supabase);
+  const current = active.find((row) => row.id === serviceId);
+  const nextName = name ?? current?.name ?? '';
+  if (!nextName.trim()) throw new Error('Enter a service name');
+  await assertServiceIdentityAvailable(
+    supabase,
+    nextName,
+    garmentCategory,
+    serviceLine,
+    serviceId,
+  );
 
-  const { error } = await supabase.from('services').update(patch).eq('id', serviceId);
-  if (error) throw new Error(error.message);
+  const { error } = await supabase
+    .from('services')
+    .update({
+      garment_category: garmentCategory,
+      category: serviceLine,
+      ...(name ? { name } : {}),
+    })
+    .eq('id', serviceId);
+  if (error) {
+    if (error.code === '23505' || /duplicate|unique/i.test(error.message)) {
+      throw new Error(
+        'That garment already exists for this target people and service type',
+      );
+    }
+    throw new Error(error.message);
+  }
 }
 
 async function ensureGarmentCategory(
@@ -245,40 +325,23 @@ async function resolveServiceId(
   supabase: TypedSupabaseClient,
   input: Pick<
     PricingServiceInput,
-    'serviceId' | 'newServiceName' | 'serviceName' | 'garmentCategory'
+    'serviceId' | 'newServiceName' | 'serviceName' | 'garmentCategory' | 'serviceLine'
   >,
+  mode: 'create' | 'update',
 ): Promise<string> {
   const garmentCategory = requireGarmentCategory(input.garmentCategory);
+  const serviceLine = requireServiceLine(input.serviceLine);
   await ensureGarmentCategory(supabase, garmentCategory);
   const newName = input.newServiceName?.trim();
 
   if (newName) {
     const name = requireServiceName(newName);
     const active = await listActiveServices(supabase);
-    const existing = active.find(
-      (row) => row.name.trim().toLowerCase() === name.toLowerCase(),
+    const existing = active.find((row) =>
+      sameServiceIdentity(row, name, garmentCategory, serviceLine),
     );
-    if (existing) {
-      await updateServiceDetails(supabase, existing.id, null, garmentCategory);
-      return existing.id;
-    }
-
-    const { data, error } = await supabase
-      .from('services')
-      .insert({
-        name,
-        category: 'ironing',
-        garment_category: garmentCategory,
-        unit: 'piece',
-        sort_order: await nextServiceSortOrder(supabase),
-        is_active: true,
-      })
-      .select('id')
-      .single();
-
-    if (error) throw new Error(error.message);
-    if (!data?.id) throw new Error('Failed to create service');
-    return data.id;
+    if (existing) return existing.id;
+    return insertGarmentService(supabase, name, garmentCategory, serviceLine);
   }
 
   if (!input.serviceId) throw new Error('Service is required');
@@ -286,7 +349,28 @@ async function resolveServiceId(
   const rename = input.serviceName?.trim()
     ? requireServiceName(input.serviceName)
     : null;
-  await updateServiceDetails(supabase, input.serviceId, rename, garmentCategory);
+
+  if (mode === 'create') {
+    const active = await listActiveServices(supabase);
+    const current = active.find((row) => row.id === input.serviceId);
+    const nextName = rename ?? current?.name ?? '';
+    if (!nextName.trim()) throw new Error('Enter a service name');
+    if (
+      current &&
+      !sameServiceIdentity(current, nextName, garmentCategory, serviceLine)
+    ) {
+      return insertGarmentService(supabase, nextName, garmentCategory, serviceLine);
+    }
+    return input.serviceId;
+  }
+
+  await updateServiceDetails(
+    supabase,
+    input.serviceId,
+    rename,
+    garmentCategory,
+    serviceLine,
+  );
   return input.serviceId;
 }
 
@@ -335,7 +419,7 @@ export const settingsRouter = router({
   createPricing: adminProcedure
     .input(createPricingInput)
     .mutation(async ({ ctx, input }) => {
-      const serviceId = await resolveServiceId(ctx.supabase, input);
+      const serviceId = await resolveServiceId(ctx.supabase, input, 'create');
 
       const { data, error } = await ctx.supabase
         .from('pricing_rules')
@@ -363,6 +447,7 @@ export const settingsRouter = router({
           newServiceName: input.newServiceName?.trim() || null,
           serviceName: input.serviceName?.trim() || null,
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
+          serviceLine: normalizeServiceLine(input.serviceLine),
           scope: input.scope,
           discountPrice: storedDiscountPrice(input.discountPrice),
           estimatedDays: storedEstimatedDays(input.estimatedDays),
@@ -375,7 +460,7 @@ export const settingsRouter = router({
   updatePricing: adminProcedure
     .input(updatePricingInput)
     .mutation(async ({ ctx, input }) => {
-      const serviceId = await resolveServiceId(ctx.supabase, input);
+      const serviceId = await resolveServiceId(ctx.supabase, input, 'update');
 
       const { error } = await ctx.supabase
         .from('pricing_rules')
@@ -404,6 +489,7 @@ export const settingsRouter = router({
           newServiceName: input.newServiceName?.trim() || null,
           serviceName: input.serviceName?.trim() || null,
           garmentCategory: normalizeGarmentCategory(input.garmentCategory),
+          serviceLine: normalizeServiceLine(input.serviceLine),
           scope: input.scope,
           discountPrice: storedDiscountPrice(input.discountPrice),
           estimatedDays: storedEstimatedDays(input.estimatedDays),

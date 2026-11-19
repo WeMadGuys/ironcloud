@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { Button, Card } from '@/components';
 import { trpc } from '@/lib/trpc';
 import { formatRelativeTime } from '@/utils/format';
+import { formatServiceDisplayName } from '@ironcloud/db';
 
 import type { OrderRefundRecord } from '../services/orders.service';
 
@@ -37,7 +38,12 @@ function serviceName(services: unknown): string {
   const row = Array.isArray(services) ? services[0] : services;
   if (!row || typeof row !== 'object') return 'Item';
   const name = (row as { name?: unknown }).name;
-  return typeof name === 'string' && name.trim() ? name.trim() : 'Item';
+  const category = (row as { category?: unknown }).category;
+  const trimmed = typeof name === 'string' && name.trim() ? name.trim() : 'Item';
+  return formatServiceDisplayName(
+    trimmed,
+    typeof category === 'string' ? category : null,
+  );
 }
 
 function toRefundItems(raw: unknown): RefundItem[] {

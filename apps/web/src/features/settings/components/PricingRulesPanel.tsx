@@ -19,8 +19,14 @@ import {
 } from '@/features/communities/services/communities.service';
 import { trpc } from '@/lib/trpc';
 import {
+  SERVICE_LINES,
+  filterCatalogItems,
+  formatServiceOptionLabel,
   listGarmentCategoryTabs,
   normalizeGarmentCategory,
+  normalizeServiceLine,
+  resolveCatalogBrowse,
+  serviceLineLabel,
   type PricingScope,
 } from '@ironcloud/db';
 
@@ -36,7 +42,10 @@ import formStyles from '@/styles/form.module.css';
 import pageStyles from '@/styles/pages.module.css';
 
 type PricingRow = Awaited<ReturnType<typeof fetchPricingRules>>[number];
-type ServiceOption = Awaited<ReturnType<typeof fetchActiveServices>>[number];
+type ServiceOption = Awaited<ReturnType<typeof fetchActiveServices>>[number] & {
+  garment_category?: string | null;
+  category?: string | null;
+};
 
 const NEW_SERVICE_VALUE = '__new__';
 const ADD_CATEGORY_VALUE = '__new_category__';
@@ -44,6 +53,7 @@ const ADD_CATEGORY_VALUE = '__new_category__';
 type ServiceJoin = {
   name: string;
   garment_category?: string | null;
+  category?: string | null;
   sort_order?: number | null;
 } | null;
 
@@ -69,6 +79,10 @@ function comparePricingRows(a: PricingRow, b: PricingRow): number {
   const nameB = serviceJoin(b)?.name ?? '';
   const byName = nameA.localeCompare(nameB);
   if (byName !== 0) return byName;
+  const byLine = normalizeServiceLine(serviceJoin(a)?.category).localeCompare(
+    normalizeServiceLine(serviceJoin(b)?.category),
+  );
+  if (byLine !== 0) return byLine;
   const byService = a.service_id.localeCompare(b.service_id);
   if (byService !== 0) return byService;
   return a.id.localeCompare(b.id);
@@ -78,6 +92,7 @@ type PricingForm = {
   serviceId: string;
   newServiceName: string;
   serviceName: string;
+  serviceLine: string;
   garmentCategory: string;
   newGarmentCategory: string;
   scope: PricingScope;
@@ -95,6 +110,7 @@ const emptyForm = (): PricingForm => ({
   serviceId: '',
   newServiceName: '',
   serviceName: '',
+  serviceLine: 'ironing',
   garmentCategory: 'Men',
   newGarmentCategory: '',
   scope: 'all',
@@ -160,7 +176,8 @@ export const PricingRulesPanel = () => {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [userPickerOpen, setUserPickerOpen] = useState(false);
   const [pickerSelectedIds, setPickerSelectedIds] = useState<Set<string>>(new Set());
-  const [categoryTab, setCategoryTab] = useState('All');
+  const [serviceLine, setServiceLine] = useState('');
+  const [categoryTab, setCategoryTab] = useState('');
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
   const [search, setSearch] = useState('');
 
@@ -196,15 +213,17 @@ export const PricingRulesPanel = () => {
   }, [communities]);
 
   const uniqueServices = useMemo(() => {
-    const byName = new Map<string, ServiceOption>();
-    for (const s of services) {
-      const key = s.name.trim().toLowerCase();
-      if (!key || byName.has(key)) continue;
-      byName.set(key, s);
-    }
-    const list = Array.from(byName.values()).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    );
+    const list = [...services].sort((a, b) => {
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      const byPeople = normalizeGarmentCategory(a.garment_category).localeCompare(
+        normalizeGarmentCategory(b.garment_category),
+      );
+      if (byPeople !== 0) return byPeople;
+      return normalizeServiceLine(a.category).localeCompare(
+        normalizeServiceLine(b.category),
+      );
+    });
     if (
       form.serviceId &&
       form.serviceId !== NEW_SERVICE_VALUE &&
@@ -216,7 +235,7 @@ export const PricingRulesPanel = () => {
     return list;
   }, [services, form.serviceId]);
 
-  const categoryTabs = useMemo(() => {
+  const formPeople = useMemo(() => {
     const used = [
       ...services.map((service) => service.garment_category),
       ...pricing.map((row) => serviceJoin(row)?.garment_category),
@@ -224,25 +243,53 @@ export const PricingRulesPanel = () => {
     return listGarmentCategoryTabs(used, true, categoryOrder);
   }, [pricing, services, categoryOrder]);
 
+  const browseItems = useMemo(
+    () =>
+      pricing.map((row) => {
+        const service = serviceJoin(row);
+        return {
+          name: service?.name ?? '',
+          garmentCategory: normalizeGarmentCategory(service?.garment_category),
+          serviceLine: normalizeServiceLine(service?.category),
+          row,
+        };
+      }),
+    [pricing],
+  );
+
+  const browse = useMemo(
+    () =>
+      resolveCatalogBrowse(
+        browseItems,
+        { serviceLine, garmentCategory: categoryTab },
+        { savedOrder: categoryOrder },
+      ),
+    [browseItems, categoryOrder, categoryTab, serviceLine],
+  );
+
   const categoryChoices = useMemo(() => {
-    const used = categoryTabs.filter((tab) => tab !== 'All');
     if (
       form.garmentCategory &&
       form.garmentCategory !== ADD_CATEGORY_VALUE &&
-      !used.includes(form.garmentCategory)
+      !formPeople.includes(form.garmentCategory)
     ) {
       return listGarmentCategoryTabs(
-        [...used, form.garmentCategory],
+        [...formPeople, form.garmentCategory],
         true,
         categoryOrder,
-      ).filter((tab) => tab !== 'All');
+      );
     }
-    return used;
-  }, [categoryTabs, categoryOrder, form.garmentCategory]);
+    return formPeople;
+  }, [formPeople, categoryOrder, form.garmentCategory]);
 
   useEffect(() => {
-    if (!categoryTabs.includes(categoryTab)) setCategoryTab('All');
-  }, [categoryTab, categoryTabs]);
+    if (browse.serviceLine && browse.serviceLine !== serviceLine) {
+      setServiceLine(browse.serviceLine);
+    }
+    if (browse.garmentCategory && browse.garmentCategory !== categoryTab) {
+      setCategoryTab(browse.garmentCategory);
+    }
+  }, [browse.garmentCategory, browse.serviceLine, categoryTab, serviceLine]);
 
   const closeModal = () => {
     setModalOpen(false);
@@ -267,6 +314,7 @@ export const PricingRulesPanel = () => {
       serviceId: row.service_id,
       newServiceName: '',
       serviceName: joined?.name ?? fromList?.name ?? '',
+      serviceLine: normalizeServiceLine(joined?.category ?? fromList?.category),
       garmentCategory: normalizeGarmentCategory(
         joined?.garment_category ?? fromList?.garment_category,
       ),
@@ -312,8 +360,8 @@ export const PricingRulesPanel = () => {
     if (!garmentCategory) {
       toast(
         form.garmentCategory === ADD_CATEGORY_VALUE
-          ? 'Enter a category name'
-          : 'Select a category',
+          ? 'Enter a target people name'
+          : 'Select target people',
         'error',
       );
       return;
@@ -368,6 +416,7 @@ export const PricingRulesPanel = () => {
             serviceName: form.serviceName.trim(),
           }),
       garmentCategory,
+      serviceLine: normalizeServiceLine(form.serviceLine),
       scope: form.scope,
       city: form.scope === 'city' ? form.city.trim() : null,
       communityId: form.scope === 'community' ? form.communityId : null,
@@ -446,10 +495,20 @@ export const PricingRulesPanel = () => {
   };
 
   const handleReorderCategories = (orderedNames: string[]) => {
-    const visible = new Set(categoryTabs.filter((tab) => tab !== 'All'));
-    const base = categoryOrder.length > 0 ? categoryOrder : Array.from(visible);
-    const rest = base.filter((name) => !orderedNames.includes(name) && !visible.has(name));
-    const next = [...orderedNames, ...rest];
+    const wanted = new Set(orderedNames);
+    const base = categoryOrder.length > 0 ? [...categoryOrder] : [...formPeople];
+    for (const name of formPeople) {
+      if (!base.includes(name)) base.push(name);
+    }
+    const slots: number[] = [];
+    base.forEach((name, index) => {
+      if (wanted.has(name)) slots.push(index);
+    });
+    const next = [...base];
+    orderedNames.forEach((name, index) => {
+      const slot = slots[index];
+      if (slot !== undefined) next[slot] = name;
+    });
     const previous = categoryOrder;
     setCategoryOrder(next);
     reorderGarmentCategories.mutate(
@@ -483,12 +542,12 @@ export const PricingRulesPanel = () => {
   const submitting = createPricing.isPending || updatePricing.isPending;
   const searchQuery = search.trim().toLowerCase();
   const visiblePricing = (
-    categoryTab === 'All'
-      ? pricing
-      : pricing.filter(
-          (row) =>
-            normalizeGarmentCategory(serviceJoin(row)?.garment_category) === categoryTab,
-        )
+    browse.serviceLine && browse.garmentCategory
+      ? filterCatalogItems(browseItems, {
+          serviceLine: browse.serviceLine,
+          garmentCategory: browse.garmentCategory,
+        }).map((item) => item.row)
+      : []
   )
     .filter((row) => {
       if (!searchQuery) return true;
@@ -496,6 +555,7 @@ export const PricingRulesPanel = () => {
       const haystack = [
         service?.name,
         normalizeGarmentCategory(service?.garment_category),
+        formatServiceOptionLabel(service?.name ?? '', service?.garment_category, service?.category),
         scopeLabel(row.scope ?? (row.community_id ? 'community' : 'all')),
         targetLabel(row),
         row.base_price != null ? String(row.base_price) : '',
@@ -516,6 +576,20 @@ export const PricingRulesPanel = () => {
   return (
     <>
       <div className={pageStyles.filters}>
+        {browse.serviceLines.length > 0 ? (
+          <select
+            className={`${formStyles.select} ${formStyles.inlineSelect}`}
+            aria-label="Service type"
+            value={browse.serviceLine ?? ''}
+            onChange={(e) => setServiceLine(e.target.value)}
+          >
+            {browse.serviceLines.map((id) => (
+              <option key={id} value={id}>
+                {serviceLineLabel(id)}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <SearchInput
           placeholder="Search services, categories, cities..."
           aria-label="Search pricing rules"
@@ -528,21 +602,16 @@ export const PricingRulesPanel = () => {
         </div>
       </div>
 
-      <div className={`${pageStyles.tabs} ${pageStyles.tabsScroll}`}>
-        <button
-          type="button"
-          className={`${pageStyles.tab} ${categoryTab === 'All' ? pageStyles.tabActive : ''}`}
-          onClick={() => setCategoryTab('All')}
-        >
-          All
-        </button>
-        <CategoryTabBar
-          tabs={categoryTabs.filter((tab) => tab !== 'All')}
-          active={categoryTab}
-          onSelect={setCategoryTab}
-          onReorder={handleReorderCategories}
-        />
-      </div>
+      {browse.categories.length > 0 ? (
+        <div className={`${pageStyles.tabs} ${pageStyles.tabsScroll}`}>
+          <CategoryTabBar
+            tabs={browse.categories}
+            active={browse.garmentCategory ?? ''}
+            onSelect={setCategoryTab}
+            onReorder={handleReorderCategories}
+          />
+        </div>
+      ) : null}
 
       <Card title="Pricing Rules">
         {pricing.length === 0 ? (
@@ -551,7 +620,7 @@ export const PricingRulesPanel = () => {
           <p className={formStyles.hint}>
             {searchQuery
               ? `No pricing rules match "${search.trim()}".`
-              : `No pricing rules in ${categoryTab}.`}
+              : `No pricing rules in ${browse.garmentCategory ?? 'this group'}.`}
           </p>
         ) : (
           <PricingRulesTable
@@ -592,6 +661,9 @@ export const PricingRulesPanel = () => {
                   serviceId,
                   newServiceName: serviceId === NEW_SERVICE_VALUE ? f.newServiceName : '',
                   serviceName: selected?.name ?? '',
+                  serviceLine: selected
+                    ? normalizeServiceLine(selected.category)
+                    : f.serviceLine,
                   garmentCategory: selected
                     ? normalizeGarmentCategory(selected.garment_category)
                     : 'Men',
@@ -602,7 +674,7 @@ export const PricingRulesPanel = () => {
               <option value="">Select service</option>
               {uniqueServices.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name}
+                  {formatServiceOptionLabel(s.name, s.garment_category, s.category)}
                 </option>
               ))}
               <option value={NEW_SERVICE_VALUE}>New service</option>
@@ -622,9 +694,12 @@ export const PricingRulesPanel = () => {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, newServiceName: e.target.value }))
                 }
-                placeholder="e.g. Blazer"
+                placeholder="e.g. Saree"
                 autoFocus
               />
+              <p className={formStyles.hint}>
+                Use this to add the same garment under a different service type, such as Saree in Iron and Steam iron.
+              </p>
             </div>
           )}
 
@@ -643,15 +718,37 @@ export const PricingRulesPanel = () => {
                 }
               />
               <p className={formStyles.hint}>
-                Name and category apply to this service everywhere, including other price rules and the customer app.
+                Name, target people, and service type identify this garment. The same name can exist again with a different type or audience.
               </p>
             </div>
           )}
 
           {showServiceDetails && (
             <div className={formStyles.field}>
+              <label className={formStyles.label} htmlFor="pricing-service-line">
+                Service type *
+              </label>
+              <select
+                id="pricing-service-line"
+                className={formStyles.select}
+                value={form.serviceLine}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, serviceLine: e.target.value }))
+                }
+              >
+                {SERVICE_LINES.map((line) => (
+                  <option key={line.id} value={line.id}>
+                    {line.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {showServiceDetails && (
+            <div className={formStyles.field}>
               <label className={formStyles.label} htmlFor="pricing-category">
-                Category *
+                Target people *
               </label>
               <select
                 id="pricing-category"
@@ -671,7 +768,7 @@ export const PricingRulesPanel = () => {
                     {category}
                   </option>
                 ))}
-                <option value={ADD_CATEGORY_VALUE}>Add category</option>
+                <option value={ADD_CATEGORY_VALUE}>Add target people</option>
               </select>
               {form.garmentCategory === ADD_CATEGORY_VALUE && (
                 <input

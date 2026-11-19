@@ -205,7 +205,10 @@ export async function sendPushCampaign(
   const title = payload.title || campaign.name;
   const body = payload.body || '';
   const path =
-    payload.path && payload.path.startsWith('/') ? payload.path : null;
+    payload.path &&
+    (payload.path.startsWith('/') || payload.path.startsWith('ironcloud://'))
+      ? payload.path
+      : null;
 
   if (!body) {
     await admin

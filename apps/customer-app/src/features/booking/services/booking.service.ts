@@ -1,4 +1,4 @@
-import { assertServiceQuantities } from '@ironcloud/db';
+import { assertServiceQuantities, formatServiceDisplayName } from '@ironcloud/db';
 
 import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
@@ -607,7 +607,7 @@ type OrderRow = {
         id: string;
         quantity: number;
         unit_price: number;
-        service: { name: string } | null;
+        service: { name: string; category?: string | null } | null;
       }[]
     | null;
 };
@@ -631,7 +631,7 @@ const ORDER_SELECT = `
     id,
     quantity,
     unit_price,
-    service:service_id (name)
+    service:service_id (name, category)
   )
 `;
 
@@ -785,7 +785,10 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     const unitPrice = Number(item.unit_price || 0);
     return {
       id: item.id,
-      garmentName: item.service?.name || 'Garment',
+      garmentName: formatServiceDisplayName(
+        item.service?.name || 'Garment',
+        item.service?.category,
+      ),
       quantity,
       unitPrice,
       lineTotal: quantity * unitPrice,

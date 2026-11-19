@@ -2,15 +2,18 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
-import { isWeightService, listGarmentCategoryTabs } from '@ironcloud/db';
+import {
+  filterCatalogItems,
+  isWeightService,
+  resolveCatalogBrowse,
+  type ServiceLineId,
+} from '@ironcloud/db';
 import {
   colors,
   radius,
@@ -23,6 +26,7 @@ import {
   getGarmentCatalog,
   type GarmentCatalogItem,
 } from '../services/catalog.service';
+import { GarmentCatalogFilters } from './GarmentCatalogFilters';
 import { PriceQuote } from './PriceQuote';
 import { ReadyIn } from './ReadyIn';
 
@@ -83,7 +87,8 @@ export function GarmentRateList({ communityId, userId, city }: Props) {
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(Boolean(communityId));
   const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('All');
+  const [serviceLine, setServiceLine] = useState('');
+  const [category, setCategory] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -122,29 +127,33 @@ export function GarmentRateList({ communityId, userId, city }: Props) {
     };
   }, [city, communityId, userId]);
 
-  const categoryTabs = useMemo(
-    () => listGarmentCategoryTabs(
-      catalog.map((item) => item.garmentCategory),
-      false,
-      categoryOrder,
-    ),
-    [catalog, categoryOrder],
+  const browse = useMemo(
+    () =>
+      resolveCatalogBrowse(
+        catalog,
+        { serviceLine, garmentCategory: category },
+        { savedOrder: categoryOrder },
+      ),
+    [catalog, category, categoryOrder, serviceLine],
   );
 
   useEffect(() => {
-    if (category !== 'All' && !categoryTabs.includes(category)) {
-      setCategory('All');
+    if (browse.serviceLine && browse.serviceLine !== serviceLine) {
+      setServiceLine(browse.serviceLine);
     }
-  }, [category, categoryTabs]);
+    if (browse.garmentCategory && browse.garmentCategory !== category) {
+      setCategory(browse.garmentCategory);
+    }
+  }, [browse.garmentCategory, browse.serviceLine, category, serviceLine]);
 
   const items = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return catalog.filter((item) => {
-      if (category !== 'All' && item.garmentCategory !== category) return false;
-      if (needle && !item.name.toLowerCase().includes(needle)) return false;
-      return true;
+    if (!browse.serviceLine || !browse.garmentCategory) return [];
+    return filterCatalogItems(catalog, {
+      serviceLine: browse.serviceLine,
+      garmentCategory: browse.garmentCategory,
+      query,
     });
-  }, [catalog, category, query]);
+  }, [browse.garmentCategory, browse.serviceLine, catalog, query]);
 
   const showFilters = Boolean(communityId) && !loading && catalog.length > 0;
 
@@ -152,56 +161,16 @@ export function GarmentRateList({ communityId, userId, city }: Props) {
     <View style={styles.root}>
       {showFilters ? (
         <View style={styles.filters}>
-          <View style={styles.searchWrap}>
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search a service"
-              placeholderTextColor={colors.text.muted}
-              style={[styles.search, query.length > 0 && styles.searchWithClear]}
-              autoCorrect={false}
-              autoCapitalize="none"
-              accessibilityLabel="Search a service"
-            />
-            {query.length > 0 ? (
-              <Pressable
-                onPress={() => setQuery('')}
-                style={styles.searchClear}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="Clear search"
-              >
-                <MaterialCommunityIcons
-                  name="close-circle"
-                  size={20}
-                  color={colors.icon.secondary}
-                />
-              </Pressable>
-            ) : null}
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.chipRow}
-          >
-            {categoryTabs.map((tab) => {
-              const selected = tab === category;
-              return (
-                <Pressable
-                  key={tab}
-                  onPress={() => setCategory(tab)}
-                  style={[styles.chip, selected && styles.chipSelected]}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                >
-                  <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                    {tab}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <GarmentCatalogFilters
+            serviceLines={browse.serviceLines}
+            serviceLine={browse.serviceLine ?? ''}
+            onServiceLineChange={(id: ServiceLineId) => setServiceLine(id)}
+            query={query}
+            onQueryChange={setQuery}
+            categories={browse.categories}
+            category={browse.garmentCategory ?? ''}
+            onCategoryChange={setCategory}
+          />
         </View>
       ) : null}
 
@@ -279,63 +248,8 @@ const styles = StyleSheet.create({
   filters: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-    gap: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.divider,
-  },
-  searchWrap: {
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  search: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface.elevated,
-    color: colors.text.heading,
-    fontFamily: fonts.inter.regular,
-    fontSize: 15,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  searchWithClear: {
-    paddingRight: 40,
-  },
-  searchClear: {
-    position: 'absolute',
-    right: spacing.sm,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 28,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingBottom: spacing.md,
-  },
-  chip: {
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    backgroundColor: colors.surface.elevated,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  chipSelected: {
-    backgroundColor: colors.brand.primary,
-    borderColor: colors.brand.primary,
-  },
-  chipLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 13,
-    color: colors.text.heading,
-  },
-  chipLabelSelected: {
-    color: colors.brand.onPrimary,
   },
   scroll: {
     flex: 1,

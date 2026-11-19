@@ -1,5 +1,47 @@
 export const DEFAULT_GARMENT_CATEGORIES = ['Men', 'Women', 'Kids', 'Others'] as const;
 
+export const SERVICE_LINES = [
+  { id: 'ironing', label: 'Iron' },
+  { id: 'steam_ironing', label: 'Steam iron' },
+  { id: 'dry_cleaning', label: 'Dry clean' },
+  { id: 'laundry', label: 'Laundry' },
+  { id: 'shoe_cleaning', label: 'Shoe cleaning' },
+  { id: 'repair', label: 'Repair' },
+] as const;
+
+export type ServiceLineId = (typeof SERVICE_LINES)[number]['id'];
+
+/** Iron / Steam iron / Dry clean. Unknown values stay as Iron. */
+export function normalizeServiceLine(value: string | null | undefined): ServiceLineId {
+  const trimmed = (value ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const match = SERVICE_LINES.find(
+    (line) =>
+      line.id === trimmed ||
+      line.label.toLowerCase().replace(/[\s-]+/g, '_') === trimmed,
+  );
+  return match?.id ?? 'ironing';
+}
+
+export function serviceLineLabel(value: string | null | undefined): string {
+  const id = normalizeServiceLine(value);
+  return SERVICE_LINES.find((line) => line.id === id)?.label ?? 'Iron';
+}
+
+export function formatServiceOptionLabel(
+  name: string,
+  garmentCategory?: string | null,
+  category?: string | null,
+): string {
+  return `${name.trim()} · ${normalizeGarmentCategory(garmentCategory)} · ${serviceLineLabel(category)}`;
+}
+
+export function formatServiceDisplayName(
+  name: string,
+  category?: string | null,
+): string {
+  return `${name.trim()} · ${serviceLineLabel(category)}`;
+}
+
 /** Empty or unknown values land in Others. Default names match regardless of case. */
 export function normalizeGarmentCategory(value: string | null | undefined): string {
   const trimmed = (value ?? '').trim().replace(/\s+/g, ' ');
@@ -11,9 +53,9 @@ export function normalizeGarmentCategory(value: string | null | undefined): stri
 }
 
 /**
- * Tab order: All, then the saved category order.
+ * People tabs in saved order.
  * Names missing from that order fall back to Men / Women / Kids / Others, then A–Z.
- * Customer rates pass includeEmptyDefaults false so empty groups stay hidden.
+ * Pass includeEmptyDefaults false so groups with no rows stay hidden.
  */
 export function listGarmentCategoryTabs(
   usedCategories: Iterable<string | null | undefined>,
@@ -47,7 +89,75 @@ export function listGarmentCategoryTabs(
     .filter((category) => !seen.has(category))
     .sort((a, b) => a.localeCompare(b));
 
-  return ['All', ...ranked, ...extras];
+  return [...ranked, ...extras];
+}
+
+export type CatalogBrowseFields = {
+  name: string;
+  garmentCategory: string;
+  serviceLine: string;
+};
+
+/** Service types that have at least one row, in Iron → Steam iron → Dry clean order. */
+export function listUsedServiceLines(
+  categories: Iterable<string | null | undefined>,
+): ServiceLineId[] {
+  const present = new Set<ServiceLineId>();
+  for (const raw of categories) present.add(normalizeServiceLine(raw));
+  return SERVICE_LINES.map((line) => line.id).filter((id) => present.has(id));
+}
+
+/** Keep the chosen type and people tab when they still have rows; otherwise snap to the first. */
+export function resolveCatalogBrowse<T extends CatalogBrowseFields>(
+  items: readonly T[],
+  selection: { serviceLine?: string | null; garmentCategory?: string | null },
+  options?: {
+    savedOrder?: Iterable<string | null | undefined> | null;
+    includeEmptyPeople?: boolean;
+  },
+): {
+  serviceLines: ServiceLineId[];
+  serviceLine: ServiceLineId | null;
+  categories: string[];
+  garmentCategory: string | null;
+} {
+  const serviceLines = listUsedServiceLines(items.map((item) => item.serviceLine));
+  const requestedLine = (selection.serviceLine ?? '').trim();
+  const serviceLine =
+    requestedLine && serviceLines.includes(normalizeServiceLine(requestedLine))
+      ? normalizeServiceLine(requestedLine)
+      : (serviceLines[0] ?? null);
+
+  const inLine = serviceLine
+    ? items.filter((item) => normalizeServiceLine(item.serviceLine) === serviceLine)
+    : [];
+  const categories = listGarmentCategoryTabs(
+    inLine.map((item) => item.garmentCategory),
+    options?.includeEmptyPeople ?? false,
+    options?.savedOrder,
+  );
+  const requestedPeople = (selection.garmentCategory ?? '').trim();
+  const garmentCategory = categories.includes(requestedPeople)
+    ? requestedPeople
+    : (categories[0] ?? null);
+
+  return { serviceLines, serviceLine, categories, garmentCategory };
+}
+
+/** Both service type and people are required. Search matches the garment name only. */
+export function filterCatalogItems<T extends CatalogBrowseFields>(
+  items: readonly T[],
+  filters: { serviceLine: string; garmentCategory: string; query?: string },
+): T[] {
+  const line = normalizeServiceLine(filters.serviceLine);
+  const people = normalizeGarmentCategory(filters.garmentCategory);
+  const needle = (filters.query ?? '').trim().toLowerCase();
+  return items.filter((item) => {
+    if (normalizeServiceLine(item.serviceLine) !== line) return false;
+    if (normalizeGarmentCategory(item.garmentCategory) !== people) return false;
+    if (needle && !item.name.trim().toLowerCase().includes(needle)) return false;
+    return true;
+  });
 }
 
 export type PricingScope = 'all' | 'city' | 'community' | 'user';

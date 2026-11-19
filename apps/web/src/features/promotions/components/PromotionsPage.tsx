@@ -60,7 +60,7 @@ const emptyCampaign = () => ({
   status: 'draft',
   title: '',
   body: '',
-  path: '/booking/request',
+  path: '/(tabs)/home',
   audienceMode: 'all' as 'all' | 'communities' | 'cities' | 'users',
   communityIds: [] as string[],
   cities: [] as string[],
@@ -318,8 +318,11 @@ export const PromotionsPage = () => {
         return;
       }
       const path = campaignForm.path.trim();
-      if (path && !path.startsWith('/')) {
-        toast('Navigation path must start with / (e.g. /booking/request)', 'error');
+      if (path && !path.startsWith('/') && !path.startsWith('ironcloud://')) {
+        toast(
+          'Navigation path must start with / or ironcloud:// (e.g. /(tabs)/home)',
+          'error',
+        );
         return;
       }
 
@@ -906,7 +909,7 @@ export const PromotionsPage = () => {
                           status: c.status ?? 'draft',
                           title: p.title,
                           body: p.body,
-                          path: p.path || '/booking/request',
+                          path: p.path || '/(tabs)/home',
                           audienceMode: audienceModeFromTarget(t),
                           communityIds: t.communityIds,
                           cities: t.cities,
@@ -1433,7 +1436,7 @@ export const PromotionsPage = () => {
                     onChange={(e) =>
                       setCampaignForm((f) => ({ ...f, path: e.target.value }))
                     }
-                    placeholder="/booking/request"
+                    placeholder="/(tabs)/home"
                   />
                 </div>
               </>

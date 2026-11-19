@@ -44,6 +44,13 @@
   border-color: var(--ic-border-focus);
 }
 
+.inlineSelect {
+  flex: 1 1 11rem;
+  width: auto;
+  max-width: 16rem;
+  min-width: 0;
+}
+
 .input::placeholder {
   color: var(--ic-text-placeholder);
 }

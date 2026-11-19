@@ -25,10 +25,47 @@ import {
 } from '../src/features/app-update/policy';
 import {
   extractNotificationPath,
+  peekPendingNotificationHref,
+  peekPendingNotificationVersion,
   registerForPushNotifications,
+  setPendingNotificationHref,
+  subscribePendingNotificationHref,
 } from '../src/features/notifications/services/push.service';
 
 SplashScreen.preventAutoHideAsync();
+
+const COLD_START_NOTIFICATION_MAX_AGE_MS = 60_000;
+
+type NotificationResponseLike = {
+  notification: {
+    date?: number;
+    request: {
+      identifier: string;
+      content: { data: unknown };
+    };
+  };
+};
+
+function NotificationTapNavigator() {
+  const router = useRouter();
+  const appliedVersion = useRef(0);
+
+  const openPending = useCallback(() => {
+    const version = peekPendingNotificationVersion();
+    if (appliedVersion.current === version) return;
+    const href = peekPendingNotificationHref();
+    if (!href) return;
+    appliedVersion.current = version;
+    router.navigate(href as never);
+  }, [router]);
+
+  useEffect(() => {
+    openPending();
+    return subscribePendingNotificationHref(openPending);
+  }, [openPending]);
+
+  return null;
+}
 
 function sessionAccessToken(session: unknown): string | null {
   if (!session || typeof session !== 'object') return null;
@@ -125,27 +162,39 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
+    const handledIds = new Set<string>();
+
+    const acceptResponse = (
+      response: NotificationResponseLike,
+      options?: { maxAgeMs?: number },
+    ) => {
+      const id = response.notification.request.identifier;
+      if (!id || handledIds.has(id)) return;
+      if (options?.maxAgeMs != null) {
+        const date = response.notification.date;
+        if (typeof date !== 'number' || Date.now() - date > options.maxAgeMs) {
+          return;
+        }
+      }
+      const href = extractNotificationPath(response.notification.request.content.data);
+      if (!href) return;
+      handledIds.add(id);
+      setPendingNotificationHref(href);
+    };
+
     const attachTapListener = async () => {
       try {
         const Notifications = await import('expo-notifications');
         responseSub.current?.remove();
         responseSub.current = Notifications.addNotificationResponseReceivedListener(
           (response) => {
-            const path = extractNotificationPath(
-              response.notification.request.content.data,
-            );
-            if (path) {
-              router.push(path as never);
-            }
+            acceptResponse(response);
           },
         );
 
         const last = await Notifications.getLastNotificationResponseAsync();
-        const coldPath = extractNotificationPath(
-          last?.notification.request.content.data,
-        );
-        if (coldPath) {
-          router.push(coldPath as never);
+        if (last) {
+          acceptResponse(last, { maxAgeMs: COLD_START_NOTIFICATION_MAX_AGE_MS });
         }
       } catch (err) {
         console.warn('[Push] listener setup failed:', err);
@@ -158,7 +207,7 @@ export default function RootLayout() {
       responseSub.current?.remove();
       responseSub.current = null;
     };
-  }, [router]);
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;
@@ -172,5 +221,10 @@ export default function RootLayout() {
     return <ForceUpdateScreen policy={updatePolicy} />;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }} />
+      <NotificationTapNavigator />
+    </>
+  );
 }

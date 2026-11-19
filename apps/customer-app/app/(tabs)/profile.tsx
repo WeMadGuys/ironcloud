@@ -467,6 +467,14 @@ export default function ProfileScreen() {
       showArrow: true,
     },
     {
+      id: 'wallet',
+      icon: 'wallet-outline',
+      label: 'Wallet',
+      subtitle: 'Add money and view transactions',
+      onPress: () => router.push('/(tabs)/wallet'),
+      showArrow: true,
+    },
+    {
       id: 'notifications',
       icon: 'bell-outline',
       label: 'Notifications',

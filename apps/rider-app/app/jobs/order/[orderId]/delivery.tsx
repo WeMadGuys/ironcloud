@@ -28,6 +28,7 @@ import {
 import {
   confirmDelivery,
   getDeliveryItems,
+  isInsufficientDeliveryWalletError,
   type DeliveryItem,
 } from '../../../../src/features/jobs/services/delivery.service';
 
@@ -142,6 +143,13 @@ export default function DeliveryScreen() {
       await confirmDelivery(orderId);
       router.back();
     } catch (error) {
+      if (isInsufficientDeliveryWalletError(error)) {
+        Alert.alert(
+          'Insufficient wallet balance',
+          `Ask the customer to add money, then deliver again.\n\nRequired: ₹${error.amount}\nWallet: ₹${error.balance}`,
+        );
+        return;
+      }
       Alert.alert(
         'Delivery failed',
         error instanceof Error ? error.message : 'Could not confirm delivery',

@@ -345,7 +345,7 @@ export const fetchOrderById = async (orderId: string) => {
       profiles!orders_customer_id_fkey(id, full_name, phone, email),
       communities(id, name, city),
       addresses(flat_number, tower),
-      order_items(*, services(name, unit)),
+      order_items(*, services(name, unit, category)),
       order_events(*, profiles(full_name)),
       rider_jobs(*, riders(id, profiles!riders_id_fkey(full_name)))
     `)

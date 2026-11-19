@@ -209,11 +209,78 @@ export async function syncPushRegistration(): Promise<void> {
   await registerForPushNotifications({ accessToken });
 }
 
+const APP_SCHEME = 'ironcloud://';
+
+const TAB_HREFS: Record<string, string> = {
+  home: '/(tabs)/home',
+  wallet: '/(tabs)/wallet',
+  profile: '/(tabs)/profile',
+  orders: '/(tabs)/orders',
+};
+
+/**
+ * Turn a campaign path or banner link into an Expo Router href.
+ * Tab screens must use their group href. `/wallet` also matches an empty
+ * stack, so it is rewritten to `/(tabs)/wallet`.
+ */
+export function normalizeNotificationPath(raw: string): string | null {
+  let path = raw.trim();
+  if (!path) return null;
+
+  if (path.startsWith(APP_SCHEME)) {
+    path = path.slice(APP_SCHEME.length);
+  } else if (path.includes('://')) {
+    return null;
+  }
+
+  path = path.split('?')[0]?.split('#')[0] ?? '';
+  if (!path.startsWith('/')) path = `/${path}`;
+  path = path.replace(/\/{2,}/g, '/');
+  if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+
+  const withoutGroup = path.replace(/^\/\([^/]+\)/, '') || '/';
+  const segments = withoutGroup.split('/').filter(Boolean);
+  if (segments.length === 0) return TAB_HREFS.home;
+
+  const [first, ...rest] = segments;
+  if (first === 'orders' && rest.length > 0) {
+    return `/orders/${rest.join('/')}`;
+  }
+  if (rest.length === 0 && TAB_HREFS[first]) {
+    return TAB_HREFS[first];
+  }
+  return `/${segments.join('/')}`;
+}
+
 export function extractNotificationPath(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;
   const path = (data as { path?: unknown }).path;
   if (typeof path !== 'string') return null;
-  const trimmed = path.trim();
-  if (!trimmed.startsWith('/')) return null;
-  return trimmed;
+  return normalizeNotificationPath(path);
+}
+
+let pendingNotificationHref: string | null = null;
+let pendingNotificationVersion = 0;
+const pendingNotificationListeners = new Set<() => void>();
+
+/** Remember a tap until the navigator exists and the startup redirect can see it. */
+export function setPendingNotificationHref(href: string) {
+  pendingNotificationHref = href;
+  pendingNotificationVersion += 1;
+  pendingNotificationListeners.forEach((listener) => listener());
+}
+
+export function peekPendingNotificationHref(): string | null {
+  return pendingNotificationHref;
+}
+
+export function peekPendingNotificationVersion(): number {
+  return pendingNotificationVersion;
+}
+
+export function subscribePendingNotificationHref(listener: () => void) {
+  pendingNotificationListeners.add(listener);
+  return () => {
+    pendingNotificationListeners.delete(listener);
+  };
 }

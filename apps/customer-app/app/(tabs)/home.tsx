@@ -219,6 +219,10 @@ export default function HomeScreen() {
   const [showAllSlots, setShowAllSlots] = useState(false);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
+  const [reviewBooking, setReviewBooking] = useState<{
+    dayOffset: number;
+    startHour: number;
+  } | null>(null);
   const [estimateCounts, setEstimateCounts] = useState<EstimateCounts>({});
   const [estimateCatalog, setEstimateCatalog] = useState<GarmentCatalogItem[]>([]);
   const [communityId, setCommunityId] = useState<string | null>(null);
@@ -579,7 +583,7 @@ export default function HomeScreen() {
     }, [loadHomeData, selectedDay]),
   );
 
-  // Rider may debit wallet while the app is backgrounded — refresh on resume.
+  // Delivery may debit the wallet while the app is backgrounded — refresh on resume.
   useEffect(() => {
     const onAppState = (next: AppStateStatus) => {
       if (next === 'active') {
@@ -642,19 +646,19 @@ export default function HomeScreen() {
     setSelectedDay(nextOpenSlot.offset);
   };
 
-  const handleConfirmBooking = async () => {
+  const openBookingReview = () => {
+    if (selectedStartHour == null || isBooking) return;
+    setReviewBooking({ dayOffset: selectedDay, startHour: selectedStartHour });
+  };
+
+  const closeBookingReview = () => {
     if (isBooking) return;
-    if (selectedStartHour == null) {
-      Alert.alert(
-        'No slots available',
-        availableSlots.length === 0
-          ? selectedDay === 0
-            ? 'All pickup times for today have already passed. Please choose another day.'
-            : 'No pickup times are available for this day.'
-          : 'Please select a pickup time to continue.',
-      );
-      return;
-    }
+    setReviewBooking(null);
+  };
+
+  const handleConfirmBooking = async () => {
+    if (isBooking || !reviewBooking) return;
+    const { dayOffset, startHour } = reviewBooking;
     setIsBooking(true);
     try {
       const hasEstimates = Object.values(estimateCounts).some((count) => count > 0);
@@ -665,20 +669,21 @@ export default function HomeScreen() {
       const { amount: estimatedAmount } = estimateTotals(estimatedGarments);
 
       await createBooking({
-        dayOffset: selectedDay,
-        pickupStartHour: selectedStartHour,
+        dayOffset,
+        pickupStartHour: startHour,
         specialInstructions,
         ...(estimatedGarments.length > 0
           ? { estimatedGarments, estimatedAmount }
           : {}),
       });
+      setReviewBooking(null);
       setSpecialInstructions('');
       setShowInstructions(false);
       setEstimateCounts({});
-      bookedSlotKeyRef.current = `${selectedDay}:${selectedStartHour}`;
+      bookedSlotKeyRef.current = `${dayOffset}:${startHour}`;
       // Capacity includes this order now — refresh Full chips, not just the booking strip.
       setSlotClock(Date.now());
-      await refreshBookingState(selectedDay);
+      await refreshBookingState(dayOffset);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to create booking';
@@ -1289,6 +1294,53 @@ export default function HomeScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      <Modal
+        visible={reviewBooking != null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBookingReview}
+      >
+        <Pressable style={styles.reviewBackdrop} onPress={closeBookingReview}>
+          <Pressable style={styles.reviewCard} onPress={() => {}}>
+            <Text style={styles.reviewTitle}>Review booking</Text>
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>Pickup</Text>
+              <Text style={styles.reviewValue}>
+                {reviewBooking
+                  ? formatNextOpenLabel(reviewBooking.dayOffset, reviewBooking.startHour)
+                  : ''}
+              </Text>
+            </View>
+            <View style={styles.reviewRow}>
+              <Text style={styles.reviewLabel}>Delivery</Text>
+              <Text style={styles.reviewValue}>
+                {reviewBooking
+                  ? formatDeliveryPreview(reviewBooking.dayOffset, reviewBooking.startHour)
+                  : ''}
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.confirmButton, isBooking && styles.confirmButtonDisabled]}
+              onPress={handleConfirmBooking}
+              disabled={isBooking}
+            >
+              {isBooking ? (
+                <ActivityIndicator size="small" color={colors.brand.onPrimary} />
+              ) : (
+                <>
+                  <Text style={styles.confirmButtonText}>Confirm & Book</Text>
+                  <MaterialCommunityIcons
+                    name="arrow-right"
+                    size={20}
+                    color={colors.brand.onPrimary}
+                  />
+                </>
+              )}
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {promoBannerModal}
 
       {/* Bottom CTA */}
@@ -1296,23 +1348,17 @@ export default function HomeScreen() {
         <Pressable
           style={[
             styles.confirmButton,
-            (isBooking || selectedStartHour == null) && styles.confirmButtonDisabled,
+            selectedStartHour == null && styles.confirmButtonDisabled,
           ]}
-          onPress={handleConfirmBooking}
-          disabled={isBooking || selectedStartHour == null}
+          onPress={openBookingReview}
+          disabled={selectedStartHour == null}
         >
-          {isBooking ? (
-            <ActivityIndicator size="small" color={colors.brand.onPrimary} />
-          ) : (
-            <>
-              <Text style={styles.confirmButtonText}>Confirm & Book</Text>
-              <MaterialCommunityIcons
-                name="arrow-right"
-                size={20}
-                color={colors.brand.onPrimary}
-              />
-            </>
-          )}
+          <Text style={styles.confirmButtonText}>Book</Text>
+          <MaterialCommunityIcons
+            name="arrow-right"
+            size={20}
+            color={colors.brand.onPrimary}
+          />
         </Pressable>
         <View style={styles.secureNote}>
           <MaterialCommunityIcons
@@ -1734,6 +1780,38 @@ const styles = StyleSheet.create({
     color: colors.text.muted,
     textAlign: 'right',
     marginTop: spacing.xs,
+  },
+  reviewBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    backgroundColor: 'rgba(14, 42, 74, 0.45)',
+  },
+  reviewCard: {
+    backgroundColor: colors.surface.background,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadows.md.native,
+  },
+  reviewTitle: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 18,
+    color: colors.text.heading,
+    marginBottom: spacing.md,
+  },
+  reviewRow: {
+    marginBottom: spacing.md,
+  },
+  reviewLabel: {
+    fontFamily: fonts.inter.medium,
+    fontSize: 12,
+    color: colors.text.muted,
+    marginBottom: 2,
+  },
+  reviewValue: {
+    fontFamily: fonts.poppins.medium,
+    fontSize: 16,
+    color: colors.text.primary,
   },
   bottomCta: {
     paddingHorizontal: spacing.lg,

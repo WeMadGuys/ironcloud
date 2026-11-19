@@ -7,6 +7,7 @@ import { colors } from '@ironcloud/ui';
 import { IS_MOCK_AUTH, MOCK_USER_ID } from '../src/config/auth';
 import { forceLocalSignOut } from '../src/features/auth/services/auth';
 import { isAnonymizedDeletedProfile } from '../src/features/profile/services/profile.service';
+import { peekPendingNotificationHref } from '../src/features/notifications/services/push.service';
 import { supabase } from '../src/lib/supabase';
 
 type Destination = 'login' | 'home' | null;
@@ -71,7 +72,8 @@ export default function IndexScreen() {
   }
 
   if (destination === 'home') {
-    return <Redirect href="/(tabs)/home" />;
+    const pending = peekPendingNotificationHref();
+    return <Redirect href={(pending ?? '/(tabs)/home') as never} />;
   }
 
   return <Redirect href="/(auth)/login" />;

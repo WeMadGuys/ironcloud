@@ -67,8 +67,8 @@ async function fetchActiveOrdersInRange(
   range: DateRange,
   select: string,
   communityId?: string,
-  /** `pickup` = revenue day (charged at pickup). `any` = pickup or delivery that day. */
-  match: 'any' | 'pickup' = 'any',
+  /** `pickup` / `delivery` limit to that slot. `any` matches either slot that day. */
+  match: 'any' | 'pickup' | 'delivery' = 'any',
 ): Promise<Record<string, unknown>[]> {
   const supabase = getSupabase();
   const rangeStart = range.from;
@@ -77,6 +77,7 @@ async function fetchActiveOrdersInRange(
 
   let slotsQuery = supabase.from('service_slots').select('id, window_start');
   if (match === 'pickup') slotsQuery = slotsQuery.eq('slot_type', 'pickup');
+  if (match === 'delivery') slotsQuery = slotsQuery.eq('slot_type', 'delivery');
   if (rangeStart) slotsQuery = slotsQuery.gte('window_start', rangeStart.toISOString());
   if (rangeEnd) slotsQuery = slotsQuery.lte('window_start', rangeEnd.toISOString());
 
@@ -94,7 +95,12 @@ async function fetchActiveOrdersInRange(
   const orFilter = `pickup_slot_id.in.(${slotIds.join(',')}),delivery_slot_id.in.(${slotIds.join(',')})`;
 
   let query = supabase.from('orders').select(select);
-  query = match === 'pickup' ? query.in('pickup_slot_id', slotIds) : query.or(orFilter);
+  query =
+    match === 'pickup'
+      ? query.in('pickup_slot_id', slotIds)
+      : match === 'delivery'
+        ? query.in('delivery_slot_id', slotIds)
+        : query.or(orFilter);
   if (communityId) query = query.eq('community_id', communityId);
 
   const { data, error } = await query;
@@ -201,7 +207,7 @@ export const fetchDashboardKPIs = async (
       effectiveRange,
       'id, status, total_amount',
       communityId,
-      'pickup',
+      'delivery',
     ),
     fetchActiveOrderCount(prevRange, communityId),
     sumWalletBalance(communityId),
@@ -605,7 +611,7 @@ export const fetchDashboardKpiDetails = async (
       effectiveRange,
       ORDER_DETAIL_SELECT,
       communityId,
-      kpi === 'revenue' ? 'pickup' : 'any',
+      kpi === 'revenue' ? 'delivery' : 'any',
     )) as unknown as DashboardOrderDetail[];
 
     const statuses = ORDER_KPI_STATUSES[kpi];

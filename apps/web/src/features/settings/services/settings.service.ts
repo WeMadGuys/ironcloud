@@ -17,7 +17,9 @@ export const fetchAuditLogs = async (page = 1, pageSize = 25) => {
 export const fetchPricingRules = async () => {
   const supabase = getSupabase();
   const selects = [
+    '*, services(name, garment_category, category, sort_order), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
     '*, services(name, garment_category, sort_order), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
+    '*, services(name, garment_category, category), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
     '*, services(name, garment_category), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
     '*, services(name), communities(name), profiles!pricing_rules_user_id_fkey(full_name, phone)',
     '*, services(name, garment_category, sort_order), communities(name)',
@@ -41,7 +43,7 @@ export const fetchActiveServices = async () => {
   const supabase = getSupabase();
   const withOrder = await supabase
     .from('services')
-    .select('id, name, garment_category, sort_order')
+    .select('id, name, garment_category, category, sort_order')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
@@ -54,7 +56,7 @@ export const fetchActiveServices = async () => {
 
   const withCategory = await supabase
     .from('services')
-    .select('id, name, garment_category')
+    .select('id, name, garment_category, category')
     .eq('is_active', true)
     .order('name', { ascending: true });
   if (!withCategory.error) {
@@ -82,6 +84,7 @@ export const fetchActiveServices = async () => {
   return (data ?? []).map((service, index) => ({
     ...service,
     garment_category: 'Others',
+    category: 'ironing',
     sort_order: index,
   }));
 };

@@ -1,3 +1,5 @@
+import { formatServiceDisplayName } from '@ironcloud/db';
+
 import { createTtlCache } from '../../../lib/ttl-cache';
 import { supabase } from '../../../lib/supabase';
 import {
@@ -48,7 +50,7 @@ export type RiderJobRow = {
     delivery_slot: { window_start: string; window_end: string } | null;
     order_items: {
       quantity: number;
-      service: { name: string } | null;
+      service: { name: string; category?: string | null } | null;
     }[] | null;
   } | null;
 };
@@ -124,7 +126,7 @@ const JOB_SELECT = `
     delivery_slot:delivery_slot_id (window_start, window_end),
     order_items (
       quantity,
-      service:service_id (name)
+      service:service_id (name, category)
     )
   )
 `;
@@ -184,7 +186,10 @@ function resolveItemSummary(order: NonNullable<RiderJobRow['order']>): {
   const confirmed = (order.order_items || [])
     .filter((item) => (item.quantity || 0) > 0)
     .map((item) => ({
-      name: item.service?.name || 'Garment',
+      name: formatServiceDisplayName(
+        item.service?.name || 'Garment',
+        item.service?.category,
+      ),
       quantity: item.quantity || 0,
     }));
 

@@ -1,12 +1,14 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   clampServiceQuantity,
+  filterCatalogItems,
   formatReadyIn,
   isWeightService,
-  listGarmentCategoryTabs,
   maxQuantityForService,
+  resolveCatalogBrowse,
   type BoxScanResult,
   type OrderBoxRow,
+  type ServiceLineId,
 } from '@ironcloud/db';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -20,13 +22,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typographyScale } from '@ironcloud/ui';
 
+import { GarmentCatalogFilters } from '../../../../src/features/jobs/components/GarmentCatalogFilters';
 import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDetailsCard';
 import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
 import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
@@ -98,7 +100,8 @@ export default function PickupScreen() {
   const [scanResult, setScanResult] = useState<BoxScanResult | null>(null);
   const [acting, setActing] = useState(false);
   const [garmentQuery, setGarmentQuery] = useState('');
-  const [garmentCategory, setGarmentCategory] = useState('All');
+  const [serviceLine, setServiceLine] = useState('');
+  const [garmentCategory, setGarmentCategory] = useState('');
   const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
 
   const refreshBoxes = useCallback(async () => {
@@ -173,29 +176,33 @@ export default function PickupScreen() {
     if (href) void Linking.openURL(href);
   };
 
-  const categoryTabs = useMemo(
-    () => listGarmentCategoryTabs(
-      catalog.map((item) => item.garmentCategory),
-      false,
-      categoryOrder,
-    ),
-    [catalog, categoryOrder],
+  const browse = useMemo(
+    () =>
+      resolveCatalogBrowse(
+        catalog,
+        { serviceLine, garmentCategory },
+        { savedOrder: categoryOrder },
+      ),
+    [catalog, categoryOrder, garmentCategory, serviceLine],
   );
 
   useEffect(() => {
-    if (garmentCategory !== 'All' && !categoryTabs.includes(garmentCategory)) {
-      setGarmentCategory('All');
+    if (browse.serviceLine && browse.serviceLine !== serviceLine) {
+      setServiceLine(browse.serviceLine);
     }
-  }, [categoryTabs, garmentCategory]);
+    if (browse.garmentCategory && browse.garmentCategory !== garmentCategory) {
+      setGarmentCategory(browse.garmentCategory);
+    }
+  }, [browse.garmentCategory, browse.serviceLine, garmentCategory, serviceLine]);
 
   const visibleGarments = useMemo(() => {
-    const needle = garmentQuery.trim().toLowerCase();
-    return catalog.filter((item) => {
-      if (garmentCategory !== 'All' && item.garmentCategory !== garmentCategory) return false;
-      if (needle && !item.name.toLowerCase().includes(needle)) return false;
-      return true;
+    if (!browse.serviceLine || !browse.garmentCategory) return [];
+    return filterCatalogItems(catalog, {
+      serviceLine: browse.serviceLine,
+      garmentCategory: browse.garmentCategory,
+      query: garmentQuery,
     });
-  }, [catalog, garmentCategory, garmentQuery]);
+  }, [browse.garmentCategory, browse.serviceLine, catalog, garmentQuery]);
 
   const total = Object.values(counts).reduce((s, n) => s + n, 0);
   const runningTotal = catalog.reduce(
@@ -297,7 +304,7 @@ export default function PickupScreen() {
             : 0;
         Alert.alert(
           'Insufficient wallet balance',
-          `Ask the customer to add money to their wallet to confirm pickup.\n\nRequired: ₹${amount}\nWallet: ₹${balance}`,
+          `This order was already charged. Ask the customer to add money so the amount can be updated.\n\nRequired: ₹${amount}\nWallet: ₹${balance}`,
         );
         return;
       }
@@ -640,58 +647,16 @@ export default function PickupScreen() {
               </Text>
             ) : (
               <>
-                <View style={styles.filters}>
-                  <View style={styles.searchWrap}>
-                    <TextInput
-                      value={garmentQuery}
-                      onChangeText={setGarmentQuery}
-                      placeholder="Search a service"
-                      placeholderTextColor={colors.text.muted}
-                      style={[styles.search, garmentQuery.length > 0 && styles.searchWithClear]}
-                      autoCorrect={false}
-                      autoCapitalize="none"
-                      accessibilityLabel="Search a service"
-                    />
-                    {garmentQuery.length > 0 ? (
-                      <Pressable
-                        onPress={() => setGarmentQuery('')}
-                        style={styles.searchClear}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel="Clear search"
-                      >
-                        <MaterialCommunityIcons
-                          name="close-circle"
-                          size={20}
-                          color={colors.icon.secondary}
-                        />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={styles.chipRow}
-                  >
-                    {categoryTabs.map((tab) => {
-                      const selected = tab === garmentCategory;
-                      return (
-                        <Pressable
-                          key={tab}
-                          onPress={() => setGarmentCategory(tab)}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected }}
-                        >
-                          <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                            {tab}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
-                </View>
+                <GarmentCatalogFilters
+                  serviceLines={browse.serviceLines}
+                  serviceLine={browse.serviceLine ?? ''}
+                  onServiceLineChange={(id: ServiceLineId) => setServiceLine(id)}
+                  query={garmentQuery}
+                  onQueryChange={setGarmentQuery}
+                  categories={browse.categories}
+                  category={browse.garmentCategory ?? ''}
+                  onCategoryChange={setGarmentCategory}
+                />
                 {visibleGarments.length === 0 ? (
                   <Text style={styles.emptyCatalog}>No garments match.</Text>
                 ) : null}
@@ -885,65 +850,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.text.muted,
     marginTop: spacing.sm,
-  },
-  filters: {
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  searchWrap: {
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  search: {
-    width: '100%',
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface.elevated,
-    color: colors.text.heading,
-    fontFamily: fonts.inter.regular,
-    fontSize: 15,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  searchWithClear: {
-    paddingRight: 40,
-  },
-  searchClear: {
-    position: 'absolute',
-    right: spacing.sm,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 28,
-  },
-  chipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  chip: {
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.border.default,
-    backgroundColor: colors.surface.elevated,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  chipSelected: {
-    backgroundColor: colors.brand.primary,
-    borderColor: colors.brand.primary,
-  },
-  chipLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 13,
-    color: colors.text.heading,
-  },
-  chipLabelSelected: {
-    color: colors.brand.onPrimary,
   },
   estimateBanner: {
     flexDirection: 'row',

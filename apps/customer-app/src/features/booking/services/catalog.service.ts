@@ -2,6 +2,7 @@ import type { ComponentProps } from 'react';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   normalizeGarmentCategory,
+  normalizeServiceLine,
   pickBestUnitPrices,
   type PricingRuleCandidate,
   type PricingScope,
@@ -21,6 +22,7 @@ export type GarmentCatalogItem = {
   /** Turnaround from the winning price rule. Null hides the estimate. */
   estimatedDays: number | null;
   garmentCategory: string;
+  serviceLine: string;
   icon: IconName;
 };
 
@@ -104,8 +106,9 @@ export async function fetchGarmentCategoryOrder(): Promise<string[]> {
 }
 
 /**
- * Active services with audience-aware unit prices.
+ * Active services with a real price for this customer.
  * Precedence: user > community > city > all (platform default).
+ * A service with no matching price is omitted. ₹0 is not offered.
  */
 export async function getGarmentCatalog(opts: {
   communityId: string;
@@ -118,7 +121,7 @@ export async function getGarmentCatalog(opts: {
     (supabase.from('services') as ReturnType<typeof supabase.from>);
 
   let { data: services, error } = await servicesQuery()
-    .select('id, name, unit, garment_category, sort_order')
+    .select('id, name, unit, garment_category, category, sort_order')
     .eq('is_active', true)
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });
@@ -126,7 +129,7 @@ export async function getGarmentCatalog(opts: {
   if (error && /sort_order/i.test(error.message ?? '')) {
     console.warn('[Catalog] sort_order unavailable:', error.message);
     const withCategory = await servicesQuery()
-      .select('id, name, unit, garment_category')
+      .select('id, name, unit, garment_category, category')
       .eq('is_active', true)
       .order('name');
     services = withCategory.data;
@@ -192,6 +195,7 @@ export async function getGarmentCatalog(opts: {
       name: string;
       unit?: string | null;
       garment_category?: string | null;
+      category?: string | null;
       sort_order?: number | null;
     }[]
   )
@@ -199,19 +203,25 @@ export async function getGarmentCatalog(opts: {
     .sort((a, b) => {
       const byOrder = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
       if (byOrder !== 0) return byOrder;
-      return a.name.localeCompare(b.name);
+      const byName = a.name.localeCompare(b.name);
+      if (byName !== 0) return byName;
+      return normalizeServiceLine(a.category).localeCompare(
+        normalizeServiceLine(b.category),
+      );
     })
     .map((service) => {
       const quote = priceMap.get(service.id);
       return {
         serviceId: service.id,
-        name: service.name,
+        name: service.name.trim(),
         unit: service.unit?.trim() || 'piece',
         unitPrice: quote?.unitPrice ?? 0,
         listPrice: quote?.listPrice ?? null,
         estimatedDays: quote?.estimatedDays ?? null,
         garmentCategory: normalizeGarmentCategory(service.garment_category),
+        serviceLine: normalizeServiceLine(service.category),
         icon: garmentIcon(service.name),
       };
-    });
+    })
+    .filter((item) => item.unitPrice > 0);
 }

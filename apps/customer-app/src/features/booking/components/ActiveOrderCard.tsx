@@ -77,6 +77,11 @@ export function ActiveOrderCard({
   const canCancel = isAwaiting && !attemptFailed && !!onCancel;
   const needsPayment =
     booking.isPickupComplete && booking.paymentStatus === 'insufficient_funds';
+  const chargeOnDelivery =
+    booking.isPickupComplete &&
+    !isDelivered &&
+    booking.paymentStatus === 'unpaid' &&
+    booking.totalAmount > 0;
   const showEstimateCompare =
     booking.isPickupComplete &&
     booking.estimatedAmount != null &&
@@ -156,7 +161,7 @@ export function ActiveOrderCard({
           <View style={styles.paymentRequiredText}>
             <Text style={styles.paymentRequiredTitle}>Payment required</Text>
             <Text style={styles.paymentRequiredBody}>
-              Add ₹{booking.totalAmount} to your wallet to complete payment.
+              Add ₹{booking.totalAmount} to your wallet so the rider can hand over your clothes.
             </Text>
           </View>
           <MaterialCommunityIcons
@@ -165,6 +170,15 @@ export function ActiveOrderCard({
             color={colors.status.warning.foreground}
           />
         </Pressable>
+      )}
+
+      {chargeOnDelivery && (
+        <View style={styles.estimateCompare}>
+          <Text style={styles.estimateCompareTitle}>Pay on delivery</Text>
+          <Text style={styles.estimateCompareLine}>
+            ₹{booking.totalAmount} will be charged from your wallet when the clothes are delivered.
+          </Text>
+        </View>
       )}
 
       {showEstimateCompare && (

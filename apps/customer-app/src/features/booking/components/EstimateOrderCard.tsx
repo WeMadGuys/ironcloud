@@ -18,15 +18,20 @@ import {
 } from '@ironcloud/ui';
 import {
   clampServiceQuantity,
+  filterCatalogItems,
+  formatServiceDisplayName,
   isWeightService,
   maxQuantityForService,
+  resolveCatalogBrowse,
+  type ServiceLineId,
 } from '@ironcloud/db';
 
 import {
+  fetchGarmentCategoryOrder,
   getGarmentCatalog,
-  splitCatalog,
   type GarmentCatalogItem,
 } from '../services/catalog.service';
+import { GarmentCatalogFilters } from './GarmentCatalogFilters';
 import { PriceQuote } from './PriceQuote';
 import { ReadyIn } from './ReadyIn';
 
@@ -124,31 +129,75 @@ export function EstimateOrderCard({
   onCatalogLoaded,
 }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [showMore, setShowMore] = useState(false);
   const [catalog, setCatalog] = useState<GarmentCatalogItem[]>([]);
+  const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState('');
+  const [serviceLine, setServiceLine] = useState('');
+  const [category, setCategory] = useState('');
 
   useEffect(() => {
     if (!communityId) {
       setCatalog([]);
+      setCategoryOrder([]);
       onCatalogLoaded?.([]);
       return;
     }
     let cancelled = false;
     setLoading(true);
-    getGarmentCatalog({ communityId, userId, city }).then((items) => {
-      if (!cancelled) {
-        setCatalog(items);
-        setLoading(false);
-        onCatalogLoaded?.(items);
-      }
-    });
+    Promise.all([
+      getGarmentCatalog({ communityId, userId, city }),
+      fetchGarmentCategoryOrder(),
+    ])
+      .then(([items, order]) => {
+        if (!cancelled) {
+          setCatalog(items);
+          setCategoryOrder(order);
+          onCatalogLoaded?.(items);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCatalog([]);
+          setCategoryOrder([]);
+          onCatalogLoaded?.([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
   }, [communityId, userId, city, onCatalogLoaded]);
 
-  const { primary, more } = useMemo(() => splitCatalog(catalog), [catalog]);
+  const browse = useMemo(
+    () =>
+      resolveCatalogBrowse(
+        catalog,
+        { serviceLine, garmentCategory: category },
+        { savedOrder: categoryOrder },
+      ),
+    [catalog, category, categoryOrder, serviceLine],
+  );
+
+  useEffect(() => {
+    if (browse.serviceLine && browse.serviceLine !== serviceLine) {
+      setServiceLine(browse.serviceLine);
+    }
+    if (browse.garmentCategory && browse.garmentCategory !== category) {
+      setCategory(browse.garmentCategory);
+    }
+  }, [browse.garmentCategory, browse.serviceLine, category, serviceLine]);
+
+  const visibleItems = useMemo(() => {
+    if (!browse.serviceLine || !browse.garmentCategory) return [];
+    return filterCatalogItems(catalog, {
+      serviceLine: browse.serviceLine,
+      garmentCategory: browse.garmentCategory,
+      query,
+    });
+  }, [browse.garmentCategory, browse.serviceLine, catalog, query]);
 
   const { totalQty, totalAmount } = useMemo(() => {
     let qty = 0;
@@ -172,7 +221,7 @@ export function EstimateOrderCard({
 
   const closeSheet = () => {
     setSheetOpen(false);
-    setShowMore(false);
+    setQuery('');
   };
 
   const summaryLabel =
@@ -180,7 +229,7 @@ export function EstimateOrderCard({
       ? `${totalQty} garment${totalQty === 1 ? '' : 's'} • ₹${totalAmount}`
       : 'Add garments (optional)';
 
-  const visibleItems = showMore ? [...primary, ...more] : primary;
+  const showFilters = !loading && catalog.length > 0;
 
   return (
     <View style={styles.wrap}>
@@ -230,14 +279,32 @@ export function EstimateOrderCard({
             </Pressable>
           </View>
 
+          {showFilters ? (
+            <View style={styles.filters}>
+              <GarmentCatalogFilters
+                serviceLines={browse.serviceLines}
+                serviceLine={browse.serviceLine ?? ''}
+                onServiceLineChange={(id: ServiceLineId) => setServiceLine(id)}
+                query={query}
+                onQueryChange={setQuery}
+                categories={browse.categories}
+                category={browse.garmentCategory ?? ''}
+                onCategoryChange={setCategory}
+              />
+            </View>
+          ) : null}
+
           <ScrollView
             style={styles.sheetScroll}
             contentContainerStyle={styles.sheetList}
+            keyboardShouldPersistTaps="handled"
           >
             {loading ? (
               <Text style={styles.loadingText}>Loading categories…</Text>
             ) : catalog.length === 0 ? (
               <Text style={styles.loadingText}>No garment categories available.</Text>
+            ) : visibleItems.length === 0 ? (
+              <Text style={styles.loadingText}>Try another name or category.</Text>
             ) : (
               <>
                 {visibleItems.map((item, index) => (
@@ -246,35 +313,9 @@ export function EstimateOrderCard({
                     item={item}
                     count={counts[item.serviceId] || 0}
                     onAdjust={(delta) => adjust(item.serviceId, delta)}
-                    isLast={
-                      index === visibleItems.length - 1 &&
-                      (showMore || more.length === 0)
-                    }
+                    isLast={index === visibleItems.length - 1}
                   />
                 ))}
-
-                {more.length > 0 && (
-                  <Pressable
-                    style={styles.moreRow}
-                    onPress={() => setShowMore((v) => !v)}
-                  >
-                    <View style={styles.moreLeft}>
-                      <MaterialCommunityIcons
-                        name={showMore ? 'minus-circle-outline' : 'plus-circle-outline'}
-                        size={20}
-                        color={colors.brand.primary}
-                      />
-                      <Text style={styles.moreLabel}>
-                        {showMore ? 'Show less' : 'More categories'}
-                      </Text>
-                    </View>
-                    <MaterialCommunityIcons
-                      name={showMore ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color={colors.icon.secondary}
-                    />
-                  </Pressable>
-                )}
 
                 <View style={styles.infoBox}>
                   <MaterialCommunityIcons
@@ -313,7 +354,7 @@ export function buildEstimateLines(
   return catalog
     .map((item) => ({
       serviceId: item.serviceId,
-      name: item.name,
+      name: formatServiceDisplayName(item.name, item.serviceLine),
       quantity: counts[item.serviceId] || 0,
       unitPrice: item.unitPrice,
     }))
@@ -450,21 +491,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text.heading,
   },
-  moreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.md,
-  },
-  moreLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  moreLabel: {
-    fontFamily: fonts.inter.medium,
-    fontSize: 14,
-    color: colors.brand.primary,
+  filters: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
   },
   infoBox: {
     flexDirection: 'row',
