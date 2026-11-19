@@ -1,12 +1,17 @@
 'use client';
 
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { Card, Loader, RevenueBarChart, TrendLineChart } from '@/components';
 import { useDateFilter } from '@/contexts/DateFilterContext';
 import { formatCurrency, toISODate } from '@/utils/format';
 
-import { fetchAnalyticsBundle } from '../services/analytics.service';
+import {
+  fetchAnalyticsBundle,
+  summarizeAnalyticsOverview,
+  summarizeCommunityPerformance,
+} from '../services/analytics.service';
 import { AppDownloadsCard } from './AppDownloadsCard';
 import { OtpSendFailuresCard } from './OtpSendFailuresCard';
 
@@ -15,6 +20,8 @@ import pageStyles from '@/styles/pages.module.css';
 export const AnalyticsPage = () => {
   const { selectedDate } = useDateFilter();
   const dateKey = toISODate(selectedDate);
+  const [ignoreCancelled, setIgnoreCancelled] = useState(false);
+  const [ignoreFailed, setIgnoreFailed] = useState(false);
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['admin-analytics', dateKey],
@@ -22,17 +29,46 @@ export const AnalyticsPage = () => {
     staleTime: 45_000,
   });
 
-  if (isLoading && !data) return <Loader />;
+  const exclusion = useMemo(
+    () => ({ ignoreCancelled, ignoreFailed }),
+    [ignoreCancelled, ignoreFailed],
+  );
 
-  const overview = data!.overview;
-  const communities = data!.communities;
-  const communityChart = communities.slice(0, 8).map((c) => ({
-    name: c.name,
-    revenue: c.revenue,
-  }));
+  const overview = useMemo(() => {
+    if (!data) return null;
+    return summarizeAnalyticsOverview(data.overview.orders, data.overview, selectedDate, exclusion);
+  }, [data, selectedDate, exclusion]);
+
+  const communityChart = useMemo(() => {
+    if (!data) return [];
+    return summarizeCommunityPerformance(data.communities, exclusion)
+      .slice(0, 8)
+      .map((c) => ({ name: c.name, revenue: c.revenue }));
+  }, [data, exclusion]);
+
+  if (isLoading && !data) return <Loader />;
+  if (!overview || !data) return <Loader />;
 
   return (
     <div style={{ opacity: isFetching && !isLoading ? 0.85 : 1 }}>
+      <div className={pageStyles.filters}>
+        <label className={pageStyles.checkLabel}>
+          <input
+            type="checkbox"
+            checked={ignoreCancelled}
+            onChange={(e) => setIgnoreCancelled(e.target.checked)}
+          />
+          Ignore cancelled orders
+        </label>
+        <label className={pageStyles.checkLabel}>
+          <input
+            type="checkbox"
+            checked={ignoreFailed}
+            onChange={(e) => setIgnoreFailed(e.target.checked)}
+          />
+          Ignore failed orders
+        </label>
+      </div>
       <div className={pageStyles.statsGrid}>
         <div className={pageStyles.statBox}>
           <div className={pageStyles.statValue}>{overview.dau}</div>
@@ -75,8 +111,8 @@ export const AnalyticsPage = () => {
           <RevenueBarChart data={communityChart} />
         </Card>
       </div>
-      <AppDownloadsCard stats={data!.appDownloads} />
-      <OtpSendFailuresCard stats={data!.otpSendFailures} />
+      <AppDownloadsCard stats={data.appDownloads} />
+      <OtpSendFailuresCard stats={data.otpSendFailures} />
       <Card title="Growth">
         <p>Total Customers: {overview.totalCustomers}</p>
         <p>Total Partners: {overview.totalPartners}</p>

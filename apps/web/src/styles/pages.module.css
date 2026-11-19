@@ -10,6 +10,14 @@
   margin-left: auto;
 }
 
+.checkLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ic-spacing-sm);
+  font-size: var(--ic-font-size-sm);
+  color: var(--ic-text-primary);
+}
+
 .listRefreshing {
   opacity: 0.55;
   pointer-events: none;

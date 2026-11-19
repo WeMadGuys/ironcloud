@@ -5,67 +5,70 @@ const PERFORMANCE_LOOKBACK_DAYS = 30;
 const APP_DOWNLOAD_LOOKBACK_DAYS = 30;
 const APP_DOWNLOAD_PAGE_SIZE = 1000;
 const OTP_SEND_FAILURE_LIMIT = 200;
+const REFUND_STATUSES = new Set(['refund_initiated', 'refund_completed']);
 
-export const fetchAnalyticsOverview = async (date: Date) => {
-  const supabase = getSupabase();
-  const dayStart = startOfDay(date).toISOString();
-  const dayEnd = endOfDay(date).toISOString();
+export type OrderExclusion = {
+  ignoreCancelled: boolean;
+  ignoreFailed: boolean;
+};
 
+export type AnalyticsMonthOrder = {
+  customer_id: string;
+  total_amount: number | string | null;
+  created_at: string;
+  status: string;
+};
+
+export type AnalyticsOverviewCounts = {
+  totalCustomers: number;
+  totalPartners: number;
+  totalRiders: number;
+};
+
+export type CommunityOrderRow = {
+  total_amount: number | string | null;
+  community_id: string | null;
+  status: string;
+  communities: { name: string } | null;
+};
+
+const orderIncluded = (status: string, exclusion: OrderExclusion) => {
+  if (exclusion.ignoreCancelled && status === 'cancelled') return false;
+  if (exclusion.ignoreFailed && status === 'failed') return false;
+  return true;
+};
+
+export const summarizeAnalyticsOverview = (
+  rows: AnalyticsMonthOrder[],
+  counts: AnalyticsOverviewCounts,
+  date: Date,
+  exclusion: OrderExclusion,
+) => {
+  const dayStartMs = startOfDay(date).getTime();
+  const dayEndMs = endOfDay(date).getTime();
   const weekStart = new Date(date);
   weekStart.setDate(weekStart.getDate() - 7);
   weekStart.setHours(0, 0, 0, 0);
-
-  const monthStart = new Date(date);
-  monthStart.setDate(monthStart.getDate() - 30);
-  monthStart.setHours(0, 0, 0, 0);
-
-  // One month-range order pull + head counts — avoid overlapping full scans.
-  const [
-    ordersMonth,
-    customers,
-    partners,
-    riders,
-    cancelled,
-    refunds,
-  ] = await Promise.all([
-    supabase
-      .from('orders')
-      .select('customer_id, total_amount, created_at, status')
-      .gte('created_at', monthStart.toISOString())
-      .lte('created_at', dayEnd),
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'customer'),
-    supabase.from('partners').select('id', { count: 'exact', head: true }),
-    supabase.from('riders').select('id', { count: 'exact', head: true }),
-    supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'cancelled')
-      .gte('created_at', monthStart.toISOString())
-      .lte('created_at', dayEnd),
-    supabase
-      .from('orders')
-      .select('id', { count: 'exact', head: true })
-      .in('status', ['refund_initiated', 'refund_completed'])
-      .gte('created_at', monthStart.toISOString())
-      .lte('created_at', dayEnd),
-  ]);
-
-  const monthRows = ordersMonth.data ?? [];
   const weekStartMs = weekStart.getTime();
-  const dayStartMs = new Date(dayStart).getTime();
-  const dayEndMs = new Date(dayEnd).getTime();
+
+  const included = rows.filter((o) => orderIncluded(o.status, exclusion));
 
   const dau = new Set<string>();
   const wau = new Set<string>();
   const mau = new Set<string>();
   let revenue = 0;
+  let cancelled = 0;
+  let refunds = 0;
   const revenueByDay: Record<string, number> = {};
 
-  for (const o of monthRows) {
+  for (const o of included) {
     const createdMs = new Date(o.created_at).getTime();
     mau.add(o.customer_id);
     if (createdMs >= weekStartMs) wau.add(o.customer_id);
     if (createdMs >= dayStartMs && createdMs <= dayEndMs) dau.add(o.customer_id);
+
+    if (o.status === 'cancelled') cancelled++;
+    if (REFUND_STATUSES.has(o.status)) refunds++;
 
     const amount = Number(o.total_amount ?? 0);
     revenue += amount;
@@ -73,10 +76,7 @@ export const fetchAnalyticsOverview = async (date: Date) => {
     revenueByDay[day] = (revenueByDay[day] ?? 0) + amount;
   }
 
-  const totalOrders = monthRows.length;
-  const cancellationRate = totalOrders ? ((cancelled.count ?? 0) / totalOrders) * 100 : 0;
-  const refundRate = totalOrders ? ((refunds.count ?? 0) / totalOrders) * 100 : 0;
-
+  const totalOrders = included.length;
   const revenueTrend = Object.entries(revenueByDay)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([d, value]) => ({ date: d, value }));
@@ -85,15 +85,59 @@ export const fetchAnalyticsOverview = async (date: Date) => {
     dau: dau.size,
     wau: wau.size,
     mau: mau.size,
+    totalCustomers: counts.totalCustomers,
+    totalPartners: counts.totalPartners,
+    totalRiders: counts.totalRiders,
+    totalOrders,
+    revenue,
+    cancellationRate: totalOrders ? (cancelled / totalOrders) * 100 : 0,
+    refundRate: totalOrders ? (refunds / totalOrders) * 100 : 0,
+    aov: totalOrders ? revenue / totalOrders : 0,
+    revenueTrend,
+  };
+};
+
+export const summarizeCommunityPerformance = (
+  rows: CommunityOrderRow[],
+  exclusion: OrderExclusion,
+) => {
+  const perf: Record<string, { name: string; revenue: number; orders: number }> = {};
+  for (const o of rows) {
+    if (!orderIncluded(o.status, exclusion)) continue;
+    const id = o.community_id;
+    if (!id) continue;
+    const name = o.communities?.name ?? 'Unknown';
+    if (!perf[id]) perf[id] = { name, revenue: 0, orders: 0 };
+    perf[id].revenue += Number(o.total_amount ?? 0);
+    perf[id].orders++;
+  }
+  return Object.values(perf).sort((a, b) => b.revenue - a.revenue);
+};
+
+export const fetchAnalyticsOverview = async (date: Date) => {
+  const supabase = getSupabase();
+  const dayEnd = endOfDay(date).toISOString();
+
+  const monthStart = new Date(date);
+  monthStart.setDate(monthStart.getDate() - 30);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const [ordersMonth, customers, partners, riders] = await Promise.all([
+    supabase
+      .from('orders')
+      .select('customer_id, total_amount, created_at, status')
+      .gte('created_at', monthStart.toISOString())
+      .lte('created_at', dayEnd),
+    supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'customer'),
+    supabase.from('partners').select('id', { count: 'exact', head: true }),
+    supabase.from('riders').select('id', { count: 'exact', head: true }),
+  ]);
+
+  return {
+    orders: (ordersMonth.data ?? []) as AnalyticsMonthOrder[],
     totalCustomers: customers.count ?? 0,
     totalPartners: partners.count ?? 0,
     totalRiders: riders.count ?? 0,
-    totalOrders,
-    revenue,
-    cancellationRate,
-    refundRate,
-    aov: totalOrders ? revenue / totalOrders : 0,
-    revenueTrend,
   };
 };
 
@@ -105,21 +149,11 @@ export const fetchCommunityPerformance = async () => {
 
   const { data } = await supabase
     .from('orders')
-    .select('total_amount, community_id, communities(name)')
+    .select('total_amount, community_id, status, communities(name)')
     .gte('created_at', since.toISOString())
     .not('community_id', 'is', null);
 
-  const perf: Record<string, { name: string; revenue: number; orders: number }> = {};
-  (data ?? []).forEach((o) => {
-    const id = o.community_id;
-    if (!id) return;
-    const name = (o.communities as { name: string } | null)?.name ?? 'Unknown';
-    if (!perf[id]) perf[id] = { name, revenue: 0, orders: 0 };
-    perf[id].revenue += Number(o.total_amount ?? 0);
-    perf[id].orders++;
-  });
-
-  return Object.values(perf).sort((a, b) => b.revenue - a.revenue);
+  return (data ?? []) as CommunityOrderRow[];
 };
 
 type AppDownloadEventRow = {
