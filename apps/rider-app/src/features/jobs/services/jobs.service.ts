@@ -247,13 +247,18 @@ function isMainQueueJob(job: RiderJobRow): boolean {
   return true;
 }
 
+/** Finished for today's route. The flat stays listed so a pickup can be resumed. */
+function isRouteFinished(status: string): boolean {
+  return status === 'completed' || status === 'failed';
+}
+
 function matchesFilter(job: RiderJobRow, filter: JobFilter): boolean {
   if (filter === 'issues') return job.status === 'failed';
   if (!isMainQueueJob(job)) return false;
   if (filter === 'all') return true;
   if (filter === 'pickup') return job.job_type === 'pickup';
   if (filter === 'delivery') return job.job_type === 'delivery';
-  if (filter === 'pending') return job.status !== 'completed';
+  if (filter === 'pending') return !isRouteFinished(job.status);
   if (filter === 'completed') return job.status === 'completed';
   return true;
 }
@@ -295,7 +300,7 @@ function buildCommunitySummaries(
         communityName: flat.communityName,
         towersLabel: '',
         totalJobs: 1,
-        completedJobs: flat.jobStatus === 'completed' ? 1 : 0,
+        completedJobs: isRouteFinished(flat.jobStatus) ? 1 : 0,
         pickupCount: flat.jobType === 'pickup' ? 1 : 0,
         deliveryCount: flat.jobType === 'delivery' ? 1 : 0,
         status: 'active',
@@ -303,7 +308,7 @@ function buildCommunitySummaries(
       });
     } else {
       existing.totalJobs += 1;
-      if (flat.jobStatus === 'completed') existing.completedJobs += 1;
+      if (isRouteFinished(flat.jobStatus)) existing.completedJobs += 1;
       if (flat.jobType === 'pickup') existing.pickupCount += 1;
       if (flat.jobType === 'delivery') existing.deliveryCount += 1;
       existing.towers.add(flat.tower);
@@ -346,7 +351,7 @@ export async function getDashboardSummary(
   const deliveryOrders = flats.filter((j) => j.jobType === 'delivery').length;
   const totalGarments = flats.reduce((sum, j) => sum + j.garmentCount, 0);
   const communityIds = new Set(flats.map((j) => j.communityId));
-  const pendingJobs = flats.filter((j) => j.jobStatus !== 'completed').length;
+  const pendingJobs = flats.filter((j) => !isRouteFinished(j.jobStatus)).length;
 
   // Derive from the same in-memory day set — do not re-fetch.
   const communities = buildCommunitySummaries(flats, '', dayOffset);
@@ -411,7 +416,7 @@ export async function getHomeBundle(
   const deliveryOrders = flats.filter((j) => j.jobType === 'delivery').length;
   const totalGarments = flats.reduce((sum, j) => sum + j.garmentCount, 0);
   const communityIds = new Set(flats.map((j) => j.communityId));
-  const pendingJobs = flats.filter((j) => j.jobStatus !== 'completed').length;
+  const pendingJobs = flats.filter((j) => !isRouteFinished(j.jobStatus)).length;
 
   const communities = buildCommunitySummaries(flats, search, dayOffset);
   const nextCommunity =
@@ -459,7 +464,7 @@ export async function getTowerJobs(
   for (const flat of flats) {
     const row = map.get(flat.tower) || { totalJobs: 0, completedJobs: 0 };
     row.totalJobs += 1;
-    if (flat.jobStatus === 'completed') row.completedJobs += 1;
+    if (isRouteFinished(flat.jobStatus)) row.completedJobs += 1;
     map.set(flat.tower, row);
   }
 

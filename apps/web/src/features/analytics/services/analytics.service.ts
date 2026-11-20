@@ -1,3 +1,5 @@
+import { listServiceLineChoices, normalizeServiceLine, serviceLineLabel } from '@ironcloud/db';
+
 import { getSupabase } from '@/lib/supabase';
 import { endOfDay, startOfDay, toISODate } from '@/utils/format';
 
@@ -245,6 +247,148 @@ export const fetchOtpSendFailures = async (date: Date) => {
   return {
     total: count ?? 0,
     rows: (data ?? []) as OtpSendFailureRow[],
+  };
+};
+
+const SERVICE_BOOKING_PAGE_SIZE = 1000;
+const UNKNOWN_SERVICE_LINE = 'unknown';
+
+export type ServiceBookingOrderRow = {
+  status: string;
+  estimated_garments: unknown;
+};
+
+export type ServiceCatalogRow = {
+  id: string;
+  name: string;
+  category: string | null;
+};
+
+export type ServiceBookingBar = {
+  name: string;
+  total: number;
+  segments: Record<string, number>;
+};
+
+export type ServiceBookingSummary = {
+  bars: ServiceBookingBar[];
+  lines: { id: string; label: string }[];
+};
+
+type EstimateGarment = {
+  service_id?: string;
+  name?: string;
+  quantity?: number;
+};
+
+const parseEstimateGarments = (raw: unknown): EstimateGarment[] => {
+  if (!Array.isArray(raw)) return [];
+  const lines: EstimateGarment[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const quantity = typeof row.quantity === 'number' ? row.quantity : Number(row.quantity);
+    lines.push({
+      service_id: typeof row.service_id === 'string' ? row.service_id : undefined,
+      name: typeof row.name === 'string' ? row.name : undefined,
+      quantity,
+    });
+  }
+  return lines;
+};
+
+/** Pieces booked, grouped by garment name and service line. */
+export const summarizeServiceBookings = (
+  orders: ServiceBookingOrderRow[],
+  services: ServiceCatalogRow[],
+  exclusion: OrderExclusion,
+): ServiceBookingSummary => {
+  const byId = new Map(services.map((service) => [service.id, service]));
+  const totals = new Map<string, Map<string, number>>();
+  const usedLines = new Set<string>();
+
+  for (const order of orders) {
+    if (order.status === 'draft') continue;
+    if (!orderIncluded(order.status, exclusion)) continue;
+
+    for (const line of parseEstimateGarments(order.estimated_garments)) {
+      const qty = Number(line.quantity);
+      if (!Number.isFinite(qty) || qty <= 0) continue;
+
+      const service = line.service_id ? byId.get(line.service_id) : undefined;
+      const name = (service?.name ?? line.name ?? '').trim() || 'Unknown';
+      const lineId = service ? normalizeServiceLine(service.category) : UNKNOWN_SERVICE_LINE;
+      usedLines.add(lineId);
+
+      let garment = totals.get(name);
+      if (!garment) {
+        garment = new Map();
+        totals.set(name, garment);
+      }
+      garment.set(lineId, (garment.get(lineId) ?? 0) + qty);
+    }
+  }
+
+  const bars = Array.from(totals.entries())
+    .map(([name, segments]) => {
+      const record: Record<string, number> = {};
+      let total = 0;
+      for (const [lineId, qty] of segments) {
+        record[lineId] = qty;
+        total += qty;
+      }
+      return { name, total, segments: record };
+    })
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+
+  return {
+    bars,
+    lines: listServiceLineChoices(usedLines, true).map((id) => ({
+      id,
+      label: serviceLineLabel(id),
+    })),
+  };
+};
+
+export const fetchServiceBookingSource = async (
+  range: { from: Date; to: Date },
+  communityId?: string,
+) => {
+  const supabase = getSupabase();
+
+  const servicesQuery = supabase.from('services').select('id, name, category');
+
+  const orders: ServiceBookingOrderRow[] = [];
+  const loadOrders = async () => {
+    for (let from = 0; ; from += SERVICE_BOOKING_PAGE_SIZE) {
+      let query = supabase
+        .from('orders')
+        .select('status, estimated_garments')
+        .gte('created_at', range.from.toISOString())
+        .lte('created_at', range.to.toISOString());
+      if (communityId) query = query.eq('community_id', communityId);
+      query = query
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, from + SERVICE_BOOKING_PAGE_SIZE - 1);
+
+      const { data, error } = await query;
+      if (error) {
+        console.error('[service-bookings]', error.message);
+        break;
+      }
+      const page = (data ?? []) as ServiceBookingOrderRow[];
+      orders.push(...page);
+      if (page.length < SERVICE_BOOKING_PAGE_SIZE) break;
+    }
+  };
+
+  const [servicesRes] = await Promise.all([servicesQuery, loadOrders()]);
+  if (servicesRes.error) console.error('[service-bookings]', servicesRes.error.message);
+
+  return {
+    orders,
+    services: (servicesRes.data ?? []) as ServiceCatalogRow[],
   };
 };
 

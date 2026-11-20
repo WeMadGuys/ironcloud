@@ -14,6 +14,7 @@ import {
 } from '../services/analytics.service';
 import { AppDownloadsCard } from './AppDownloadsCard';
 import { OtpSendFailuresCard } from './OtpSendFailuresCard';
+import { ServiceBookingsCard } from './ServiceBookingsCard';
 
 import pageStyles from '@/styles/pages.module.css';
 
@@ -111,6 +112,7 @@ export const AnalyticsPage = () => {
           <RevenueBarChart data={communityChart} />
         </Card>
       </div>
+      <ServiceBookingsCard exclusion={exclusion} />
       <AppDownloadsCard stats={data.appDownloads} />
       <OtpSendFailuresCard stats={data.otpSendFailures} />
       <Card title="Growth">

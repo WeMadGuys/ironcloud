@@ -196,3 +196,65 @@ export const MultiLineChart = ({
     </ResponsiveContainer>
   </div>
 );
+
+const tooltipBox = {
+  background: 'var(--ic-surface-elevated)',
+  border: '1px solid var(--ic-border-default)',
+  borderRadius: 'var(--ic-radius-sm)',
+  padding: '8px 10px',
+} as const;
+
+/** Horizontal stacked bars. `series.key` is the stack segment; `yKey` is the row label. */
+export const StackedBarChart = ({
+  data,
+  series,
+  yKey = 'name',
+}: {
+  data: DataPoint[];
+  series: { key: string; label: string; color: string }[];
+  yKey?: string;
+}) => {
+  const height = Math.max(280, data.length * 36 + 48);
+  return (
+    <div className={styles.chart} style={{ height }}>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={data} layout="vertical" margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--ic-border-divider)" />
+          <XAxis
+            type="number"
+            allowDecimals={false}
+            tick={{ fill: 'var(--ic-text-muted)', fontSize: 12 }}
+          />
+          <YAxis
+            type="category"
+            dataKey={yKey}
+            width={140}
+            interval={0}
+            reversed
+            tick={{ fill: 'var(--ic-text-muted)', fontSize: 12 }}
+          />
+          <Tooltip
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              const rows = payload.filter((item) => Number(item.value) > 0);
+              if (!rows.length) return null;
+              return (
+                <div style={tooltipBox}>
+                  {rows.map((item) => (
+                    <div key={String(item.dataKey)} style={{ fontSize: 12, color: 'var(--ic-text-primary)' }}>
+                      {label} · {item.name}: {item.value}
+                    </div>
+                  ))}
+                </div>
+              );
+            }}
+          />
+          <Legend />
+          {series.map((s) => (
+            <Bar key={s.key} dataKey={s.key} name={s.label} stackId="bookings" fill={s.color} />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+};

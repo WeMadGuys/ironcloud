@@ -11,7 +11,10 @@ export type OrderDatePreset =
   | 'last_week'
   | 'this_month'
   | 'last_month'
+  | 'this_quarter'
+  | 'last_quarter'
   | 'this_year'
+  | 'last_year'
   | 'custom';
 
 export const ORDER_DATE_PRESET_OPTIONS: { value: OrderDatePreset; label: string }[] = [
@@ -40,6 +43,18 @@ export const DASHBOARD_DATE_PRESET_OPTIONS: { value: OrderDatePreset; label: str
   { value: 'this_month', label: 'This month' },
   { value: 'last_month', label: 'Last month' },
   { value: 'custom', label: 'Custom date' },
+];
+
+/** Analytics service-booking chart. Not shown on Orders or Dashboard. */
+export const SERVICE_BOOKING_DATE_PRESET_OPTIONS: { value: OrderDatePreset; label: string }[] = [
+  { value: 'this_week', label: 'This week' },
+  { value: 'last_week', label: 'Last week' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'this_quarter', label: 'This quarter' },
+  { value: 'last_quarter', label: 'Last quarter' },
+  { value: 'this_year', label: 'This year' },
+  { value: 'last_year', label: 'Last year' },
 ];
 
 export type DateRange = {
@@ -90,6 +105,19 @@ function endOfYear(date: Date): Date {
   return endOfDay(d);
 }
 
+/** Calendar quarter: Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec. */
+function startOfQuarter(date: Date): Date {
+  const d = startOfDay(date);
+  d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
+  return d;
+}
+
+function endOfQuarter(date: Date): Date {
+  const d = startOfQuarter(date);
+  d.setMonth(d.getMonth() + 3, 0);
+  return endOfDay(d);
+}
+
 export function resolveOrderDateRange(
   preset: OrderDatePreset,
   customFrom?: string,
@@ -128,8 +156,18 @@ export function resolveOrderDateRange(
       const inLast = addDays(startOfMonth(today), -1);
       return { from: startOfMonth(inLast), to: endOfMonth(inLast) };
     }
+    case 'this_quarter':
+      return { from: startOfQuarter(today), to: endOfQuarter(today) };
+    case 'last_quarter': {
+      const inLast = addDays(startOfQuarter(today), -1);
+      return { from: startOfQuarter(inLast), to: endOfQuarter(inLast) };
+    }
     case 'this_year':
       return { from: startOfYear(today), to: endOfYear(today) };
+    case 'last_year': {
+      const inLast = addDays(startOfYear(today), -1);
+      return { from: startOfYear(inLast), to: endOfYear(inLast) };
+    }
     case 'custom': {
       if (!customFrom && !customTo) return { from: null, to: null };
       const from = customFrom ? startOfDay(parseLocalDate(customFrom)) : null;

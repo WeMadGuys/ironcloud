@@ -18,6 +18,7 @@ export {
   RevenueBarChart,
   TrendLineChart,
   MultiLineChart,
+  StackedBarChart,
 } from './Chart/Chart';
 export { ToastProvider, useToast } from './Toast/ToastProvider';
 export { FilterBar } from './Filter/FilterBar';
