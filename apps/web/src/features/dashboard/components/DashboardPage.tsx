@@ -66,6 +66,7 @@ export const DashboardPage = () => {
   const [search, setSearch] = useState('');
   const [communities, setCommunities] = useState<CommunityOption[]>([]);
   const [activeKpi, setActiveKpi] = useState<DashboardKpiKey | null>(null);
+  const [ignoreCancelled, setIgnoreCancelled] = useState(false);
   const debouncedSearch = useDebouncedValue(search);
 
   const rangeKey = dateRangeKey(datePreset, customFrom, customTo);
@@ -89,8 +90,8 @@ export const DashboardPage = () => {
   }, []);
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['admin-dashboard', rangeKey, communityId || 'all'],
-    queryFn: () => fetchDashboardBundle(dateRange, communityId || undefined),
+    queryKey: ['admin-dashboard', rangeKey, communityId || 'all', ignoreCancelled],
+    queryFn: () => fetchDashboardBundle(dateRange, communityId || undefined, ignoreCancelled),
     staleTime: 45_000,
     enabled: datePreset !== 'custom' || Boolean(customFrom || customTo),
   });
@@ -192,6 +193,14 @@ export const DashboardPage = () => {
             </option>
           ))}
         </select>
+        <label className={pageStyles.checkLabel}>
+          <input
+            type="checkbox"
+            checked={ignoreCancelled}
+            onChange={(e) => setIgnoreCancelled(e.target.checked)}
+          />
+          Ignore cancelled orders
+        </label>
       </div>
   );
 
@@ -398,6 +407,7 @@ export const DashboardPage = () => {
         range={dateRange}
         rangeKey={rangeKey}
         communityId={communityId || undefined}
+        ignoreCancelled={ignoreCancelled}
         onClose={() => setActiveKpi(null)}
       />
     </div>

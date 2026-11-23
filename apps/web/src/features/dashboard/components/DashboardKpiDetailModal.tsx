@@ -23,6 +23,7 @@ type Props = {
   range: DateRange;
   rangeKey: string;
   communityId?: string;
+  ignoreCancelled?: boolean;
   onClose: () => void;
 };
 
@@ -31,13 +32,14 @@ export const DashboardKpiDetailModal = ({
   range,
   rangeKey,
   communityId,
+  ignoreCancelled = false,
   onClose,
 }: Props) => {
   const open = kpi !== null;
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-dashboard-kpi', kpi, rangeKey, communityId || 'all'],
-    queryFn: () => fetchDashboardKpiDetails(kpi!, range, communityId),
+    queryKey: ['admin-dashboard-kpi', kpi, rangeKey, communityId || 'all', ignoreCancelled],
+    queryFn: () => fetchDashboardKpiDetails(kpi!, range, communityId, ignoreCancelled),
     enabled: open,
     staleTime: 30_000,
   });

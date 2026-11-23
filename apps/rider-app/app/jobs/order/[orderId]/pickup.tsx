@@ -20,6 +20,7 @@ import {
   Pressable,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
@@ -33,6 +34,7 @@ import { BoxDetailsCard } from '../../../../src/features/jobs/components/BoxDeta
 import { BoxQrScanner } from '../../../../src/features/jobs/components/BoxQrScanner';
 import { OrderBoxesList } from '../../../../src/features/jobs/components/OrderBoxesList';
 import { NotifyPickupEtaButton } from '../../../../src/features/jobs/components/NotifyPickupEtaButton';
+import { formatPickupShareText } from '../../../../src/features/jobs/shareCollectedGarments';
 import { PickupPhotosSection } from '../../../../src/features/jobs/components/PickupPhotosSection';
 import {
   attachBoxToOrder,
@@ -474,7 +476,37 @@ export default function PickupScreen() {
               isEditMode ? styles.listWithCancel : styles.listWithTomorrow,
             ]}
           >
-            <Text style={styles.sectionTitle}>Selected garments</Text>
+            <View style={styles.reviewHeader}>
+              <Text style={[styles.sectionTitle, styles.reviewTitle]}>Selected garments</Text>
+              <Pressable
+                style={styles.shareBtn}
+                onPress={() => {
+                  const message = formatPickupShareText({
+                    orderNumber,
+                    flat: typeof flat === 'string' ? flat : '',
+                    customerName,
+                    lines: selectedLines.map((line) => ({
+                      name: line.item.name,
+                      quantity: line.quantity,
+                      serviceLine: line.item.serviceLine,
+                      garmentCategory: line.item.garmentCategory,
+                    })),
+                  });
+                  void Share.share({ message }).catch(() => {
+                    // The sheet was dismissed, or this device has no share target.
+                  });
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Share collected garments"
+              >
+                <MaterialCommunityIcons
+                  name="share-variant-outline"
+                  size={18}
+                  color={colors.brand.primary}
+                />
+              </Pressable>
+            </View>
             {selectedLines.map((line) => {
               const unitSuffix = isWeightService(line.item) ? '/ kg' : 'each';
               return (
@@ -843,6 +875,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text.heading,
     marginBottom: spacing.sm,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  reviewTitle: {
+    flex: 1,
+    marginBottom: 0,
+  },
+  shareBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   scanResultWrap: { marginTop: spacing.md },
   emptyCatalog: {

@@ -1,7 +1,8 @@
+import { formatServiceDisplayName } from '@ironcloud/db';
+
 import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
 import { createTtlCache } from '../../../lib/ttl-cache';
-import { mapGarmentFields } from '../collectedGarments';
 
 const ORDERS_CACHE_TTL_MS = 45_000;
 const ORDERS_LIST_LIMIT = 40;
@@ -32,8 +33,6 @@ export type OrderStatus =
 export type OrderItem = {
   id: string;
   garmentName: string;
-  serviceLine: string;
-  garmentCategory: string;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -115,11 +114,7 @@ function mapOrder(row: {
         id: string;
         quantity: number;
         unit_price: number;
-        service: {
-          name: string;
-          category?: string | null;
-          garment_category?: string | null;
-        } | null;
+        service: { name: string; category?: string | null } | null;
       }[]
     | null;
   order_events:
@@ -135,7 +130,10 @@ function mapOrder(row: {
     const unitPrice = Number(item.unit_price || 0);
     return {
       id: item.id,
-      ...mapGarmentFields(item.service),
+      garmentName: formatServiceDisplayName(
+        item.service?.name || 'Garment',
+        item.service?.category,
+      ),
       quantity,
       unitPrice,
       lineTotal: quantity * unitPrice,
@@ -250,7 +248,7 @@ export async function getCustomerOrders(options?: {
           id,
           quantity,
           unit_price,
-          service:service_id (name, category, garment_category)
+          service:service_id (name, category)
         ),
         order_events (status, created_at, metadata)
       `,
@@ -328,7 +326,7 @@ export async function getCustomerOrderById(orderId: string): Promise<Order | nul
         id,
         quantity,
         unit_price,
-        service:service_id (name, category, garment_category)
+        service:service_id (name, category)
       ),
       order_events (status, created_at, metadata)
     `,

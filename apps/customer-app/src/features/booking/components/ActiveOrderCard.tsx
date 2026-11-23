@@ -11,8 +11,7 @@ import {
   typographyScale,
 } from '@ironcloud/ui';
 
-import type { ActiveBooking } from '../services/booking.service';
-import { CollectedGarmentsList } from '../../orders/components/CollectedGarmentsList';
+import type { ActiveBooking, BookingGarment } from '../services/booking.service';
 
 type Props = {
   booking: ActiveBooking;
@@ -20,6 +19,32 @@ type Props = {
   onCancel?: () => void;
   isCancelling?: boolean;
 };
+
+function garmentIcon(name: string): keyof typeof MaterialCommunityIcons.glyphMap {
+  const lower = name.toLowerCase();
+  if (lower.includes('shirt') && !lower.includes('t-shirt')) return 'hanger';
+  if (lower.includes('t-shirt') || lower.includes('tee')) return 'tshirt-crew-outline';
+  if (lower.includes('pant') || lower.includes('trouser')) return 'human-male-height';
+  if (lower.includes('kurta') || lower.includes('ethnic')) return 'human-male';
+  return 'hanger';
+}
+
+function GarmentRow({ item, isLast }: { item: BookingGarment; isLast?: boolean }) {
+  return (
+    <View style={[styles.garmentRow, isLast && styles.garmentRowLast]}>
+      <View style={styles.garmentLeft}>
+        <MaterialCommunityIcons
+          name={garmentIcon(item.garmentName)}
+          size={18}
+          color={colors.icon.secondary}
+          style={styles.garmentIcon}
+        />
+        <Text style={styles.garmentName}>{item.garmentName}</Text>
+      </View>
+      <Text style={styles.garmentQty}>{item.quantity}</Text>
+    </View>
+  );
+}
 
 function DetailBlock({
   label,
@@ -287,19 +312,37 @@ export function ActiveOrderCard({
           {showGarments && (
             <>
               <View style={styles.detailDivider} />
-              {hasGarments ? (
-                <CollectedGarmentsList
-                  orderNumber={booking.orderNumber}
-                  items={booking.items}
-                  title="Garments"
-                  amount={booking.totalAmount}
-                  amountLabel="Bill amount"
-                />
-              ) : (
-                <Text style={[styles.detailBodyText, styles.detailMuted]}>
-                  Garment count will appear after pickup.
-                </Text>
-              )}
+              <DetailBlock label="Garments">
+                {hasGarments ? (
+                  <>
+                    {booking.items.map((item, index) => (
+                      <GarmentRow
+                        key={item.id}
+                        item={item}
+                        isLast={index === booking.items.length - 1}
+                      />
+                    ))}
+                    <View style={styles.totalItemsRow}>
+                      <Text style={styles.totalItemsLabel}>Total items</Text>
+                      <Text style={styles.totalItemsValue}>
+                        {booking.totalItemCount}
+                      </Text>
+                    </View>
+                    {booking.totalAmount > 0 && (
+                      <View style={styles.billRow}>
+                        <Text style={styles.billLabel}>Bill amount</Text>
+                        <Text style={styles.billValue}>
+                          ₹{booking.totalAmount}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <Text style={[styles.detailBodyText, styles.detailMuted]}>
+                    Garment count will appear after pickup.
+                  </Text>
+                )}
+              </DetailBlock>
             </>
           )}
         </View>
@@ -600,6 +643,70 @@ const styles = StyleSheet.create({
   detailDivider: {
     height: 1,
     backgroundColor: colors.border.divider,
+  },
+  garmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+  },
+  garmentRowLast: {
+    borderBottomWidth: 0,
+  },
+  garmentLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  garmentIcon: {
+    marginRight: spacing.sm,
+  },
+  garmentName: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 14,
+    color: colors.text.primary,
+  },
+  garmentQty: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  totalItemsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.divider,
+  },
+  totalItemsLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  totalItemsValue: {
+    fontFamily: fonts.poppins.bold,
+    fontSize: 16,
+    color: colors.text.heading,
+  },
+  billRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+  },
+  billLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  billValue: {
+    fontFamily: fonts.poppins.bold,
+    fontSize: 16,
+    color: colors.brand.primary,
   },
   deliveredFooter: {
     marginTop: spacing.md,

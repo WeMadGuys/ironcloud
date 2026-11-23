@@ -29,7 +29,6 @@ import {
   orderStatusLabel,
   type Order,
 } from '../../src/features/orders/services/orders.service';
-import { CollectedGarmentsList } from '../../src/features/orders/components/CollectedGarmentsList';
 
 export default function OrderDetailsScreen() {
   const router = useRouter();
@@ -161,20 +160,25 @@ export default function OrderDetailsScreen() {
           </View>
 
           <View style={styles.card}>
+            <Text style={styles.sectionLabel}>Garments</Text>
             {order.items.length === 0 ? (
-              <>
-                <Text style={styles.sectionLabel}>Garments</Text>
-                <Text style={styles.muted}>
-                  Garment list will appear after pickup is completed.
-                </Text>
-              </>
+              <Text style={styles.muted}>
+                Garment list will appear after pickup is completed.
+              </Text>
             ) : (
-              <CollectedGarmentsList
-                orderNumber={order.orderNumber}
-                items={order.items}
-                title="Garments"
-                amount={garmentsTotal}
-              />
+              <>
+                {order.items.map((item) => (
+                  <View key={item.id} style={styles.garmentRow}>
+                    <Text style={styles.garmentName}>{item.garmentName}</Text>
+                    <Text style={styles.garmentQty}>×{item.quantity}</Text>
+                    <Text style={styles.garmentPrice}>₹{item.lineTotal}</Text>
+                  </View>
+                ))}
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalValue}>₹{garmentsTotal}</Text>
+                </View>
+              </>
             )}
           </View>
         </ScrollView>
@@ -311,5 +315,46 @@ const styles = StyleSheet.create({
     fontFamily: fonts.inter.regular,
     fontSize: 13,
     color: colors.text.muted,
+  },
+  garmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.divider,
+    gap: spacing.sm,
+  },
+  garmentName: {
+    flex: 1,
+    fontFamily: fonts.inter.medium,
+    fontSize: 14,
+    color: colors.text.heading,
+  },
+  garmentQty: {
+    fontFamily: fonts.inter.regular,
+    fontSize: 13,
+    color: colors.text.secondary,
+  },
+  garmentPrice: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 14,
+    color: colors.text.heading,
+    minWidth: 56,
+    textAlign: 'right',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingTop: spacing.md,
+  },
+  totalLabel: {
+    fontFamily: fonts.inter.semibold,
+    fontSize: 15,
+    color: colors.text.heading,
+  },
+  totalValue: {
+    fontFamily: fonts.poppins.semibold,
+    fontSize: 16,
+    color: colors.text.heading,
   },
 });

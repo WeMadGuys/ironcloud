@@ -39,6 +39,10 @@ const DELIVERED_STATUSES = ['delivered', 'completed', 'rated'];
 
 const TXN_PAGE = 1000;
 
+function includeOrder(status: string, ignoreCancelled: boolean): boolean {
+  return !ignoreCancelled || status !== 'cancelled';
+}
+
 type ActiveOrderRow = {
   id: string;
   status: string;
@@ -108,9 +112,13 @@ async function fetchActiveOrdersInRange(
   return [...byId.values()];
 }
 
-async function fetchActiveOrderCount(range: DateRange, communityId?: string): Promise<number> {
-  const rows = await fetchActiveOrdersInRange(range, 'id', communityId);
-  return rows.length;
+async function fetchActiveOrderCount(
+  range: DateRange,
+  communityId?: string,
+  ignoreCancelled = false,
+): Promise<number> {
+  const rows = await fetchActiveOrdersInRange(range, 'id, status', communityId);
+  return rows.filter((row) => includeOrder(String(row.status ?? ''), ignoreCancelled)).length;
 }
 
 /** Customers belong to a community through their addresses, not through wallets. */
@@ -250,9 +258,15 @@ function debitAmount(row: OrderDebitRow): number {
   return Math.abs(Number(row.amount ?? 0));
 }
 
-async function orderIdsInRange(range: DateRange, communityId?: string): Promise<string[]> {
-  const rows = await fetchActiveOrdersInRange(range, 'id', communityId);
-  return rows.map((row) => String(row.id));
+async function orderIdsInRange(
+  range: DateRange,
+  communityId?: string,
+  ignoreCancelled = false,
+): Promise<string[]> {
+  const rows = await fetchActiveOrdersInRange(range, 'id, status', communityId);
+  return rows
+    .filter((row) => includeOrder(String(row.status ?? ''), ignoreCancelled))
+    .map((row) => String(row.id));
 }
 
 async function partnerIdsForOrders(orderIds: string[]): Promise<string[]> {
@@ -281,7 +295,11 @@ async function partnerIdsForOrders(orderIds: string[]): Promise<string[]> {
 }
 
 /** Riders with a pickup or delivery job scheduled in the range. */
-async function riderIdsInRange(range: DateRange, communityId?: string): Promise<string[]> {
+async function riderIdsInRange(
+  range: DateRange,
+  communityId?: string,
+  ignoreCancelled = false,
+): Promise<string[]> {
   const supabase = getSupabase();
   const rangeStart = range.from;
   const rangeEnd = range.to;
@@ -291,7 +309,7 @@ async function riderIdsInRange(range: DateRange, communityId?: string): Promise<
   for (let from = 0; ; from += TXN_PAGE) {
     let query = supabase
       .from('rider_jobs')
-      .select('id, rider_id, orders!inner(community_id)')
+      .select('id, rider_id, orders!inner(community_id, status)')
       .not('rider_id', 'is', null)
       .gte('scheduled_start', rangeStart.toISOString())
       .lte('scheduled_start', rangeEnd.toISOString())
@@ -306,8 +324,13 @@ async function riderIdsInRange(range: DateRange, communityId?: string): Promise<
       return [...ids];
     }
 
-    const page = castRows<{ rider_id: string | null }>(data);
+    const page = castRows<{
+      rider_id: string | null;
+      orders: { status?: string } | { status?: string }[] | null;
+    }>(data);
     for (const row of page) {
+      const order = firstEmbed(row.orders);
+      if (!includeOrder(order?.status ?? '', ignoreCancelled)) continue;
       if (row.rider_id) ids.add(row.rider_id);
     }
     if (page.length < TXN_PAGE) break;
@@ -319,6 +342,7 @@ async function riderIdsInRange(range: DateRange, communityId?: string): Promise<
 export const fetchDashboardKPIs = async (
   range: DateRange,
   communityId?: string,
+  ignoreCancelled = false,
 ): Promise<DashboardKPIs> => {
   const effectiveRange: DateRange = range.from || range.to
     ? range
@@ -333,12 +357,14 @@ export const fetchDashboardKPIs = async (
       communityId,
     ),
     fetchOrderDebits(effectiveRange, communityId),
-    fetchActiveOrderCount(prevRange, communityId),
+    fetchActiveOrderCount(prevRange, communityId, ignoreCancelled),
     sumWalletBalance(communityId),
-    riderIdsInRange(effectiveRange, communityId),
+    riderIdsInRange(effectiveRange, communityId, ignoreCancelled),
   ]);
 
-  const orders = orderRows as unknown as ActiveOrderRow[];
+  const orders = (orderRows as unknown as ActiveOrderRow[]).filter((order) =>
+    includeOrder(order.status, ignoreCancelled),
+  );
   const uniqueCustomers = new Set(orders.map((o) => o.customer_id));
 
   const countByStatus = (statuses: string[]) =>
@@ -366,7 +392,11 @@ export const fetchDashboardKPIs = async (
   };
 };
 
-export const fetchOrdersOverview = async (range: DateRange, communityId?: string) => {
+export const fetchOrdersOverview = async (
+  range: DateRange,
+  communityId?: string,
+  ignoreCancelled = false,
+) => {
   const supabase = getSupabase();
   const rangeStart = range.from ?? startOfDay(new Date());
   const rangeEnd = range.to ?? endOfDay(new Date());
@@ -396,7 +426,7 @@ export const fetchOrdersOverview = async (range: DateRange, communityId?: string
 
   let query = supabase
     .from('orders')
-    .select('id, pickup_slot_id, delivery_slot_id')
+    .select('id, status, pickup_slot_id, delivery_slot_id')
     .or(orFilter);
   if (communityId) query = query.eq('community_id', communityId);
 
@@ -409,9 +439,11 @@ export const fetchOrdersOverview = async (range: DateRange, communityId?: string
   const counts: Record<string, Set<string>> = {};
   for (const order of castRows<{
     id: string;
+    status: string;
     pickup_slot_id: string | null;
     delivery_slot_id: string | null;
   }>(data)) {
+    if (!includeOrder(order.status, ignoreCancelled)) continue;
     const days = new Set<string>();
     if (order.pickup_slot_id && slotDayById.has(order.pickup_slot_id)) {
       days.add(slotDayById.get(order.pickup_slot_id)!);
@@ -433,6 +465,7 @@ export const fetchOrdersOverview = async (range: DateRange, communityId?: string
 export const fetchOrderStatusDistribution = async (
   range: DateRange,
   communityId?: string,
+  ignoreCancelled = false,
 ) => {
   const effectiveRange: DateRange = range.from || range.to
     ? range
@@ -446,6 +479,7 @@ export const fetchOrderStatusDistribution = async (
 
   const counts: Record<string, number> = {};
   for (const o of orders as unknown as { status: string }[]) {
+    if (!includeOrder(o.status, ignoreCancelled)) continue;
     counts[o.status] = (counts[o.status] ?? 0) + 1;
   }
 
@@ -459,18 +493,21 @@ export const fetchTopCommunities = async (
   range: DateRange,
   limit = 5,
   communityId?: string,
+  ignoreCancelled = false,
 ) => {
   const orders = await fetchActiveOrdersInRange(
     range,
-    'id, community_id, communities(name)',
+    'id, status, community_id, communities(name)',
     communityId,
   );
 
   const counts: Record<string, { id: string; name: string; count: number }> = {};
   for (const order of orders as unknown as {
+    status: string;
     community_id: string | null;
     communities: { name: string } | { name: string }[] | null;
   }[]) {
+    if (!includeOrder(order.status, ignoreCancelled)) continue;
     const id = order.community_id;
     if (!id) continue;
     const community = firstEmbed(order.communities);
@@ -505,6 +542,7 @@ export const fetchRecentOrders = async (
   limit = 8,
   communityId?: string,
   range?: DateRange,
+  ignoreCancelled = false,
 ) => {
   const effectiveRange: DateRange = range?.from || range?.to
     ? range
@@ -517,6 +555,7 @@ export const fetchRecentOrders = async (
   )) as unknown as RecentOrderRow[];
 
   return rows
+    .filter((row) => includeOrder(row.status, ignoreCancelled))
     .slice()
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, limit);
@@ -531,8 +570,9 @@ export const fetchTopPartners = async (
   range: DateRange,
   limit = 5,
   communityId?: string,
+  ignoreCancelled = false,
 ) => {
-  const orderIds = await orderIdsInRange(range, communityId);
+  const orderIds = await orderIdsInRange(range, communityId, ignoreCancelled);
   if (orderIds.length === 0) return [];
 
   const supabase = getSupabase();
@@ -833,6 +873,7 @@ export const fetchDashboardKpiDetails = async (
   kpi: DashboardKpiKey,
   range: DateRange,
   communityId?: string,
+  ignoreCancelled = false,
 ): Promise<DashboardKpiDetails> => {
   const effectiveRange: DateRange = range.from || range.to
     ? range
@@ -857,7 +898,10 @@ export const fetchDashboardKpiDetails = async (
     )) as unknown as DashboardOrderDetail[];
 
     const statuses = ORDER_KPI_STATUSES[kpi];
-    const filtered = rows.filter((o) => !statuses || statuses.includes(o.status));
+    const filtered = rows.filter((o) => {
+      if (!includeOrder(o.status, ignoreCancelled)) return false;
+      return !statuses || statuses.includes(o.status);
+    });
 
     filtered.sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -879,15 +923,21 @@ export const fetchDashboardKpiDetails = async (
   if (kpi === 'activeCustomers') {
     const rows = await fetchActiveOrdersInRange(
       effectiveRange,
-      'customer_id, profiles!orders_customer_id_fkey(full_name, phone)',
+      'id, status, customer_id, profiles!orders_customer_id_fkey(full_name, phone)',
       communityId,
     );
 
     const byCustomer: Record<string, DashboardCustomerDetail> = {};
     for (const row of rows as unknown as {
+      status: string;
       customer_id: string;
-      profiles: { full_name: string; phone: string | null } | null;
+      profiles:
+        | { full_name: string; phone: string | null }
+        | { full_name: string; phone: string | null }[]
+        | null;
     }[]) {
+      if (!includeOrder(row.status, ignoreCancelled)) continue;
+      const profile = firstEmbed(row.profiles);
       const existing = byCustomer[row.customer_id];
       if (existing) {
         existing.order_count += 1;
@@ -895,8 +945,8 @@ export const fetchDashboardKpiDetails = async (
       }
       byCustomer[row.customer_id] = {
         id: row.customer_id,
-        full_name: row.profiles?.full_name ?? 'Unknown',
-        phone: row.profiles?.phone ?? null,
+        full_name: profile?.full_name ?? 'Unknown',
+        phone: profile?.phone ?? null,
         order_count: 1,
       };
     }
@@ -908,12 +958,12 @@ export const fetchDashboardKpiDetails = async (
   }
 
   if (kpi === 'activePartners') {
-    const orderIds = await orderIdsInRange(effectiveRange, communityId);
+    const orderIds = await orderIdsInRange(effectiveRange, communityId, ignoreCancelled);
     const partnerIds = await partnerIdsForOrders(orderIds);
     return { kind: 'partners', rows: await fetchPartnersByIds(partnerIds) };
   }
 
-  const riderIds = await riderIdsInRange(effectiveRange, communityId);
+  const riderIds = await riderIdsInRange(effectiveRange, communityId, ignoreCancelled);
   return { kind: 'riders', rows: await fetchRidersByIds(riderIds) };
 };
 
@@ -921,6 +971,7 @@ export const fetchDashboardKpiDetails = async (
 export const fetchDashboardBundle = async (
   range: DateRange,
   communityId?: string,
+  ignoreCancelled = false,
 ) => {
   const effectiveRange: DateRange = range.from || range.to
     ? range
@@ -928,12 +979,12 @@ export const fetchDashboardBundle = async (
 
   const [kpis, overview, statusDist, topCommunities, topPartners, recentOrders, lowWallet] =
     await Promise.all([
-      fetchDashboardKPIs(effectiveRange, communityId),
-      fetchOrdersOverview(effectiveRange, communityId),
-      fetchOrderStatusDistribution(effectiveRange, communityId),
-      fetchTopCommunities(effectiveRange, 5, communityId),
-      fetchTopPartners(effectiveRange, 5, communityId),
-      fetchRecentOrders(8, communityId, effectiveRange),
+      fetchDashboardKPIs(effectiveRange, communityId, ignoreCancelled),
+      fetchOrdersOverview(effectiveRange, communityId, ignoreCancelled),
+      fetchOrderStatusDistribution(effectiveRange, communityId, ignoreCancelled),
+      fetchTopCommunities(effectiveRange, 5, communityId, ignoreCancelled),
+      fetchTopPartners(effectiveRange, 5, communityId, ignoreCancelled),
+      fetchRecentOrders(8, communityId, effectiveRange, ignoreCancelled),
       fetchLowWalletUsers(100, 5, communityId),
     ]);
 
