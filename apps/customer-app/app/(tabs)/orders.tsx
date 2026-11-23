@@ -34,6 +34,7 @@ import {
   orderStatusLabel,
   type Order,
 } from '../../src/features/orders/services/orders.service';
+import { CollectedGarmentsList } from '../../src/features/orders/components/CollectedGarmentsList';
 
 const PROGRESS_STEPS = [
   { key: 'awaiting_pickup', label: 'Awaiting Pickup' },
@@ -236,31 +237,15 @@ export default function OrdersScreen() {
 
         {order.items.length > 0 && (
           <View style={styles.garmentsSection}>
-            <View style={styles.garmentsHeader}>
-              <MaterialCommunityIcons
-                name="hanger"
-                size={18}
-                color={colors.brand.primary}
-              />
-              <Text style={styles.garmentsTitle}>Garments Collected</Text>
-            </View>
-            {order.items.map((item) => (
-              <View key={item.id} style={styles.garmentRow}>
-                <View style={styles.garmentLeft}>
-                  <Text style={styles.garmentName}>{item.garmentName}</Text>
-                  <Text style={styles.garmentMeta}>
-                    ₹{item.unitPrice} × {item.quantity}
-                  </Text>
-                </View>
-                <Text style={styles.garmentTotal}>₹{item.lineTotal}</Text>
-              </View>
-            ))}
-            <View style={styles.garmentTotalRow}>
-              <Text style={styles.garmentTotalLabel}>Total</Text>
-              <Text style={styles.garmentGrandTotal}>
-                ₹{order.totalAmount || order.items.reduce((s, i) => s + i.lineTotal, 0)}
-              </Text>
-            </View>
+            <CollectedGarmentsList
+              orderNumber={order.orderNumber}
+              items={order.items}
+              title="Garments collected"
+              amount={
+                order.totalAmount ||
+                order.items.reduce((sum, item) => sum + item.lineTotal, 0)
+              }
+            />
           </View>
         )}
 
@@ -729,60 +714,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border.divider,
     paddingTop: spacing.md,
     marginBottom: spacing.md,
-  },
-  garmentsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  garmentsTitle: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 14,
-    color: colors.text.heading,
-    marginLeft: spacing.xs,
-  },
-  garmentRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border.divider,
-  },
-  garmentLeft: {
-    flex: 1,
-  },
-  garmentName: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 14,
-    color: colors.text.primary,
-  },
-  garmentMeta: {
-    fontFamily: fonts.inter.regular,
-    fontSize: 12,
-    color: colors.text.muted,
-    marginTop: 2,
-  },
-  garmentTotal: {
-    fontFamily: fonts.poppins.semibold,
-    fontSize: 14,
-    color: colors.text.heading,
-  },
-  garmentTotalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: spacing.md,
-  },
-  garmentTotalLabel: {
-    fontFamily: fonts.inter.semibold,
-    fontSize: 14,
-    color: colors.text.primary,
-  },
-  garmentGrandTotal: {
-    fontFamily: fonts.poppins.bold,
-    fontSize: 16,
-    color: colors.brand.primary,
   },
   detailsButton: {
     flexDirection: 'row',

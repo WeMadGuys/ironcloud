@@ -85,8 +85,11 @@ export const DashboardKpiDetailModal = ({
               },
               {
                 key: 'amount',
-                header: 'Amount',
-                render: (o) => formatCurrency(Number(o.total_amount)),
+                header: kpi === 'revenue' ? 'Debited' : 'Amount',
+                render: (o) =>
+                  formatCurrency(
+                    Number(kpi === 'revenue' ? (o.debited_amount ?? 0) : o.total_amount),
+                  ),
               },
               {
                 key: 'booked',

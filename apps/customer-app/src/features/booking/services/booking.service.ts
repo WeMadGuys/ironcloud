@@ -1,9 +1,10 @@
-import { assertServiceQuantities, formatServiceDisplayName } from '@ironcloud/db';
+import { assertServiceQuantities } from '@ironcloud/db';
 
 import { IS_MOCK_AUTH, MOCK_USER_ID } from '../../../config/auth';
 import { supabase } from '../../../lib/supabase';
 import { getApiBaseUrl } from '../../../lib/api';
 import { createTtlCache } from '../../../lib/ttl-cache';
+import { mapGarmentFields } from '../../orders/collectedGarments';
 import { clearOrdersCache } from '../../orders/services/orders.service';
 
 const MOCK_RIDER_ID = '00000000-0000-0000-0000-000000000002';
@@ -70,6 +71,8 @@ export type HomeOrderPhase = 'awaiting_pickup' | 'picked_up' | 'delivered';
 export type BookingGarment = {
   id: string;
   garmentName: string;
+  serviceLine: string;
+  garmentCategory: string;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -607,7 +610,11 @@ type OrderRow = {
         id: string;
         quantity: number;
         unit_price: number;
-        service: { name: string; category?: string | null } | null;
+        service: {
+          name: string;
+          category?: string | null;
+          garment_category?: string | null;
+        } | null;
       }[]
     | null;
 };
@@ -631,7 +638,7 @@ const ORDER_SELECT = `
     id,
     quantity,
     unit_price,
-    service:service_id (name, category)
+    service:service_id (name, category, garment_category)
   )
 `;
 
@@ -785,10 +792,7 @@ async function mapOrderToActiveBooking(row: OrderRow): Promise<ActiveBooking> {
     const unitPrice = Number(item.unit_price || 0);
     return {
       id: item.id,
-      garmentName: formatServiceDisplayName(
-        item.service?.name || 'Garment',
-        item.service?.category,
-      ),
+      ...mapGarmentFields(item.service),
       quantity,
       unitPrice,
       lineTotal: quantity * unitPrice,

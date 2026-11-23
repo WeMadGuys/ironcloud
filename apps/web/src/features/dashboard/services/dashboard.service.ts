@@ -37,16 +37,7 @@ const IN_PROGRESS_STATUSES = [
 const OUT_FOR_DELIVERY_STATUSES = ['delivery_assigned', 'out_for_delivery'];
 const DELIVERED_STATUSES = ['delivered', 'completed', 'rated'];
 
-/** Not sales: never charged, voided, or fully refunded. */
-const EXCLUDED_REVENUE_STATUSES = new Set([
-  'draft',
-  'cancelled',
-  'failed',
-  'refund_completed',
-]);
-
-/** Rankings use a recent window — all-time full-table scans are wrong past PostgREST row caps. */
-const RANKING_LOOKBACK_DAYS = 30;
+const TXN_PAGE = 1000;
 
 type ActiveOrderRow = {
   id: string;
@@ -186,33 +177,165 @@ async function sumWalletBalance(communityId?: string): Promise<number> {
   return total;
 }
 
+function firstEmbed<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+
+type DebitOrderEmbed = {
+  id: string;
+  order_number: string;
+  status: string;
+  total_amount: number;
+  created_at: string;
+  profiles: { full_name: string } | { full_name: string }[] | null;
+  communities: { name: string } | { name: string }[] | null;
+};
+
+type OrderDebitRow = {
+  id: string;
+  amount: number;
+  order_id: string;
+  orders: DebitOrderEmbed | DebitOrderEmbed[] | null;
+};
+
+const ORDER_DEBIT_SELECT = `
+  id, amount, order_id,
+  orders!inner(
+    id, order_number, status, total_amount, created_at, community_id,
+    profiles!orders_customer_id_fkey(full_name),
+    communities(name)
+  )
+`;
+
+/** Wallet debits tied to an order and posted on the selected day. Order status is ignored. */
+async function fetchOrderDebits(
+  range: DateRange,
+  communityId?: string,
+): Promise<OrderDebitRow[]> {
+  const supabase = getSupabase();
+  const rangeStart = range.from;
+  const rangeEnd = range.to;
+  if (!rangeStart || !rangeEnd) return [];
+
+  const rows: OrderDebitRow[] = [];
+  for (let from = 0; ; from += TXN_PAGE) {
+    let query = supabase
+      .from('wallet_transactions')
+      .select(ORDER_DEBIT_SELECT)
+      .eq('type', 'debit')
+      .not('order_id', 'is', null)
+      .gte('created_at', rangeStart.toISOString())
+      .lte('created_at', rangeEnd.toISOString())
+      .order('id', { ascending: true })
+      .range(from, from + TXN_PAGE - 1);
+
+    if (communityId) query = query.eq('orders.community_id', communityId);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('[dashboard] wallet debits', error.message);
+      return rows;
+    }
+
+    const page = castRows<OrderDebitRow>(data);
+    rows.push(...page);
+    if (page.length < TXN_PAGE) break;
+  }
+
+  return rows;
+}
+
+function debitAmount(row: OrderDebitRow): number {
+  return Math.abs(Number(row.amount ?? 0));
+}
+
+async function orderIdsInRange(range: DateRange, communityId?: string): Promise<string[]> {
+  const rows = await fetchActiveOrdersInRange(range, 'id', communityId);
+  return rows.map((row) => String(row.id));
+}
+
+async function partnerIdsForOrders(orderIds: string[]): Promise<string[]> {
+  if (orderIds.length === 0) return [];
+  const supabase = getSupabase();
+  const ids = new Set<string>();
+
+  for (let i = 0; i < orderIds.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = orderIds.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('partner_orders')
+      .select('partner_id')
+      .in('order_id', chunk);
+
+    if (error) {
+      console.error('[dashboard] partner orders', error.message);
+      continue;
+    }
+
+    for (const row of castRows<{ partner_id: string }>(data)) {
+      if (row.partner_id) ids.add(row.partner_id);
+    }
+  }
+
+  return [...ids];
+}
+
+/** Riders with a pickup or delivery job scheduled in the range. */
+async function riderIdsInRange(range: DateRange, communityId?: string): Promise<string[]> {
+  const supabase = getSupabase();
+  const rangeStart = range.from;
+  const rangeEnd = range.to;
+  if (!rangeStart || !rangeEnd) return [];
+
+  const ids = new Set<string>();
+  for (let from = 0; ; from += TXN_PAGE) {
+    let query = supabase
+      .from('rider_jobs')
+      .select('id, rider_id, orders!inner(community_id)')
+      .not('rider_id', 'is', null)
+      .gte('scheduled_start', rangeStart.toISOString())
+      .lte('scheduled_start', rangeEnd.toISOString())
+      .order('id', { ascending: true })
+      .range(from, from + TXN_PAGE - 1);
+
+    if (communityId) query = query.eq('orders.community_id', communityId);
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('[dashboard] rider jobs', error.message);
+      return [...ids];
+    }
+
+    const page = castRows<{ rider_id: string | null }>(data);
+    for (const row of page) {
+      if (row.rider_id) ids.add(row.rider_id);
+    }
+    if (page.length < TXN_PAGE) break;
+  }
+
+  return [...ids];
+}
+
 export const fetchDashboardKPIs = async (
   range: DateRange,
   communityId?: string,
 ): Promise<DashboardKPIs> => {
-  const supabase = getSupabase();
   const effectiveRange: DateRange = range.from || range.to
     ? range
     : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
 
   const prevRange = previousDateRange(effectiveRange);
 
-  const [orderRows, revenueRows, totalYesterday, walletBalance, partners, riders] = await Promise.all([
+  const [orderRows, debitRows, totalYesterday, walletBalance, riderIds] = await Promise.all([
     fetchActiveOrdersInRange(
       effectiveRange,
       'id, status, total_amount, customer_id, pickup_slot_id, delivery_slot_id',
       communityId,
     ),
-    fetchActiveOrdersInRange(
-      effectiveRange,
-      'id, status, total_amount',
-      communityId,
-      'delivery',
-    ),
+    fetchOrderDebits(effectiveRange, communityId),
     fetchActiveOrderCount(prevRange, communityId),
     sumWalletBalance(communityId),
-    supabase.from('partners').select('id', { count: 'exact', head: true }).eq('is_active', true),
-    supabase.from('riders').select('id', { count: 'exact', head: true }),
+    riderIdsInRange(effectiveRange, communityId),
   ]);
 
   const orders = orderRows as unknown as ActiveOrderRow[];
@@ -221,9 +344,8 @@ export const fetchDashboardKPIs = async (
   const countByStatus = (statuses: string[]) =>
     orders.filter((o) => statuses.includes(o.status)).length;
 
-  const revenueToday = (revenueRows as unknown as { status: string; total_amount: number }[])
-    .filter((o) => !EXCLUDED_REVENUE_STATUSES.has(o.status))
-    .reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+  const revenueToday = debitRows.reduce((sum, row) => sum + debitAmount(row), 0);
+  const partnerIds = await partnerIdsForOrders(orders.map((order) => order.id));
 
   const totalToday = orders.length;
 
@@ -236,8 +358,8 @@ export const fetchDashboardKPIs = async (
     revenueToday,
     walletBalance,
     activeCustomers: uniqueCustomers.size,
-    activePartners: partners.count ?? 0,
-    activeRiders: riders.count ?? 0,
+    activePartners: partnerIds.length,
+    activeRiders: riderIds.length,
     trends: {
       totalOrders: { value: totalToday, previous: totalYesterday },
     },
@@ -333,79 +455,114 @@ export const fetchOrderStatusDistribution = async (
   }));
 };
 
-export const fetchTopCommunities = async (limit = 5) => {
-  const supabase = getSupabase();
-  const since = new Date();
-  since.setDate(since.getDate() - RANKING_LOOKBACK_DAYS);
-  since.setHours(0, 0, 0, 0);
-
-  const { data } = await supabase
-    .from('orders')
-    .select('community_id, communities(name)')
-    .not('community_id', 'is', null)
-    .gte('created_at', since.toISOString());
+export const fetchTopCommunities = async (
+  range: DateRange,
+  limit = 5,
+  communityId?: string,
+) => {
+  const orders = await fetchActiveOrdersInRange(
+    range,
+    'id, community_id, communities(name)',
+    communityId,
+  );
 
   const counts: Record<string, { id: string; name: string; count: number }> = {};
-  (data ?? []).forEach((o) => {
-    const id = o.community_id;
-    const name = (o.communities as { name: string } | null)?.name ?? 'Unknown';
-    if (!counts[id]) counts[id] = { id, name, count: 0 };
-    counts[id].count++;
-  });
+  for (const order of orders as unknown as {
+    community_id: string | null;
+    communities: { name: string } | { name: string }[] | null;
+  }[]) {
+    const id = order.community_id;
+    if (!id) continue;
+    const community = firstEmbed(order.communities);
+    if (!counts[id]) counts[id] = { id, name: community?.name ?? 'Unknown', count: 0 };
+    counts[id].count += 1;
+  }
 
   return Object.values(counts)
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
 };
 
-export const fetchRecentOrders = async (limit = 8, communityId?: string) => {
-  const supabase = getSupabase();
-  let query = supabase
-    .from('orders')
-    .select(`
-      id, order_number, status, created_at, total_amount,
-      profiles!orders_customer_id_fkey(full_name),
-      addresses(flat_number, tower),
-      communities(name)
-    `)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+const RECENT_ORDER_SELECT = `
+  id, order_number, status, created_at, total_amount,
+  profiles!orders_customer_id_fkey(full_name),
+  addresses(flat_number, tower),
+  communities(name)
+`;
 
-  if (communityId) query = query.eq('community_id', communityId);
-
-  const { data } = await query;
-
-  return data ?? [];
+type RecentOrderRow = {
+  id: string;
+  order_number: string;
+  status: string;
+  created_at: string;
+  total_amount: number;
+  profiles: { full_name: string } | null;
+  addresses: { flat_number: string; tower: string } | null;
+  communities: { name: string } | null;
 };
 
-export const fetchTopPartners = async (limit = 5) => {
+export const fetchRecentOrders = async (
+  limit = 8,
+  communityId?: string,
+  range?: DateRange,
+) => {
+  const effectiveRange: DateRange = range?.from || range?.to
+    ? range
+    : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
+
+  const rows = (await fetchActiveOrdersInRange(
+    effectiveRange,
+    RECENT_ORDER_SELECT,
+    communityId,
+  )) as unknown as RecentOrderRow[];
+
+  return rows
+    .slice()
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, limit);
+};
+
+type PartnerAssignment = {
+  partner_id: string;
+  partners: { name: string; rating_avg: number } | { name: string; rating_avg: number }[] | null;
+};
+
+export const fetchTopPartners = async (
+  range: DateRange,
+  limit = 5,
+  communityId?: string,
+) => {
+  const orderIds = await orderIdsInRange(range, communityId);
+  if (orderIds.length === 0) return [];
+
   const supabase = getSupabase();
-  const since = new Date();
-  since.setDate(since.getDate() - RANKING_LOOKBACK_DAYS);
-  since.setHours(0, 0, 0, 0);
+  const counts: Record<string, { id: string; name: string; count: number; rating: number }> = {};
 
-  const { data } = await supabase
-    .from('partner_orders')
-    .select('partner_id, assigned_at, partners(name, rating_avg)')
-    .gte('assigned_at', since.toISOString());
+  for (let i = 0; i < orderIds.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = orderIds.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('partner_orders')
+      .select('partner_id, partners(name, rating_avg)')
+      .in('order_id', chunk);
 
-  const counts: Record<
-    string,
-    { id: string; name: string; count: number; rating: number }
-  > = {};
-  (data ?? []).forEach((po) => {
-    const id = po.partner_id;
-    const partner = po.partners as { name: string; rating_avg: number } | null;
-    if (!counts[id]) {
-      counts[id] = {
-        id,
-        name: partner?.name ?? 'Unknown',
-        count: 0,
-        rating: partner?.rating_avg ?? 0,
-      };
+    if (error) {
+      console.error('[dashboard] top partners', error.message);
+      continue;
     }
-    counts[id].count++;
-  });
+
+    for (const row of castRows<PartnerAssignment>(data)) {
+      const partner = firstEmbed(row.partners);
+      if (!counts[row.partner_id]) {
+        counts[row.partner_id] = {
+          id: row.partner_id,
+          name: partner?.name ?? 'Unknown',
+          count: 0,
+          rating: Number(partner?.rating_avg ?? 0),
+        };
+      }
+      counts[row.partner_id].count += 1;
+    }
+  }
 
   return Object.values(counts)
     .sort((a, b) => b.count - a.count)
@@ -501,6 +658,8 @@ export type DashboardOrderDetail = {
   created_at: string;
   profiles: { full_name: string } | null;
   communities: { name: string } | null;
+  /** Sum of wallet debits for this order inside the selected range. */
+  debited_amount?: number;
 };
 
 export type DashboardWalletDetail = {
@@ -589,19 +748,103 @@ const ORDER_DETAIL_SELECT = `
   communities(name)
 `;
 
+function ordersFromDebits(rows: OrderDebitRow[]): DashboardOrderDetail[] {
+  const byOrder = new Map<string, DashboardOrderDetail>();
+  for (const row of rows) {
+    const order = firstEmbed(row.orders);
+    if (!order) continue;
+    const amount = debitAmount(row);
+    const existing = byOrder.get(order.id);
+    if (existing) {
+      existing.debited_amount = (existing.debited_amount ?? 0) + amount;
+      continue;
+    }
+    byOrder.set(order.id, {
+      id: order.id,
+      order_number: order.order_number,
+      status: order.status,
+      total_amount: Number(order.total_amount ?? 0),
+      created_at: order.created_at,
+      profiles: firstEmbed(order.profiles),
+      communities: firstEmbed(order.communities),
+      debited_amount: amount,
+    });
+  }
+
+  return [...byOrder.values()].sort(
+    (a, b) => (b.debited_amount ?? 0) - (a.debited_amount ?? 0),
+  );
+}
+
+async function fetchPartnersByIds(ids: string[]): Promise<DashboardPartnerDetail[]> {
+  if (ids.length === 0) return [];
+  const supabase = getSupabase();
+  const rows: DashboardPartnerDetail[] = [];
+
+  for (let i = 0; i < ids.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = ids.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('partners')
+      .select('id, name, rating_avg, is_active')
+      .in('id', chunk);
+
+    if (error) {
+      console.error('[fetchDashboardKpiDetails] partners', error.message);
+      continue;
+    }
+
+    rows.push(...castRows<DashboardPartnerDetail>(data));
+  }
+
+  rows.sort((a, b) => a.name.localeCompare(b.name));
+  return rows.slice(0, 100);
+}
+
+const RIDER_DETAIL_SELECT =
+  'id, vehicle_number, kyc_status, is_active, rating_avg, profiles!riders_id_fkey(full_name, phone)';
+
+async function fetchRidersByIds(ids: string[]): Promise<DashboardRiderDetail[]> {
+  if (ids.length === 0) return [];
+  const supabase = getSupabase();
+  const rows: DashboardRiderDetail[] = [];
+
+  for (let i = 0; i < ids.length; i += CUSTOMER_ID_CHUNK) {
+    const chunk = ids.slice(i, i + CUSTOMER_ID_CHUNK);
+    const { data, error } = await supabase
+      .from('riders')
+      .select(RIDER_DETAIL_SELECT)
+      .in('id', chunk);
+
+    if (error) {
+      console.error('[fetchDashboardKpiDetails] riders', error.message);
+      continue;
+    }
+
+    rows.push(...castRows<DashboardRiderDetail>(data));
+  }
+
+  rows.sort((a, b) =>
+    (a.profiles?.full_name ?? '').localeCompare(b.profiles?.full_name ?? ''),
+  );
+  return rows.slice(0, 100);
+}
+
 export const fetchDashboardKpiDetails = async (
   kpi: DashboardKpiKey,
   range: DateRange,
   communityId?: string,
 ): Promise<DashboardKpiDetails> => {
-  const supabase = getSupabase();
   const effectiveRange: DateRange = range.from || range.to
     ? range
     : { from: startOfDay(new Date()), to: endOfDay(new Date()) };
 
+  if (kpi === 'revenue') {
+    const debits = await fetchOrderDebits(effectiveRange, communityId);
+    return { kind: 'orders', rows: ordersFromDebits(debits).slice(0, 100) };
+  }
+
   if (
     kpi === 'totalOrders' ||
-    kpi === 'revenue' ||
     kpi === 'pendingPickups' ||
     kpi === 'inProgress' ||
     kpi === 'outForDelivery' ||
@@ -611,15 +854,10 @@ export const fetchDashboardKpiDetails = async (
       effectiveRange,
       ORDER_DETAIL_SELECT,
       communityId,
-      kpi === 'revenue' ? 'delivery' : 'any',
     )) as unknown as DashboardOrderDetail[];
 
     const statuses = ORDER_KPI_STATUSES[kpi];
-    const filtered = rows.filter((o) => {
-      if (statuses && !statuses.includes(o.status)) return false;
-      if (kpi === 'revenue' && EXCLUDED_REVENUE_STATUSES.has(o.status)) return false;
-      return true;
-    });
+    const filtered = rows.filter((o) => !statuses || statuses.includes(o.status));
 
     filtered.sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
@@ -670,41 +908,13 @@ export const fetchDashboardKpiDetails = async (
   }
 
   if (kpi === 'activePartners') {
-    const { data, error } = await supabase
-      .from('partners')
-      .select('id, name, rating_avg, is_active')
-      .eq('is_active', true)
-      .order('name', { ascending: true })
-      .limit(100);
-
-    if (error) {
-      console.error('[fetchDashboardKpiDetails] partners', error.message);
-      return { kind: 'partners', rows: [] };
-    }
-
-    return {
-      kind: 'partners',
-      rows: castRows<DashboardPartnerDetail>(data),
-    };
+    const orderIds = await orderIdsInRange(effectiveRange, communityId);
+    const partnerIds = await partnerIdsForOrders(orderIds);
+    return { kind: 'partners', rows: await fetchPartnersByIds(partnerIds) };
   }
 
-  const { data, error } = await supabase
-    .from('riders')
-    .select(
-      'id, vehicle_number, kyc_status, is_active, rating_avg, profiles!riders_id_fkey(full_name, phone)',
-    )
-    .order('created_at', { ascending: false })
-    .limit(100);
-
-  if (error) {
-    console.error('[fetchDashboardKpiDetails] riders', error.message);
-    return { kind: 'riders', rows: [] };
-  }
-
-  return {
-    kind: 'riders',
-    rows: castRows<DashboardRiderDetail>(data),
-  };
+  const riderIds = await riderIdsInRange(effectiveRange, communityId);
+  return { kind: 'riders', rows: await fetchRidersByIds(riderIds) };
 };
 
 /** Single payload for dashboard — one React Query key / cache entry. */
@@ -721,9 +931,9 @@ export const fetchDashboardBundle = async (
       fetchDashboardKPIs(effectiveRange, communityId),
       fetchOrdersOverview(effectiveRange, communityId),
       fetchOrderStatusDistribution(effectiveRange, communityId),
-      fetchTopCommunities(),
-      fetchTopPartners(),
-      fetchRecentOrders(8, communityId),
+      fetchTopCommunities(effectiveRange, 5, communityId),
+      fetchTopPartners(effectiveRange, 5, communityId),
+      fetchRecentOrders(8, communityId, effectiveRange),
       fetchLowWalletUsers(100, 5, communityId),
     ]);
 

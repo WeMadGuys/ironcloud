@@ -100,14 +100,23 @@ export const DashboardPage = () => {
     const supabase = getSupabase();
     let timer: ReturnType<typeof setTimeout> | null = null;
 
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void refetch();
+      }, 2500);
+    };
+
     const channel = supabase
       .channel('admin-dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          void refetch();
-        }, 2500);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, schedule)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wallet_transactions' },
+        schedule,
+      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'partner_orders' }, schedule)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rider_jobs' }, schedule)
       .subscribe();
 
     return () => {
