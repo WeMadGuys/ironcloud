@@ -331,6 +331,47 @@ export function createBoxService(supabase: TypedSupabaseClient) {
 
       if (error) throw new Error(error.message);
     },
+
+    async deleteBox(id: string, options?: { force?: boolean }) {
+      const force = options?.force === true;
+
+      const { data: box, error: readError } = await supabase
+        .from('boxes')
+        .select('id, box_code, status, current_order_id')
+        .eq('id', id)
+        .single();
+
+      if (readError) throw new Error(readError.message);
+
+      const row = box as {
+        id: string;
+        box_code: string;
+        status: BoxStatus;
+        current_order_id: string | null;
+      } | null;
+
+      if (!row) throw new Error('Box not found');
+      if (row.status === 'OCCUPIED' && !force) {
+        throw new Error('Cannot delete an occupied box. Use force delete to remove it anyway.');
+      }
+
+      const { error: linksError } = await supabase
+        .from('order_boxes')
+        .delete()
+        .eq('box_id', id);
+      if (linksError) throw new Error(linksError.message);
+
+      const { error } = await supabase.from('boxes').delete().eq('id', id);
+      if (error) throw new Error(error.message);
+
+      return {
+        id: row.id,
+        boxCode: row.box_code,
+        status: row.status,
+        currentOrderId: row.current_order_id,
+        forced: force,
+      };
+    },
   };
 }
 

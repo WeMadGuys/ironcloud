@@ -82,4 +82,31 @@ export const boxesRouter = router({
 
       return { id: input.id };
     }),
+
+  delete: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        force: z.boolean().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const boxes = createBoxService(ctx.supabase);
+      const deleted = await boxes.deleteBox(input.id, { force: input.force });
+
+      await writeAuditLog({
+        supabase: ctx.supabase,
+        actorId: ctx.userId,
+        action: deleted.forced ? 'box.force_delete' : 'box.delete',
+        entityType: 'box',
+        entityId: input.id,
+        before: {
+          boxCode: deleted.boxCode,
+          status: deleted.status,
+          currentOrderId: deleted.currentOrderId,
+        },
+      });
+
+      return { id: deleted.id };
+    }),
 });

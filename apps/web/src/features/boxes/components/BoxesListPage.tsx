@@ -126,6 +126,13 @@ export const BoxesListPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<BoxListRow | null>(null);
   const [deactivateId, setDeactivateId] = useState<string | null>(null);
+  const [deleteRequest, setDeleteRequest] = useState<{ row: BoxListRow; force: boolean } | null>(null);
+  const [deleteMenu, setDeleteMenu] = useState<{
+    row: BoxListRow;
+    top: number;
+    left: number;
+  } | null>(null);
+  const deleteMenuRef = useRef<HTMLDivElement>(null);
   const [form, setForm] = useState(emptyForm);
   const [qrBox, setQrBox] = useState<BoxListRow | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -134,6 +141,7 @@ export const BoxesListPage = () => {
   const createMutation = trpc.boxes.create.useMutation();
   const updateMutation = trpc.boxes.update.useMutation();
   const deactivateMutation = trpc.boxes.deactivate.useMutation();
+  const deleteMutation = trpc.boxes.delete.useMutation();
 
   const load = useCallback(() => {
     if (hasLoadedRef.current) setRefreshing(true);
@@ -166,6 +174,32 @@ export const BoxesListPage = () => {
   useEffect(() => {
     fetchCommunityOptions().then(setCommunities);
   }, []);
+
+  useEffect(() => {
+    if (!deleteMenu) return;
+
+    const close = () => setDeleteMenu(null);
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (deleteMenuRef.current?.contains(target as Node)) return;
+      if (target?.closest('[data-box-delete-trigger]')) return;
+      close();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+
+    window.addEventListener('mousedown', onPointer);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('mousedown', onPointer);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [deleteMenu]);
 
   useEffect(() => {
     if (!qrBox) {
@@ -261,6 +295,45 @@ export const BoxesListPage = () => {
         onSuccess: () => {
           toast('Box deactivated', 'success');
           setDeactivateId(null);
+          load();
+        },
+        onError: (err) => toast(err.message, 'error'),
+      },
+    );
+  };
+
+  const openDeleteMenu = (row: BoxListRow, button: HTMLButtonElement) => {
+    const rect = button.getBoundingClientRect();
+    const menuWidth = 176;
+    const menuHeight = 84;
+    const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+    const top =
+      rect.bottom + 4 + menuHeight > window.innerHeight
+        ? Math.max(8, rect.top - menuHeight - 4)
+        : rect.bottom + 4;
+
+    setDeleteMenu((current) => (current?.row.id === row.id ? null : { row, top, left }));
+  };
+
+  const chooseDelete = (force: boolean) => {
+    if (!deleteMenu) return;
+    const row = deleteMenu.row;
+    setDeleteMenu(null);
+    if (!force && row.status === 'OCCUPIED') {
+      toast('This box is occupied. Choose Force delete to remove it anyway.', 'error');
+      return;
+    }
+    setDeleteRequest({ row, force });
+  };
+
+  const handleDelete = () => {
+    if (!deleteRequest) return;
+    deleteMutation.mutate(
+      { id: deleteRequest.row.id, force: deleteRequest.force },
+      {
+        onSuccess: () => {
+          toast(deleteRequest.force ? 'Box force deleted' : 'Box deleted', 'success');
+          setDeleteRequest(null);
           load();
         },
         onError: (err) => toast(err.message, 'error'),
@@ -393,6 +466,16 @@ export const BoxesListPage = () => {
                           Deactivate
                         </Button>
                       ) : null}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        data-box-delete-trigger
+                        aria-haspopup="menu"
+                        aria-expanded={deleteMenu?.row.id === row.id}
+                        onClick={(event) => openDeleteMenu(row, event.currentTarget)}
+                      >
+                        Delete
+                      </Button>
                     </div>
                   ),
                 },
@@ -449,6 +532,22 @@ export const BoxesListPage = () => {
         </div>
       </CreateEntityModal>
 
+      {deleteMenu ? (
+        <div
+          ref={deleteMenuRef}
+          className={styles.menu}
+          role="menu"
+          style={{ top: deleteMenu.top, left: deleteMenu.left }}
+        >
+          <button type="button" className={styles.menuItem} role="menuitem" onClick={() => chooseDelete(false)}>
+            Delete
+          </button>
+          <button type="button" className={styles.menuItem} role="menuitem" onClick={() => chooseDelete(true)}>
+            Force delete
+          </button>
+        </div>
+      ) : null}
+
       <ConfirmationDialog
         open={Boolean(deactivateId)}
         onClose={() => setDeactivateId(null)}
@@ -457,6 +556,26 @@ export const BoxesListPage = () => {
         confirmLabel="Deactivate"
         danger
         message="This box will no longer be available for attach. Occupied boxes cannot be deactivated."
+      />
+
+      <ConfirmationDialog
+        open={Boolean(deleteRequest)}
+        onClose={() => setDeleteRequest(null)}
+        onConfirm={handleDelete}
+        title={deleteRequest?.force ? 'Force delete box?' : 'Delete box?'}
+        confirmLabel={deleteRequest?.force ? 'Force delete' : 'Delete'}
+        danger
+        message={
+          deleteRequest?.force
+            ? deleteRequest.row.status === 'OCCUPIED'
+              ? `${deleteRequest.row.boxCode} is occupied${
+                  deleteRequest.row.currentOrderNumber
+                    ? ` by ${deleteRequest.row.currentOrderNumber}`
+                    : ''
+                }. Force delete removes the box and detaches it from that order.`
+              : `${deleteRequest.row.boxCode} will be permanently removed, including its assignment history.`
+            : `${deleteRequest?.row.boxCode ?? 'This box'} will be permanently removed. Occupied boxes need Force delete.`
+        }
       />
 
       <Modal
